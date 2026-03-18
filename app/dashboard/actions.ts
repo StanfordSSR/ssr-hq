@@ -1128,21 +1128,49 @@ export async function invitePortalMemberAction(formData: FormData) {
 
     teamName = team.name;
 
-    const { error: membershipError } = await admin.from('team_memberships').upsert(
-      {
-        team_id: teamId,
-        user_id: generated.user.id,
-        team_role: 'lead',
-        is_active: true
-      },
-      {
-        onConflict: 'team_id,user_id'
-      }
-    );
+    const membershipPayload = {
+      team_id: teamId,
+      user_id: generated.user.id,
+      team_role: 'lead' as const,
+      is_active: true
+    };
 
-    if (membershipError) {
+    const { data: membership, error: membershipError } = await admin
+      .from('team_memberships')
+      .upsert(membershipPayload, {
+        onConflict: 'team_id,user_id'
+      })
+      .select('id, team_id, user_id, is_active')
+      .single();
+
+    if (membershipError || !membership) {
       throw new Error(membershipError.message);
     }
+
+    const { data: verifiedMembership } = await admin
+      .from('team_memberships')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('user_id', generated.user.id)
+      .eq('team_role', 'lead')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (!verifiedMembership) {
+      throw new Error(`The invite was created, but the lead assignment to ${team.name} did not stick.`);
+    }
+
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'lead.assigned',
+      targetType: 'team_membership',
+      targetId: membership.id,
+      summary: `Assigned invited lead ${email} to ${team.name}.`,
+      details: {
+        teamId,
+        userId: generated.user.id
+      }
+    });
   }
 
   await sendInviteEmail({
