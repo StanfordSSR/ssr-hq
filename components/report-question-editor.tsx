@@ -12,11 +12,59 @@ type Question = {
 
 type ReportQuestionEditorProps = {
   initialQuestions: Question[];
+  readOnly?: boolean;
 };
 
-export function ReportQuestionEditor({ initialQuestions }: ReportQuestionEditorProps) {
+export function ReportQuestionEditor({ initialQuestions, readOnly = false }: ReportQuestionEditorProps) {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions);
   const serializedQuestions = useMemo(() => JSON.stringify(questions), [questions]);
+
+  if (readOnly) {
+    return (
+      <div className="hq-question-stack">
+        {questions.map((question, index) => {
+          const isAutoField = question.fieldType === 'member_count' || question.fieldType === 'funds_spent';
+          const fieldTypeLabel =
+            question.fieldType === 'long_text'
+              ? 'Long text'
+              : question.fieldType === 'short_text'
+                ? 'Short text'
+                : question.fieldType === 'member_count'
+                  ? 'Auto-fill member count'
+                  : 'Auto-fill funds spent';
+
+          return (
+            <div key={question.id || `readonly-${index}`} className="hq-question-card">
+              <div className="field">
+                <label className="label">Question {index + 1}</label>
+                <div className="input hq-static-field">{question.prompt}</div>
+              </div>
+
+              <div className="hq-inline-grid">
+                <div className="field">
+                  <label className="label">Response type</label>
+                  <div className="input hq-static-field">{fieldTypeLabel}</div>
+                </div>
+
+                <div className="field">
+                  <label className="label">Word limit</label>
+                  <div className="input hq-static-field">{question.wordLimit}</div>
+                </div>
+              </div>
+
+              {isAutoField ? (
+                <span className="helper">
+                  {question.fieldType === 'member_count'
+                    ? 'This question auto-fills from the team roster count.'
+                    : 'This question auto-fills from the team’s quarter spend.'}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <form action={saveReportQuestionsAction} className="form-stack">

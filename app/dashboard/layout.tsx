@@ -21,7 +21,8 @@ const presidentNav = [
   { href: '/dashboard/reports', label: 'Team Reports' },
   { href: '/dashboard/tasks', label: 'Tasks' },
   { href: '/dashboard/purchases', label: 'Purchases' },
-  { href: '/dashboard/expenses', label: 'Expense Log' }
+  { href: '/dashboard/expenses', label: 'Expense Log' },
+  { href: '/dashboard/settings', label: 'Club Settings' }
 ];
 
 const leadNav = [

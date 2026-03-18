@@ -130,13 +130,13 @@ export default async function DashboardPage() {
   const isPresident = me.role === 'president';
 
   if (isAdmin || isPresident) {
-    const { data: teamsData } = await supabase
+    const { data: teamsData } = await admin
       .from('teams')
       .select('id, name, description, logo_url, is_active, created_at')
       .eq('is_active', true)
       .order('name');
 
-    const { data: membershipsData } = await supabase
+    const { data: membershipsData } = await admin
       .from('team_memberships')
       .select('id, team_id, user_id, team_role, is_active')
       .eq('is_active', true);
@@ -144,7 +144,7 @@ export default async function DashboardPage() {
     const teams = (teamsData || []) as Team[];
     const memberships = (membershipsData || []) as Membership[];
     const activeLeadMemberships = memberships.filter((membership) => membership.team_role === 'lead');
-    const { count } = await supabase
+    const { count } = await admin
       .from('profiles')
       .select('id', { count: 'exact', head: true })
       .eq('active', true);

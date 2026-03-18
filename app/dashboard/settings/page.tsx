@@ -39,9 +39,10 @@ export default async function SettingsPage() {
     .eq('id', user.id)
     .single();
 
-  if (!me?.active || me.role !== 'admin') {
+  if (!me?.active || (me.role !== 'admin' && me.role !== 'president')) {
     redirect('/dashboard');
   }
+  const canEdit = me.role === 'admin';
   const receiptSettings = await getReceiptNotificationSettings();
   const { data: reportQuestionsData } = await admin
     .from('report_questions')
@@ -91,9 +92,13 @@ export default async function SettingsPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">Admin</p>
+          <p className="hq-eyebrow">{canEdit ? 'Admin' : 'President'}</p>
           <h1 className="hq-page-title">Club settings</h1>
-          <p className="hq-subtitle">A home for club-wide operating settings, cycle references, and future portal controls.</p>
+          <p className="hq-subtitle">
+            {canEdit
+              ? 'A home for club-wide operating settings, cycle references, and future portal controls.'
+              : 'Review club-wide operating settings, leadership access, reminder timing, and the audit log in read-only mode.'}
+          </p>
         </div>
       </section>
 
@@ -142,12 +147,14 @@ export default async function SettingsPage() {
                   <div key={profile.id} className="hq-summary-row">
                     <span>Read-only portal access</span>
                     <strong>{profile.full_name || 'Unnamed user'}</strong>
-                    <form action={removePresidentRoleAction}>
-                      <input type="hidden" name="profile_id" value={profile.id} />
-                      <button className="button-secondary" type="submit">
-                        Remove
-                      </button>
-                    </form>
+                    {canEdit ? (
+                      <form action={removePresidentRoleAction}>
+                        <input type="hidden" name="profile_id" value={profile.id} />
+                        <button className="button-secondary" type="submit">
+                          Remove
+                        </button>
+                      </form>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -156,77 +163,81 @@ export default async function SettingsPage() {
             )}
           </section>
 
-          <section className="hq-lead-block">
-            <div className="hq-block-head">
-              <h3>Assign president</h3>
-            </div>
-
-            <form action={assignPresidentRoleAction} className="form-stack">
-              <div className="field">
-                <label className="label" htmlFor="president-profile-id">
-                  Portal user
-                </label>
-                <select className="select" id="president-profile-id" name="profile_id" defaultValue="">
-                  <option value="" disabled>
-                    Select a portal user
-                  </option>
-                  {presidentCandidates.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.full_name || profile.id.slice(0, 8)} · {profile.role === 'team_lead' ? 'Lead' : profile.role}
-                    </option>
-                  ))}
-                </select>
-                <span className="helper">Presidents can view all portal pages but cannot edit anything.</span>
-              </div>
-
-              <div className="button-row">
-                <button className="button" type="submit">
-                  Assign president
-                </button>
-              </div>
-            </form>
-          </section>
-
-          <section className="hq-lead-block">
-            <details className="hq-compact-disclosure">
-              <summary className="hq-compact-disclosure-summary">
-                <span>Invite new president</span>
-                <span className="hq-user-caret" aria-hidden="true">
-                  ▾
-                </span>
-              </summary>
-
-              <form action={invitePresidentAction} className="form-stack hq-compact-disclosure-body">
-                <div className="field">
-                  <label className="label" htmlFor="president-full-name">
-                    Full name
-                  </label>
-                  <input className="input" id="president-full-name" name="full_name" required />
+          {canEdit ? (
+            <>
+              <section className="hq-lead-block">
+                <div className="hq-block-head">
+                  <h3>Assign president</h3>
                 </div>
 
-                <div className="field">
-                  <label className="label" htmlFor="president-email">
-                    Stanford email
-                  </label>
-                  <input
-                    className="input"
-                    id="president-email"
-                    name="email"
-                    type="email"
-                    placeholder="sunet@stanford.edu"
-                    required
-                  />
-                  <span className="helper">This sends a read-only President portal invite with the secure account confirmation link.</span>
-                </div>
+                <form action={assignPresidentRoleAction} className="form-stack">
+                  <div className="field">
+                    <label className="label" htmlFor="president-profile-id">
+                      Portal user
+                    </label>
+                    <select className="select" id="president-profile-id" name="profile_id" defaultValue="">
+                      <option value="" disabled>
+                        Select a portal user
+                      </option>
+                      {presidentCandidates.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.full_name || profile.id.slice(0, 8)} · {profile.role === 'team_lead' ? 'Lead' : profile.role}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="helper">Presidents can view all portal pages but cannot edit anything.</span>
+                  </div>
 
-                <div className="button-row">
-                  <button className="button-secondary" type="submit">
-                    Invite president
-                  </button>
-                </div>
-              </form>
-            </details>
-          </section>
+                  <div className="button-row">
+                    <button className="button" type="submit">
+                      Assign president
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="hq-lead-block">
+                <details className="hq-compact-disclosure">
+                  <summary className="hq-compact-disclosure-summary">
+                    <span>Invite new president</span>
+                    <span className="hq-user-caret" aria-hidden="true">
+                      ▾
+                    </span>
+                  </summary>
+
+                  <form action={invitePresidentAction} className="form-stack hq-compact-disclosure-body">
+                    <div className="field">
+                      <label className="label" htmlFor="president-full-name">
+                        Full name
+                      </label>
+                      <input className="input" id="president-full-name" name="full_name" required />
+                    </div>
+
+                    <div className="field">
+                      <label className="label" htmlFor="president-email">
+                        Stanford email
+                      </label>
+                      <input
+                        className="input"
+                        id="president-email"
+                        name="email"
+                        type="email"
+                        placeholder="sunet@stanford.edu"
+                        required
+                      />
+                      <span className="helper">This sends a read-only President portal invite with the secure account confirmation link.</span>
+                    </div>
+
+                    <div className="button-row">
+                      <button className="button-secondary" type="submit">
+                        Invite president
+                      </button>
+                    </div>
+                  </form>
+                </details>
+              </section>
+            </>
+          ) : null}
         </div>
       </section>
 
@@ -238,73 +249,86 @@ export default async function SettingsPage() {
           </div>
         </div>
 
-        <form action={updateReceiptNotificationSettingsAction} className="form-stack">
-          <label className="hq-switch">
-            <input type="checkbox" name="email_enabled" defaultChecked={receiptSettings.emailEnabled} />
-            <span className="hq-switch-track" aria-hidden="true" />
-            <span className="hq-switch-copy">
-              <strong>Email team leads</strong>
-              <small>Turn receipt reminder emails on or off without changing the in-portal receipt tasks.</small>
-            </span>
-          </label>
-
-          <div className="hq-inline-grid">
-            <div className="field">
-              <label className="label" htmlFor="reminder-day-one">
-                Reminder 1
-              </label>
-              <input
-                className="input"
-                id="reminder-day-one"
-                name="reminder_day_one"
-                type="number"
-                min="1"
-                max="365"
-                defaultValue={receiptSettings.reminderDays[0] || ''}
-                placeholder="3"
-              />
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="reminder-day-two">
-                Reminder 2
-              </label>
-              <input
-                className="input"
-                id="reminder-day-two"
-                name="reminder_day_two"
-                type="number"
-                min="1"
-                max="365"
-                defaultValue={receiptSettings.reminderDays[1] || ''}
-                placeholder="7"
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label className="label" htmlFor="reminder-day-three">
-              Reminder 3
+        {canEdit ? (
+          <form action={updateReceiptNotificationSettingsAction} className="form-stack">
+            <label className="hq-switch">
+              <input type="checkbox" name="email_enabled" defaultChecked={receiptSettings.emailEnabled} />
+              <span className="hq-switch-track" aria-hidden="true" />
+              <span className="hq-switch-copy">
+                <strong>Email team leads</strong>
+                <small>Turn receipt reminder emails on or off without changing the in-portal receipt tasks.</small>
+              </span>
             </label>
-            <input
-              className="input"
-              id="reminder-day-three"
-              name="reminder_day_three"
-              type="number"
-              min="1"
-              max="365"
-              defaultValue={receiptSettings.reminderDays[2] || ''}
-              placeholder="14"
-            />
-            <span className="helper">Set up to three reminder timings in days after purchase. Leave a field blank to skip it.</span>
-          </div>
 
-          <div className="button-row">
-            <button className="button" type="submit">
-              Save receipt settings
-            </button>
+            <div className="hq-inline-grid">
+              <div className="field">
+                <label className="label" htmlFor="reminder-day-one">
+                  Reminder 1
+                </label>
+                <input
+                  className="input"
+                  id="reminder-day-one"
+                  name="reminder_day_one"
+                  type="number"
+                  min="1"
+                  max="365"
+                  defaultValue={receiptSettings.reminderDays[0] || ''}
+                  placeholder="3"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label" htmlFor="reminder-day-two">
+                  Reminder 2
+                </label>
+                <input
+                  className="input"
+                  id="reminder-day-two"
+                  name="reminder_day_two"
+                  type="number"
+                  min="1"
+                  max="365"
+                  defaultValue={receiptSettings.reminderDays[1] || ''}
+                  placeholder="7"
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="reminder-day-three">
+                Reminder 3
+              </label>
+              <input
+                className="input"
+                id="reminder-day-three"
+                name="reminder_day_three"
+                type="number"
+                min="1"
+                max="365"
+                defaultValue={receiptSettings.reminderDays[2] || ''}
+                placeholder="14"
+              />
+              <span className="helper">Set up to three reminder timings in days after purchase. Leave a field blank to skip it.</span>
+            </div>
+
+            <div className="button-row">
+              <button className="button" type="submit">
+                Save receipt settings
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="hq-summary-list">
+            <div className="hq-summary-row">
+              <span>Email reminders</span>
+              <strong>{receiptSettings.emailEnabled ? 'Enabled' : 'Disabled'}</strong>
+            </div>
+            <div className="hq-summary-row">
+              <span>Reminder cadence</span>
+              <strong>{receiptSettings.reminderDays.length ? receiptSettings.reminderDays.map((day) => `Day ${day}`).join(', ') : 'No reminders configured'}</strong>
+            </div>
           </div>
-        </form>
+        )}
       </section>
 
       <section className="hq-panel hq-surface-muted">
@@ -315,7 +339,7 @@ export default async function SettingsPage() {
           </div>
         </div>
 
-        <ReportQuestionEditor initialQuestions={reportQuestions} />
+        <ReportQuestionEditor initialQuestions={reportQuestions} readOnly={!canEdit} />
       </section>
 
       <section className="hq-panel hq-surface-muted">
@@ -326,77 +350,90 @@ export default async function SettingsPage() {
           </div>
         </div>
 
-        <form action={updateReportNotificationSettingsAction} className="form-stack">
-          <label className="hq-switch">
-            <input
-              type="checkbox"
-              name="report_email_enabled"
-              defaultChecked={reportNotificationSettings?.email_enabled ?? true}
-            />
-            <span className="hq-switch-track" aria-hidden="true" />
-            <span className="hq-switch-copy">
-              <strong>Email team leads</strong>
-              <small>Control whether report due reminders send email in addition to showing up in HQ.</small>
-            </span>
-          </label>
-
-          <div className="hq-inline-grid">
-            <div className="field">
-              <label className="label" htmlFor="report-reminder-one">
-                Reminder 1
-              </label>
+        {canEdit ? (
+          <form action={updateReportNotificationSettingsAction} className="form-stack">
+            <label className="hq-switch">
               <input
-                className="input"
-                id="report-reminder-one"
-                name="report_reminder_day_one"
-                type="number"
-                min="1"
-                max="365"
-                defaultValue={reportReminderDays[0] || ''}
-                placeholder="14"
+                type="checkbox"
+                name="report_email_enabled"
+                defaultChecked={reportNotificationSettings?.email_enabled ?? true}
               />
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="report-reminder-two">
-                Reminder 2
-              </label>
-              <input
-                className="input"
-                id="report-reminder-two"
-                name="report_reminder_day_two"
-                type="number"
-                min="1"
-                max="365"
-                defaultValue={reportReminderDays[1] || ''}
-                placeholder="7"
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label className="label" htmlFor="report-reminder-three">
-              Reminder 3
+              <span className="hq-switch-track" aria-hidden="true" />
+              <span className="hq-switch-copy">
+                <strong>Email team leads</strong>
+                <small>Control whether report due reminders send email in addition to showing up in HQ.</small>
+              </span>
             </label>
-            <input
-              className="input"
-              id="report-reminder-three"
-              name="report_reminder_day_three"
-              type="number"
-              min="1"
-              max="365"
-              defaultValue={reportReminderDays[2] || ''}
-              placeholder="1"
-            />
-            <span className="helper">Set up to three report reminder timings in days before the due date.</span>
-          </div>
 
-          <div className="button-row">
-            <button className="button" type="submit">
-              Save report reminders
-            </button>
+            <div className="hq-inline-grid">
+              <div className="field">
+                <label className="label" htmlFor="report-reminder-one">
+                  Reminder 1
+                </label>
+                <input
+                  className="input"
+                  id="report-reminder-one"
+                  name="report_reminder_day_one"
+                  type="number"
+                  min="1"
+                  max="365"
+                  defaultValue={reportReminderDays[0] || ''}
+                  placeholder="14"
+                />
+              </div>
+
+              <div className="field">
+                <label className="label" htmlFor="report-reminder-two">
+                  Reminder 2
+                </label>
+                <input
+                  className="input"
+                  id="report-reminder-two"
+                  name="report_reminder_day_two"
+                  type="number"
+                  min="1"
+                  max="365"
+                  defaultValue={reportReminderDays[1] || ''}
+                  placeholder="7"
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="report-reminder-three">
+                Reminder 3
+              </label>
+              <input
+                className="input"
+                id="report-reminder-three"
+                name="report_reminder_day_three"
+                type="number"
+                min="1"
+                max="365"
+                defaultValue={reportReminderDays[2] || ''}
+                placeholder="1"
+              />
+              <span className="helper">Set up to three report reminder timings in days before the due date.</span>
+            </div>
+
+            <div className="button-row">
+              <button className="button" type="submit">
+                Save report reminders
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="hq-summary-list">
+            <div className="hq-summary-row">
+              <span>Email reminders</span>
+              <strong>{reportNotificationSettings?.email_enabled ?? true ? 'Enabled' : 'Disabled'}</strong>
+            </div>
+            <div className="hq-summary-row">
+              <span>Reminder cadence</span>
+              <strong>{reportReminderDays.length ? reportReminderDays.map((day) => `${day} days before`).join(', ') : 'No reminders configured'}</strong>
+            </div>
           </div>
-        </form>
+        )}
       </section>
 
       <section className="hq-panel hq-surface-muted">
