@@ -23,6 +23,11 @@ type ClubBudget = {
   total_budget_cents: number;
 };
 
+type PurchaseLog = {
+  team_id: string;
+  amount_cents: number;
+};
+
 export default async function FinancesPage() {
   const supabase = await createClient();
   const admin = createAdminClient();
@@ -55,17 +60,26 @@ export default async function FinancesPage() {
     .select('academic_year, total_budget_cents')
     .eq('academic_year', cycle)
     .maybeSingle();
+  const { data: purchasesData } = await admin
+    .from('purchase_logs')
+    .select('team_id, amount_cents')
+    .eq('academic_year', cycle);
 
   const teams = (teamsData || []) as Team[];
   const teamBudgets = new Map(
     ((teamBudgetsData || []) as TeamBudget[]).map((entry) => [entry.team_id, entry.annual_budget_cents])
   );
   const clubBudget = (clubBudgetData || { academic_year: cycle, total_budget_cents: 0 }) as ClubBudget;
+  const purchases = (purchasesData || []) as PurchaseLog[];
   const allocatedTotal = teams.reduce((sum, team) => sum + (teamBudgets.get(team.id) || 0), 0);
   const remainingBudget = Math.max(0, clubBudget.total_budget_cents - allocatedTotal);
   const allocationPercent =
     clubBudget.total_budget_cents > 0 ? Math.min(100, Math.round((allocatedTotal / clubBudget.total_budget_cents) * 100)) : 0;
-  const chartColors = ['#8c1515', '#c46457', '#d9925b', '#7a8f6c', '#5f7f91', '#a16e8f'];
+  const chartColors = ['#8c1515', '#3f6e8f', '#b27a2c', '#5d7c63', '#875e8c', '#bf5f4d', '#3f7c7c'];
+  const spentByTeam = new Map<string, number>();
+  for (const purchase of purchases) {
+    spentByTeam.set(purchase.team_id, (spentByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
+  }
   let cursor = 0;
   const slices = teams
     .map((team, index) => {
@@ -188,6 +202,25 @@ export default async function FinancesPage() {
                   value={(teamBudgets.get(team.id) || 0) / 100}
                   confirmMessage={`Update the annual budget for ${team.name}?`}
                 />
+
+                <div className="hq-budget-row-meta">
+                  <div className="hq-budget-meta-line">
+                    <span>Spent</span>
+                    <strong>${((spentByTeam.get(team.id) || 0) / 100).toLocaleString()}</strong>
+                  </div>
+                  <div className="hq-budget-progress">
+                    <div
+                      className="hq-budget-progress-fill"
+                      style={{
+                        width: `${
+                          (teamBudgets.get(team.id) || 0) > 0
+                            ? Math.min(100, Math.round(((spentByTeam.get(team.id) || 0) / (teamBudgets.get(team.id) || 1)) * 100))
+                            : 0
+                        }%`
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
             ))}
           </div>

@@ -5,7 +5,8 @@ import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { requireAdmin, requireSignedInUser } from '@/lib/auth';
 import { formatAcademicYear } from '@/lib/academic-calendar';
-import { sendTaskEmails } from '@/lib/notifications';
+import { sendInviteEmail, sendTaskEmails } from '@/lib/notifications';
+import { env } from '@/lib/env';
 
 async function requireActiveProfile() {
   const { supabase, user } = await requireSignedInUser();
@@ -227,6 +228,84 @@ export async function createTaskAction(formData: FormData) {
 
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/tasks');
+}
+
+export async function invitePortalMemberAction(formData: FormData) {
+  await requireAdmin();
+
+  const email = String(formData.get('email') || '').trim().toLowerCase();
+  const fullName = String(formData.get('full_name') || '').trim();
+  const teamId = String(formData.get('team_id') || '').trim();
+
+  if (!email) {
+    throw new Error('Email is required.');
+  }
+
+  const admin = createAdminClient();
+  const { data: generated, error: generateError } = await admin.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: {
+      redirectTo: `${env.siteUrl}/auth/callback`,
+      data: {
+        full_name: fullName,
+        role: 'team_lead'
+      }
+    }
+  });
+
+  if (generateError || !generated?.properties?.action_link || !generated.user?.id) {
+    throw new Error(generateError?.message || 'Failed to generate invite link.');
+  }
+
+  const { error: profileError } = await admin.from('profiles').upsert({
+    id: generated.user.id,
+    full_name: fullName || null,
+    role: 'team_lead',
+    active: true
+  });
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  let teamName: string | null = null;
+  if (teamId) {
+    const { data: team } = await admin.from('teams').select('id, name').eq('id', teamId).single();
+
+    if (!team) {
+      throw new Error('Selected team not found.');
+    }
+
+    teamName = team.name;
+
+    const { error: membershipError } = await admin.from('team_memberships').upsert(
+      {
+        team_id: teamId,
+        user_id: generated.user.id,
+        team_role: 'lead',
+        is_active: true
+      },
+      {
+        onConflict: 'team_id,user_id'
+      }
+    );
+
+    if (membershipError) {
+      throw new Error(membershipError.message);
+    }
+  }
+
+  await sendInviteEmail({
+    to: email,
+    fullName,
+    teamName,
+    actionLink: generated.properties.action_link
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/teams');
+  revalidatePath('/dashboard/members');
 }
 
 export async function addTeamRosterMemberAction(formData: FormData) {

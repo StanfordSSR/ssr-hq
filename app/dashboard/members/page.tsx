@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { addTeamRosterMemberAction } from '@/app/dashboard/actions';
+import { addTeamRosterMemberAction, invitePortalMemberAction } from '@/app/dashboard/actions';
 
 type Profile = {
   id: string;
@@ -119,43 +119,98 @@ export default async function ManageMembersPage() {
           </div>
         </section>
 
-        <section className="hq-panel hq-surface-muted">
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Portal role</th>
-                  <th>Associated teams</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {profiles.map((profile) => {
-                  const teamsForUser = teamNamesByUser.get(profile.id) || [];
-                  return (
-                    <tr key={profile.id}>
-                      <td style={{ fontWeight: 700 }}>{profile.full_name || 'Unnamed user'}</td>
-                      <td>{emailMap.get(profile.id) || 'No email found'}</td>
-                      <td>
-                        <span className={`badge ${profile.role === 'admin' ? 'badge-admin' : 'badge-team'}`}>
-                          {profile.role === 'admin' ? 'Admin' : 'Lead'}
-                        </span>
-                      </td>
-                      <td>{teamsForUser.length > 0 ? teamsForUser.join(', ') : 'None'}</td>
-                      <td>
-                        <span className={`badge ${profile.active ? 'badge-team' : 'badge-off'}`}>
-                          {profile.active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <div className="hq-lead-dashboard">
+          <section className="hq-panel hq-lead-main hq-surface-muted">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Portal role</th>
+                    <th>Associated teams</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profiles.map((profile) => {
+                    const teamsForUser = teamNamesByUser.get(profile.id) || [];
+                    return (
+                      <tr key={profile.id}>
+                        <td style={{ fontWeight: 700 }}>{profile.full_name || 'Unnamed user'}</td>
+                        <td>{emailMap.get(profile.id) || 'No email found'}</td>
+                        <td>
+                          <span className={`badge ${profile.role === 'admin' ? 'badge-admin' : 'badge-team'}`}>
+                            {profile.role === 'admin' ? 'Admin' : 'Lead'}
+                          </span>
+                        </td>
+                        <td>{teamsForUser.length > 0 ? teamsForUser.join(', ') : 'None'}</td>
+                        <td>
+                          <span className={`badge ${profile.active ? 'badge-team' : 'badge-off'}`}>
+                            {profile.active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside className="hq-panel hq-lead-sidebar hq-surface-muted">
+            <div className="hq-section-head">
+              <div className="hq-section-head-copy">
+                <p className="hq-eyebrow">Invite</p>
+                <h2 className="hq-section-title hq-section-title-compact">Add portal member</h2>
+              </div>
+            </div>
+
+            <form action={invitePortalMemberAction} className="form-stack">
+              <div className="field">
+                <label className="label" htmlFor="admin-member-name">
+                  Full name
+                </label>
+                <input className="input" id="admin-member-name" name="full_name" required />
+              </div>
+
+              <div className="field">
+                <label className="label" htmlFor="admin-member-email">
+                  Stanford email
+                </label>
+                <input
+                  className="input"
+                  id="admin-member-email"
+                  name="email"
+                  type="email"
+                  placeholder="sunet@stanford.edu"
+                  required
+                />
+              </div>
+
+              <div className="field">
+                <label className="label" htmlFor="admin-member-team">
+                  Lead assignment
+                </label>
+                <select className="select" id="admin-member-team" name="team_id" defaultValue="">
+                  <option value="">Invite without team assignment</option>
+                  {teams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="helper">Inviting without assigning them to a team is not recommended.</span>
+              </div>
+
+              <div className="button-row">
+                <button className="button-secondary" type="submit">
+                  Send invite
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
       </div>
     );
   }

@@ -707,7 +707,7 @@ tr:last-child td {
 }
 
 .hq-title {
-  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-size: clamp(1.65rem, 3vw, 2.45rem);
 }
 
 .hq-section-title {
@@ -781,7 +781,7 @@ tr:last-child td {
 .hq-admin-link {
   display: grid;
   gap: 6px;
-  padding: 18px 20px;
+  padding: 16px 18px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
@@ -801,7 +801,7 @@ tr:last-child td {
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: none;
-  padding: 20px;
+  padding: 18px;
   display: grid;
   grid-template-columns: 54px 1fr;
   gap: 16px;
@@ -850,7 +850,7 @@ tr:last-child td {
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: none;
-  padding: 22px;
+  padding: 20px;
 }
 
 .hq-surface-muted {
@@ -936,15 +936,15 @@ tr:last-child td {
 }
 
 .hq-team-logo-medium {
-  width: 72px;
-  height: 72px;
-  border-radius: 18px;
+  width: 88px;
+  height: 88px;
+  border-radius: 20px;
 }
 
 .hq-team-logo-large {
-  width: 120px;
-  height: 120px;
-  border-radius: 28px;
+  width: 136px;
+  height: 136px;
+  border-radius: 30px;
 }
 
 .hq-team-logo-fallback {
@@ -1240,8 +1240,8 @@ tr:last-child td {
 }
 
 .hq-budget-ring-large {
-  width: 244px;
-  height: 244px;
+  width: 292px;
+  height: 292px;
 }
 
 .hq-budget-ring-inner {
@@ -1255,8 +1255,8 @@ tr:last-child td {
 }
 
 .hq-budget-ring-inner-large {
-  width: 164px;
-  height: 164px;
+  width: 196px;
+  height: 196px;
 }
 
 .hq-budget-ring-inner strong {
@@ -1368,6 +1368,39 @@ tr:last-child td {
 
 .hq-inline-editor-button strong {
   font-size: 1.2rem;
+}
+
+.hq-budget-row-meta {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.hq-budget-meta-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.hq-budget-meta-line strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.hq-budget-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: #e7e1e1;
+  overflow: hidden;
+}
+
+.hq-budget-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #8c1515, #c15d43);
 }
 
 .hq-inline-editor-form {

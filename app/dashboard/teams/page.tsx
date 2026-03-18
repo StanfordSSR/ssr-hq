@@ -7,6 +7,7 @@ import {
   removeLeadFromTeamAction,
   updateLeadTeamDescriptionAction
 } from '@/app/dashboard/teams/actions';
+import { invitePortalMemberAction } from '@/app/dashboard/actions';
 
 type Team = {
   id: string;
@@ -383,6 +384,59 @@ export default async function ManageTeamsPage() {
             <div className="button-row">
               <button className="button" type="submit">
                 Create team
+              </button>
+            </div>
+          </form>
+
+          <div className="hq-team-form-divider" />
+
+          <div className="hq-section-head">
+            <div className="hq-section-head-copy">
+              <p className="hq-eyebrow">Invite</p>
+              <h2 className="hq-section-title hq-section-title-compact">New portal lead</h2>
+            </div>
+          </div>
+
+          <form action={invitePortalMemberAction} className="form-stack">
+            <div className="field">
+              <label className="label" htmlFor="invite-full-name">
+                Full name
+              </label>
+              <input className="input" id="invite-full-name" name="full_name" required />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="invite-email">
+                Stanford email
+              </label>
+              <input
+                className="input"
+                id="invite-email"
+                name="email"
+                type="email"
+                placeholder="sunet@stanford.edu"
+                required
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="invite-team">
+                Assign to team
+              </label>
+              <select className="select" id="invite-team" name="team_id" defaultValue="">
+                <option value="">Invite without team assignment</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
+              <span className="helper">Inviting without a team is possible, but not recommended.</span>
+            </div>
+
+            <div className="button-row">
+              <button className="button-secondary" type="submit">
+                Invite lead
               </button>
             </div>
           </form>
