@@ -54,7 +54,7 @@ function formatLastSeen(value: string) {
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
-    year: 'numeric'
+    year: 'numeric',
     timeZone: 'America/Los_Angeles',
     hour: 'numeric',
     minute: '2-digit',
