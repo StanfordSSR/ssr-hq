@@ -218,6 +218,7 @@ export default async function ExpenseLogPage({
   const summaryPurchases = filteredPurchases;
   const totalSpentCents = summaryPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
   const remainingBudgetCents = Math.max(0, budgetTotalCents - totalSpentCents);
+  const remainingAllocatedCents = Math.max(0, allocatedBudgetCents - totalSpentCents);
   const spentPercent = budgetTotalCents > 0 ? Math.min(100, Math.round((totalSpentCents / budgetTotalCents) * 100)) : 0;
 
   const categoryTotals = {
@@ -318,8 +319,12 @@ export default async function ExpenseLogPage({
                 <strong>${(totalSpentCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
-                <span>Remaining</span>
+                <span>Remaining from total</span>
                 <strong>${(remainingBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+              </div>
+              <div className="hq-purchase-stat">
+                <span>Remaining from allocated</span>
+                <strong>${(remainingAllocatedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
                 <span>Pending receipts</span>
