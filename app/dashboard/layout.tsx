@@ -6,7 +6,10 @@ import { signOutAction } from '@/app/dashboard/teams/actions';
 const adminNav = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/teams', label: 'Manage Teams' },
-  { href: '/dashboard/members', label: 'Manage Members' }
+  { href: '/dashboard/members', label: 'Manage Members' },
+  { href: '/dashboard/finances', label: 'Manage Finances' },
+  { href: '/dashboard/tasks', label: 'Assign Tasks' },
+  { href: '/dashboard/settings', label: 'Club Settings' }
 ];
 
 const leadNav = [

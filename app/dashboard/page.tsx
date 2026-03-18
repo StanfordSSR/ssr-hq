@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { updateLeadTeamDescriptionAction } from '@/app/dashboard/teams/actions';
 
@@ -9,6 +10,7 @@ type Team = {
   id: string;
   name: string;
   description: string | null;
+  logo_url: string | null;
   is_active: boolean;
   created_at: string;
 };
@@ -21,6 +23,11 @@ type Membership = {
   is_active: boolean;
 };
 
+type RosterMember = {
+  id: string;
+  team_id: string;
+};
+
 const adminCards = [
   {
     href: '/dashboard/teams',
@@ -31,11 +38,27 @@ const adminCards = [
     href: '/dashboard/members',
     title: 'Manage members',
     description: 'Review admins and team leads across the club.'
+  },
+  {
+    href: '/dashboard/finances',
+    title: 'Manage finances',
+    description: 'Set club and team budgets for the current academic cycle.'
+  },
+  {
+    href: '/dashboard/tasks',
+    title: 'Assign tasks',
+    description: 'Send work items to one team, many teams, or the whole club.'
+  },
+  {
+    href: '/dashboard/settings',
+    title: 'Club settings',
+    description: 'Review the current cycle and portal-wide controls.'
   }
 ];
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  const admin = createAdminClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -59,7 +82,7 @@ export default async function DashboardPage() {
   if (isAdmin) {
     const { data: teamsData } = await supabase
       .from('teams')
-      .select('id, name, description, is_active, created_at')
+      .select('id, name, description, logo_url, is_active, created_at')
       .eq('is_active', true)
       .order('name');
 
@@ -137,7 +160,7 @@ export default async function DashboardPage() {
 
   const { data: team } = await supabase
     .from('teams')
-    .select('id, name, description, is_active, created_at')
+    .select('id, name, description, logo_url, is_active, created_at')
     .eq('id', primaryTeamId)
     .single<Team>();
 
@@ -150,12 +173,42 @@ export default async function DashboardPage() {
     .select('id, team_id, user_id, team_role, is_active')
     .eq('team_id', primaryTeamId)
     .eq('is_active', true);
+  const { data: rosterMembersData } = await admin
+    .from('team_roster_members')
+    .select('id, team_id')
+    .eq('team_id', primaryTeamId);
 
   const teamMemberships = (teamMembershipsData || []) as Membership[];
-  const memberCount = teamMemberships.length;
+  const rosterMembers = (rosterMembersData || []) as RosterMember[];
+  const memberCount = teamMemberships.length + rosterMembers.length;
   const reportState = getNextReportState(new Date());
-  const annualBudget = 0;
-  const spent = 0;
+  const cycle = formatAcademicYear(new Date());
+  const { data: teamBudget } = await admin
+    .from('team_budgets')
+    .select('annual_budget_cents')
+    .eq('team_id', team.id)
+    .eq('academic_year', cycle)
+    .maybeSingle();
+  const { data: purchasesData } = await admin
+    .from('purchase_logs')
+    .select('amount_cents')
+    .eq('team_id', team.id)
+    .eq('academic_year', cycle);
+  const { data: tasksData } = await admin
+    .from('tasks')
+    .select('id, title, recipient_scope')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+  const { data: taskRecipients } = await admin.from('task_recipients').select('task_id, team_id').eq('team_id', team.id);
+  const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
+  const teamTasks = (tasksData || []).filter(
+    (task) => task.recipient_scope === 'all_teams' || recipientTaskIds.has(task.id)
+  );
+  const annualBudget = teamBudget?.annual_budget_cents ? teamBudget.annual_budget_cents / 100 : 0;
+  const spent = ((purchasesData || []) as Array<{ amount_cents: number }>).reduce(
+    (sum, purchase) => sum + purchase.amount_cents / 100,
+    0
+  );
   const spentPercent = annualBudget > 0 ? Math.min(100, Math.round((spent / annualBudget) * 100)) : 0;
 
   return (
@@ -175,7 +228,15 @@ export default async function DashboardPage() {
           <div className="hq-section-head">
             <div className="hq-section-head-copy">
               <p className="hq-eyebrow">Team summary</p>
-              <h2 className="hq-section-title hq-section-title-compact">{team.name}</h2>
+              <div className="hq-team-title-row">
+                {team.logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={team.logo_url} alt="" className="hq-team-logo hq-team-logo-large" />
+                ) : (
+                  <div className="hq-team-logo hq-team-logo-large hq-team-logo-fallback">{team.name.slice(0, 1)}</div>
+                )}
+                <h2 className="hq-section-title hq-section-title-compact">{team.name}</h2>
+              </div>
             </div>
           </div>
 
@@ -216,6 +277,20 @@ export default async function DashboardPage() {
               <span className="helper">Maximum 300 characters.</span>
             </div>
 
+            <div className="field">
+              <label className="label" htmlFor="lead-team-logo">
+                Team logo URL
+              </label>
+              <input
+                className="input"
+                id="lead-team-logo"
+                name="logo_url"
+                defaultValue={team.logo_url || ''}
+                placeholder="https://example.com/team-logo.png"
+              />
+              <span className="helper">Leave blank to remove the current logo.</span>
+            </div>
+
             <div className="button-row">
               <button className="button" type="submit">
                 Save description
@@ -250,7 +325,7 @@ export default async function DashboardPage() {
           <div className="hq-lead-metrics">
             <div className="hq-lead-metric">
               <span>Annual cycle</span>
-              <strong>{reportState.academicYear}</strong>
+              <strong>{cycle}</strong>
             </div>
             <div className="hq-lead-metric">
               <span>Total budget</span>
@@ -270,7 +345,18 @@ export default async function DashboardPage() {
                   Open tasks
                 </Link>
               </div>
-              <p className="empty-note">No tasks yet.</p>
+              {teamTasks.length > 0 ? (
+                <div className="hq-summary-list">
+                  {teamTasks.slice(0, 3).map((task) => (
+                    <div key={task.id} className="hq-summary-row">
+                      <span>{task.recipient_scope === 'all_teams' ? 'All teams' : team.name}</span>
+                      <strong>{task.title}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-note">No tasks yet.</p>
+              )}
             </section>
 
             <section className="hq-lead-block">

@@ -131,6 +131,7 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
 
   const teamId = String(formData.get('team_id') || '').trim();
   const description = String(formData.get('description') || '').trim();
+  const logoUrl = String(formData.get('logo_url') || '').trim();
 
   if (!teamId) {
     throw new Error('Missing team id.');
@@ -163,7 +164,10 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
 
   const { error } = await admin
     .from('teams')
-    .update({ description: description || null })
+    .update({
+      description: description || null,
+      logo_url: logoUrl || null
+    })
     .eq('id', teamId);
 
   if (error) {

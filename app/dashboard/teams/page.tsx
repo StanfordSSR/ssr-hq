@@ -4,7 +4,8 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import {
   assignExistingLeadAction,
   createTeamAction,
-  removeLeadFromTeamAction
+  removeLeadFromTeamAction,
+  updateLeadTeamDescriptionAction
 } from '@/app/dashboard/teams/actions';
 
 type Team = {
@@ -12,6 +13,7 @@ type Team = {
   name: string;
   slug: string;
   description: string | null;
+  logo_url: string | null;
   is_active: boolean;
 };
 
@@ -54,7 +56,7 @@ export default async function ManageTeamsPage() {
 
   const { data: teamsData } = await supabase
     .from('teams')
-    .select('id, name, slug, description, is_active')
+    .select('id, name, slug, description, logo_url, is_active')
     .order('name');
 
   const teams = (teamsData || []) as Team[];
@@ -156,7 +158,17 @@ export default async function ManageTeamsPage() {
                 <article key={team.id} className="hq-team-row">
                   <div className="hq-team-row-head">
                     <div className="hq-team-heading">
-                      <h3>{team.name}</h3>
+                      <div className="hq-team-title-row">
+                        {team.logo_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={team.logo_url} alt="" className="hq-team-logo hq-team-logo-medium" />
+                        ) : (
+                          <div className="hq-team-logo hq-team-logo-medium hq-team-logo-fallback">
+                            {team.name.slice(0, 1)}
+                          </div>
+                        )}
+                        <h3>{team.name}</h3>
+                      </div>
                       <p>{team.description || team.slug}</p>
                     </div>
 
@@ -219,6 +231,41 @@ export default async function ManageTeamsPage() {
 
                         <button className="button" type="submit" disabled={assignableLeads.length === 0}>
                           Assign
+                        </button>
+                      </form>
+
+                      <div className="hq-team-form-divider" />
+
+                      <h4 className="hq-team-label">Team branding</h4>
+                      <form action={updateLeadTeamDescriptionAction} className="form-stack">
+                        <input type="hidden" name="team_id" value={team.id} />
+                        <div className="field">
+                          <label className="label" htmlFor={`team-logo-${team.id}`}>
+                            Logo URL
+                          </label>
+                          <input
+                            className="input"
+                            id={`team-logo-${team.id}`}
+                            name="logo_url"
+                            defaultValue={team.logo_url || ''}
+                            placeholder="https://example.com/team-logo.png"
+                          />
+                        </div>
+                        <div className="field">
+                          <label className="label" htmlFor={`team-description-${team.id}`}>
+                            Description
+                          </label>
+                          <textarea
+                            className="input hq-textarea"
+                            id={`team-description-${team.id}`}
+                            name="description"
+                            defaultValue={team.description || ''}
+                            maxLength={300}
+                            rows={4}
+                          />
+                        </div>
+                        <button className="button-secondary" type="submit">
+                          Save profile
                         </button>
                       </form>
                     </section>
