@@ -133,6 +133,30 @@ export async function sendInviteEmail({
   await sendEmail({ to: [to], subject, text, html });
 }
 
+export async function sendPresidentInviteEmail({
+  to,
+  fullName,
+  actionLink
+}: {
+  to: string;
+  fullName: string;
+  actionLink: string;
+}) {
+  const subject = 'You have been invited to SSR HQ as President';
+  const text = `Hi ${fullName || 'there'},\n\nYou've been invited to SSR HQ as a President with read-only visibility across the portal.\n\nPlease use this link to confirm your account:\n${actionLink}\n\nOnce you have an account, you'll request a secure link every time you want to log in.\n\nSSR HQ`;
+  const html = renderEmailFrame({
+    eyebrow: 'SSR HQ president invite',
+    heading: `Welcome to SSR HQ${fullName ? `, ${fullName}` : ''}`,
+    body:
+      "<p style=\"margin:0 0 14px;\">You've been invited to SSR HQ as a President.</p><p style=\"margin:0;\">This role has read-only visibility across teams, reports, finances, and members so you can stay informed without changing club data.</p>",
+    footer: 'Once your account is created, you’ll request a secure login link each time you sign in.',
+    ctaLabel: 'Confirm account',
+    ctaUrl: actionLink
+  });
+
+  await sendEmail({ to: [to], subject, text, html });
+}
+
 export async function sendReceiptDigestEmail({
   to,
   teamName,

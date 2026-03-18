@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { requireAdmin, requireSignedInUser } from '@/lib/auth';
 import { formatAcademicYear, formatPacificDateKey, getReportingWindow } from '@/lib/academic-calendar';
-import { sendInviteEmail, sendTaskEmails } from '@/lib/notifications';
+import { sendInviteEmail, sendPresidentInviteEmail, sendTaskEmails } from '@/lib/notifications';
 import { env } from '@/lib/env';
 import {
   detectPurchaseCategory,
@@ -1556,6 +1556,79 @@ export async function removePresidentRoleAction(formData: FormData) {
     targetId: profileId,
     summary: `Removed President role from ${profile.full_name || 'user'}.`,
     details: {
+      role: 'president'
+    }
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/settings');
+  revalidatePath('/dashboard/members');
+}
+
+export async function invitePresidentAction(formData: FormData) {
+  const { user } = await requireAdmin();
+
+  const email = String(formData.get('email') || '').trim().toLowerCase();
+  const fullName = String(formData.get('full_name') || '').trim();
+
+  if (!email) {
+    throw new Error('Email is required.');
+  }
+
+  const admin = createAdminClient();
+  const { data: generated, error: generateError } = await admin.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: {
+      redirectTo: `${env.siteUrl}/auth/callback`,
+      data: {
+        full_name: fullName,
+        role: 'president'
+      }
+    }
+  });
+
+  if (generateError || !generated?.properties?.action_link || !generated.user?.id) {
+    throw new Error(generateError?.message || 'Failed to generate president invite link.');
+  }
+
+  const { error: profileError } = await admin.from('profiles').upsert({
+    id: generated.user.id,
+    full_name: fullName || null,
+    role: 'president',
+    active: true
+  });
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  await sendPresidentInviteEmail({
+    to: email,
+    fullName,
+    actionLink: generated.properties.action_link
+  });
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.invited',
+    targetType: 'profile',
+    targetId: generated.user.id,
+    summary: `Invited ${email} to the portal as President.`,
+    details: {
+      email,
+      role: 'president'
+    }
+  });
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'email.sent',
+    targetType: 'profile',
+    targetId: generated.user.id,
+    summary: `Sent president invite email to ${email}.`,
+    details: {
+      email,
       role: 'president'
     }
   });

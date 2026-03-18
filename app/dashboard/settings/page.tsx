@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { formatAcademicYear } from '@/lib/academic-calendar';
 import {
   assignPresidentRoleAction,
+  invitePresidentAction,
   removePresidentRoleAction,
   updateReceiptNotificationSettingsAction,
   updateReportNotificationSettingsAction
@@ -181,6 +182,42 @@ export default async function SettingsPage() {
               <div className="button-row">
                 <button className="button" type="submit">
                   Assign president
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="hq-lead-block">
+            <div className="hq-block-head">
+              <h3>Invite new president</h3>
+            </div>
+
+            <form action={invitePresidentAction} className="form-stack">
+              <div className="field">
+                <label className="label" htmlFor="president-full-name">
+                  Full name
+                </label>
+                <input className="input" id="president-full-name" name="full_name" required />
+              </div>
+
+              <div className="field">
+                <label className="label" htmlFor="president-email">
+                  Stanford email
+                </label>
+                <input
+                  className="input"
+                  id="president-email"
+                  name="email"
+                  type="email"
+                  placeholder="sunet@stanford.edu"
+                  required
+                />
+                <span className="helper">This sends a read-only President portal invite with the secure account confirmation link.</span>
+              </div>
+
+              <div className="button-row">
+                <button className="button-secondary" type="submit">
+                  Invite president
                 </button>
               </div>
             </form>
