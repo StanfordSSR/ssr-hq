@@ -11,6 +11,8 @@ type AdminMemberRow = {
   role: string;
   permissions: string;
   teams: string;
+  accessLabel?: string;
+  accessDetail?: string;
   canDeletePortal?: boolean;
 };
 
@@ -31,6 +33,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
             <th>Name</th>
             <th>Email</th>
             <th>Role</th>
+            <th>Status</th>
             <th>Perms</th>
             <th>Team</th>
             <th>Portal</th>
@@ -46,6 +49,18 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                   <td style={{ fontWeight: 700 }}>{row.name}</td>
                   <td>{row.email}</td>
                   <td>{row.role}</td>
+                  <td>
+                    {row.accessLabel ? (
+                      <div className="hq-member-access">
+                        <strong className={row.accessLabel === 'Active' ? 'hq-member-access-on' : 'hq-member-access-off'}>
+                          {row.accessLabel === 'Active' ? '✓' : '○'} {row.accessLabel}
+                        </strong>
+                        {row.accessDetail ? <span>{row.accessDetail}</span> : null}
+                      </div>
+                    ) : (
+                      <span className="hq-member-static-note">No portal</span>
+                    )}
+                  </td>
                   <td>{row.permissions}</td>
                   <td>{row.teams}</td>
                   <td>
@@ -69,7 +84,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
 
                 {expanded && row.canDeletePortal && row.profileId ? (
                   <tr key={`${row.id}-confirm`}>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <form action={deletePortalLeadAction} className="hq-admin-delete-form">
                         <input type="hidden" name="lead_id" value={row.profileId} />
                         <input type="hidden" name="confirmation_phrase" value={confirmationPhrase} />

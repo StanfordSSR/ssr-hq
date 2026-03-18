@@ -43,10 +43,20 @@ type AdminMemberRow = {
   role: string;
   permissions: string;
   teams: string;
+  accessLabel?: string;
+  accessDetail?: string;
   sortGroup: number;
   sortName: string;
   sortJoined: number;
 };
+
+function formatLastSeen(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }).format(new Date(value));
+}
 
 const monthOptions = [
   'January',
@@ -126,8 +136,10 @@ export default async function ManageMembersPage() {
 
     const { data: authUsers } = await admin.auth.admin.listUsers();
     const emailMap = new Map<string, string>();
+    const loginMap = new Map<string, string | null>();
     for (const authUser of authUsers.users) {
       emailMap.set(authUser.id, authUser.email || '');
+      loginMap.set(authUser.id, authUser.last_sign_in_at || null);
     }
 
     const adminRows: AdminMemberRow[] = profiles.map((profile) => ({
@@ -139,6 +151,8 @@ export default async function ManageMembersPage() {
       permissions:
         profile.role === 'admin' ? 'Full portal access' : 'Lead workspace, purchases, tasks',
       teams: (teamNamesByUser.get(profile.id) || []).join(', ') || 'None',
+      accessLabel: loginMap.get(profile.id) ? 'Active' : 'Inactive',
+      accessDetail: loginMap.get(profile.id) ? `Last login ${formatLastSeen(loginMap.get(profile.id)!)}` : 'Invite not accepted yet',
       canDeletePortal: profile.role === 'team_lead',
       sortGroup: profile.role === 'admin' ? 0 : 1,
       sortName: profile.full_name || '',
@@ -152,6 +166,8 @@ export default async function ManageMembersPage() {
       role: 'Recorded member',
       permissions: 'Record only',
       teams: teamMap.get(member.team_id) || 'Unknown team',
+      accessLabel: '',
+      accessDetail: '',
       canDeletePortal: false,
       sortGroup: 2,
       sortName: member.full_name,
