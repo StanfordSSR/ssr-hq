@@ -16,29 +16,23 @@ export default async function LoginPage() {
 
   return (
     <>
-      <Header
-        action={
-          <Link className="button-ghost" href="/">
-            Back home
-          </Link>
-        }
-      />
+      <Header />
       <main className="page-shell">
-        <section className="hero" style={{ alignItems: 'start' }}>
-          <div className="hero-card">
-            <span className="eyebrow">Secure access</span>
-            <h2>Log into HQ.</h2>
-            <p>
-              Team leads and admins get in through Supabase Auth. Start with magic-link sign-in so you can move fast,
-              then add SSO later if Stanford identity becomes worth the effort.
+        <section className="auth-shell">
+          <div className="auth-copy">
+            <p className="auth-kicker">Secure login</p>
+            <h1 className="auth-title">Log in to HQ</h1>
+            <p className="auth-subtitle">
+              Use your approved email to receive a secure sign-in link.
             </p>
+            <Link className="text-link" href="/">
+              Back to home
+            </Link>
           </div>
 
-          <aside className="panel">
-            <h3>Sign in</h3>
-            <p>Enter your email and we will beam over a secure login link.</p>
+          <div className="auth-card">
             <LoginForm />
-          </aside>
+          </div>
         </section>
       </main>
     </>

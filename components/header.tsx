@@ -1,18 +1,23 @@
 import Link from 'next/link';
 
-export function Header({ action }: { action?: React.ReactNode }) {
+type HeaderProps = {
+  action?: React.ReactNode;
+};
+
+export function Header({ action }: HeaderProps) {
   return (
-    <div className="topbar">
+    <header className="topbar">
       <div className="page-shell topbar-inner">
-        <Link href="/" className="wordmark">
-          <div className="wordmark-badge">HQ</div>
-          <div className="wordmark-copy">
-            <h1>Stanford Student Robotics HQ</h1>
-            <p>Teams, budgets, receipts, reports, and club ops in one place.</p>
-          </div>
+        <Link href="/" className="brand" aria-label="Stanford Student Robotics HQ home">
+          <span className="brand-text">Stanford Student Robotics HQ</span>
         </Link>
-        {action}
+
+        <nav className="topnav" aria-label="Main navigation">
+          <Link href="/">Home</Link>
+          <Link href="/login">Log in</Link>
+          {action}
+        </nav>
       </div>
-    </div>
+    </header>
   );
 }

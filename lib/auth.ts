@@ -11,6 +11,24 @@ export type Profile = {
   created_at: string;
 };
 
+export type Team = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type TeamMembership = {
+  id: string;
+  team_id: string;
+  user_id: string;
+  team_role: 'lead' | 'member';
+  is_active: boolean;
+  created_at: string;
+};
+
 export async function requireSignedInUser() {
   const supabase = await createClient();
   const {

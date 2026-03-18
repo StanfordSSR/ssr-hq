@@ -16,7 +16,10 @@ export function LoginForm() {
     setError(null);
 
     const supabase = createClient();
-    const redirectTo = `${window.location.origin}/auth/callback`;
+
+    // Important: point to the site root, not /auth/callback
+    // The email template will append /auth/confirm with token_hash.
+    const redirectTo = window.location.origin;
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -57,7 +60,7 @@ export function LoginForm() {
       </button>
 
       {message ? <p className="helper">{message}</p> : null}
-      {error ? <p className="helper" style={{ color: '#ffb3bf' }}>{error}</p> : null}
+      {error ? <p className="helper" style={{ color: '#8c1515' }}>{error}</p> : null}
     </form>
   );
 }
