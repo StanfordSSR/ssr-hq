@@ -588,6 +588,10 @@ tr:last-child td {
   transform: rotate(180deg);
 }
 
+.hq-compact-disclosure[open] .hq-user-caret {
+  transform: rotate(180deg);
+}
+
 .hq-user-summary {
   display: inline-flex;
   align-items: center;
@@ -1889,6 +1893,31 @@ tr:last-child td {
 
 .hq-admin-delete-form {
   padding: 12px 0 4px;
+}
+
+.hq-compact-disclosure {
+  border-top: 1px solid var(--line);
+  padding-top: 2px;
+}
+
+.hq-compact-disclosure-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hq-compact-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.hq-compact-disclosure-body {
+  padding-top: 6px;
 }
 
 .hq-admin-delete-grid {

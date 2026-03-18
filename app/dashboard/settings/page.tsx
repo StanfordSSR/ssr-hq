@@ -188,39 +188,44 @@ export default async function SettingsPage() {
           </section>
 
           <section className="hq-lead-block">
-            <div className="hq-block-head">
-              <h3>Invite new president</h3>
-            </div>
+            <details className="hq-compact-disclosure">
+              <summary className="hq-compact-disclosure-summary">
+                <span>Invite new president</span>
+                <span className="hq-user-caret" aria-hidden="true">
+                  ▾
+                </span>
+              </summary>
 
-            <form action={invitePresidentAction} className="form-stack">
-              <div className="field">
-                <label className="label" htmlFor="president-full-name">
-                  Full name
-                </label>
-                <input className="input" id="president-full-name" name="full_name" required />
-              </div>
+              <form action={invitePresidentAction} className="form-stack hq-compact-disclosure-body">
+                <div className="field">
+                  <label className="label" htmlFor="president-full-name">
+                    Full name
+                  </label>
+                  <input className="input" id="president-full-name" name="full_name" required />
+                </div>
 
-              <div className="field">
-                <label className="label" htmlFor="president-email">
-                  Stanford email
-                </label>
-                <input
-                  className="input"
-                  id="president-email"
-                  name="email"
-                  type="email"
-                  placeholder="sunet@stanford.edu"
-                  required
-                />
-                <span className="helper">This sends a read-only President portal invite with the secure account confirmation link.</span>
-              </div>
+                <div className="field">
+                  <label className="label" htmlFor="president-email">
+                    Stanford email
+                  </label>
+                  <input
+                    className="input"
+                    id="president-email"
+                    name="email"
+                    type="email"
+                    placeholder="sunet@stanford.edu"
+                    required
+                  />
+                  <span className="helper">This sends a read-only President portal invite with the secure account confirmation link.</span>
+                </div>
 
-              <div className="button-row">
-                <button className="button-secondary" type="submit">
-                  Invite president
-                </button>
-              </div>
-            </form>
+                <div className="button-row">
+                  <button className="button-secondary" type="submit">
+                    Invite president
+                  </button>
+                </div>
+              </form>
+            </details>
           </section>
         </div>
       </section>
