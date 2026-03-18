@@ -101,7 +101,7 @@ export default async function ReportsPage({
     const historyReports = reports.filter(
       (report) => report.academic_year !== currentKey.academicYear || report.quarter !== currentKey.quarter
     );
-    const selectedReportId = readSingle(params.report_id) || currentReports[0]?.id || historyReports[0]?.id || '';
+    const selectedReportId = readSingle(params.report_id);
     const selectedReport = reports.find((report) => report.id === selectedReportId) || null;
 
     let answers: Answer[] = [];

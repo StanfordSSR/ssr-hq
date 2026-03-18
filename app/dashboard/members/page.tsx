@@ -55,9 +55,10 @@ function formatLastSeen(value: string) {
     month: 'short',
     day: 'numeric',
     year: 'numeric'
-    ,
+    timeZone: 'America/Los_Angeles',
     hour: 'numeric',
-    minute: '2-digit'
+    minute: '2-digit',
+    timeZoneName: 'short'
   }).format(new Date(value));
 }
 
