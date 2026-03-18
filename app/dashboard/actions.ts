@@ -165,6 +165,24 @@ function formatCurrencyFromCents(cents: number) {
   }).format(cents / 100);
 }
 
+function buildInviteConfirmLink(properties: {
+  hashed_token?: string | null;
+  verification_type?: string | null;
+}) {
+  const tokenHash = properties.hashed_token;
+  const type = properties.verification_type;
+
+  if (!tokenHash || !type) {
+    throw new Error('Invite link is missing verification details.');
+  }
+
+  const confirmUrl = new URL('/auth/confirm', env.siteUrl);
+  confirmUrl.searchParams.set('token_hash', tokenHash);
+  confirmUrl.searchParams.set('type', type);
+  confirmUrl.searchParams.set('next', '/dashboard');
+  return confirmUrl.toString();
+}
+
 async function saveTeamReport(formData: FormData, status: 'draft' | 'submitted') {
   const teamId = String(formData.get('team_id') || '').trim();
   const academicYear = String(formData.get('academic_year') || '').trim();
@@ -1177,7 +1195,7 @@ export async function invitePortalMemberAction(formData: FormData) {
     to: email,
     fullName,
     teamName,
-    actionLink: generated.properties.action_link
+    actionLink: buildInviteConfirmLink(generated.properties)
   });
 
   await recordAuditEvent({
@@ -1606,7 +1624,7 @@ export async function invitePresidentAction(formData: FormData) {
   await sendPresidentInviteEmail({
     to: email,
     fullName,
-    actionLink: generated.properties.action_link
+    actionLink: buildInviteConfirmLink(generated.properties)
   });
 
   await recordAuditEvent({
