@@ -45,9 +45,10 @@ export default async function FinancesPage() {
     .eq('id', user.id)
     .single();
 
-  if (!me?.active || me.role !== 'admin') {
+  if (!me?.active || (me.role !== 'admin' && me.role !== 'president')) {
     redirect('/dashboard');
   }
+  const canEdit = me.role === 'admin';
 
   const cycle = formatAcademicYear(new Date());
   const { data: teamsData } = await admin.from('teams').select('id, name, logo_url').order('name');
@@ -105,10 +106,12 @@ export default async function FinancesPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">Admin</p>
+          <p className="hq-eyebrow">{canEdit ? 'Admin' : 'President'}</p>
           <h1 className="hq-page-title">Manage finances</h1>
           <p className="hq-subtitle">
-            Set the total club budget and allocate annual budgets to each team for the current cycle.
+            {canEdit
+              ? 'Set the total club budget and allocate annual budgets to each team for the current cycle.'
+              : 'Review the total club budget and each team allocation for the current cycle.'}
           </p>
         </div>
       </section>
@@ -131,14 +134,16 @@ export default async function FinancesPage() {
             </div>
           </div>
 
-          <InlineBudgetEditor
-            action={updateClubBudgetAction}
-            academicYear={cycle}
-            fieldName="total_budget"
-            label="Total club budget"
-            value={clubBudget.total_budget_cents / 100}
-            confirmMessage="Update the total club budget for this cycle?"
-          />
+          {canEdit ? (
+            <InlineBudgetEditor
+              action={updateClubBudgetAction}
+              academicYear={cycle}
+              fieldName="total_budget"
+              label="Total club budget"
+              value={clubBudget.total_budget_cents / 100}
+              confirmMessage="Update the total club budget for this cycle?"
+            />
+          ) : null}
 
           <div className="hq-summary-list">
             <div className="hq-summary-row">
@@ -192,16 +197,25 @@ export default async function FinancesPage() {
                   </div>
                 </div>
 
-                <InlineBudgetEditor
-                  action={updateTeamBudgetAction}
-                  academicYear={cycle}
-                  hiddenName="team_id"
-                  hiddenValue={team.id}
-                  fieldName="annual_budget"
-                  label="Annual budget"
-                  value={(teamBudgets.get(team.id) || 0) / 100}
-                  confirmMessage={`Update the annual budget for ${team.name}?`}
-                />
+                {canEdit ? (
+                  <InlineBudgetEditor
+                    action={updateTeamBudgetAction}
+                    academicYear={cycle}
+                    hiddenName="team_id"
+                    hiddenValue={team.id}
+                    fieldName="annual_budget"
+                    label="Annual budget"
+                    value={(teamBudgets.get(team.id) || 0) / 100}
+                    confirmMessage={`Update the annual budget for ${team.name}?`}
+                  />
+                ) : (
+                  <div className="hq-summary-list">
+                    <div className="hq-summary-row">
+                      <span>Annual budget</span>
+                      <strong>${((teamBudgets.get(team.id) || 0) / 100).toLocaleString()}</strong>
+                    </div>
+                  </div>
+                )}
 
                 <div className="hq-budget-row-meta">
                   <div className="hq-budget-meta-line">

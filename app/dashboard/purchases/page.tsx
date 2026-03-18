@@ -59,8 +59,10 @@ export default async function PurchasesPage() {
   }
 
   const isAdmin = me.role === 'admin';
+  const isPresident = me.role === 'president';
+  const isPrivilegedViewer = isAdmin || isPresident;
 
-  const { data: memberships } = isAdmin
+  const { data: memberships } = isPrivilegedViewer
     ? { data: [] }
     : await admin
         .from('team_memberships')
@@ -69,8 +71,8 @@ export default async function PurchasesPage() {
         .eq('team_role', 'lead')
         .eq('is_active', true);
 
-  const myTeamIds = isAdmin ? [] : (memberships || []).map((membership) => membership.team_id);
-  const { data: teamsData } = isAdmin
+  const myTeamIds = isPrivilegedViewer ? [] : (memberships || []).map((membership) => membership.team_id);
+  const { data: teamsData } = isPrivilegedViewer
     ? await admin.from('teams').select('id, name').order('name')
     : await admin.from('teams').select('id, name').in('id', myTeamIds).order('name');
   const teams = (teamsData || []) as Team[];
@@ -80,10 +82,10 @@ export default async function PurchasesPage() {
       <div className="hq-page">
         <section className="hq-page-head">
           <div className="hq-page-head-copy">
-            <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'Lead portal'}</p>
-            <h1 className="hq-page-title">{isAdmin ? 'Purchase log' : 'Log purchase'}</h1>
+            <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : 'Lead portal'}</p>
+            <h1 className="hq-page-title">{isPrivilegedViewer ? 'Purchase log' : 'Log purchase'}</h1>
             <p className="hq-subtitle">
-              {isAdmin ? 'Create a team before logging purchases.' : 'You need an active team before you can log purchases.'}
+              {isPrivilegedViewer ? 'Create a team before viewing purchases.' : 'You need an active team before you can log purchases.'}
             </p>
           </div>
         </section>
@@ -110,10 +112,12 @@ export default async function PurchasesPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'Lead portal'}</p>
-          <h1 className="hq-page-title">{isAdmin ? 'Purchase log' : 'Log purchase'}</h1>
+          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : 'Lead portal'}</p>
+          <h1 className="hq-page-title">{isPrivilegedViewer ? 'Purchase log' : 'Log purchase'}</h1>
           <p className="hq-subtitle">
-            Track spending as it happens and import historical purchases when you need to backfill data.
+            {isPresident
+              ? 'Review spending across teams with read-only access.'
+              : 'Track spending as it happens and import historical purchases when you need to backfill data.'}
           </p>
         </div>
       </section>
@@ -133,7 +137,7 @@ export default async function PurchasesPage() {
         </div>
       </section>
 
-      <div className="hq-purchases-layout">
+      {!isPresident ? <div className="hq-purchases-layout">
         <section className="hq-panel hq-surface-muted hq-purchase-panel">
           <div className="hq-block-head">
             <h3>New purchase</h3>
@@ -146,7 +150,7 @@ export default async function PurchasesPage() {
         <section className="hq-panel hq-surface-muted hq-purchase-panel">
           <PurchaseImport teams={teams} defaultTeamId={teams[0]?.id || ''} academicYear={academicYear} />
         </section>
-      </div>
+      </div> : null}
 
       <section className="hq-panel hq-surface-muted">
         <div className="hq-block-head">

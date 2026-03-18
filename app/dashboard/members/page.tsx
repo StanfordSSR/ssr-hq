@@ -8,7 +8,7 @@ import { LeadRosterWorkspace } from '@/components/lead-roster-workspace';
 type Profile = {
   id: string;
   full_name: string | null;
-  role: 'admin' | 'team_lead';
+  role: 'admin' | 'president' | 'team_lead';
   active: boolean;
 };
 
@@ -100,8 +100,9 @@ export default async function ManageMembersPage() {
   }
 
   const isAdmin = me.role === 'admin';
+  const isPresident = me.role === 'president';
 
-  if (isAdmin) {
+  if (isAdmin || isPresident) {
     const { data: profilesData } = await supabase
       .from('profiles')
       .select('id, full_name, role, active')
@@ -151,14 +152,18 @@ export default async function ManageMembersPage() {
       profileId: profile.id,
       name: profile.full_name || 'Unnamed user',
       email: emailMap.get(profile.id) || 'No email found',
-      role: profile.role === 'admin' ? 'Admin' : 'Lead',
+      role: profile.role === 'admin' ? 'Admin' : profile.role === 'president' ? 'President' : 'Lead',
       permissions:
-        profile.role === 'admin' ? 'Full portal access' : 'Lead workspace, purchases, tasks',
+        profile.role === 'admin'
+          ? 'Full portal access'
+          : profile.role === 'president'
+            ? 'Read-only club-wide access'
+            : 'Lead workspace, purchases, tasks',
       teams: (teamNamesByUser.get(profile.id) || []).join(', ') || 'None',
       accessLabel: loginMap.get(profile.id) ? 'Active' : 'Inactive',
       accessDetail: loginMap.get(profile.id) ? `Last login ${formatLastSeen(loginMap.get(profile.id)!)}` : 'Invite not accepted yet',
-      canDeletePortal: profile.role === 'team_lead',
-      sortGroup: profile.role === 'admin' ? 0 : 1,
+      canDeletePortal: isAdmin && profile.role === 'team_lead',
+      sortGroup: profile.role === 'admin' ? 0 : profile.role === 'president' ? 1 : 2,
       sortName: profile.full_name || '',
       sortJoined: 0
     }));
@@ -173,7 +178,7 @@ export default async function ManageMembersPage() {
       accessLabel: '',
       accessDetail: '',
       canDeletePortal: false,
-      sortGroup: 2,
+      sortGroup: 3,
       sortName: member.full_name,
       sortJoined: member.joined_year * 100 + member.joined_month
     }));
@@ -188,7 +193,7 @@ export default async function ManageMembersPage() {
       <div className="hq-page">
         <section className="hq-page-head">
           <div className="hq-page-head-copy">
-            <p className="hq-eyebrow">Admin</p>
+            <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'President'}</p>
             <h1 className="hq-page-title">Manage members</h1>
             <p className="hq-subtitle">
               View all admins and leads, plus each person&apos;s role and associated team assignments.
@@ -201,7 +206,7 @@ export default async function ManageMembersPage() {
             <AdminMemberDirectory rows={rows} />
           </section>
 
-          <aside className="hq-panel hq-admin-members-side hq-surface-muted">
+          {isAdmin ? <aside className="hq-panel hq-admin-members-side hq-surface-muted">
             <div className="hq-section-head">
               <div className="hq-section-head-copy">
                 <p className="hq-eyebrow">Invite</p>
@@ -252,7 +257,7 @@ export default async function ManageMembersPage() {
                 </button>
               </div>
             </form>
-          </aside>
+          </aside> : null}
         </div>
       </div>
     );

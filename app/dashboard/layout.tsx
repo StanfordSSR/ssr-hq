@@ -13,6 +13,17 @@ const adminNav = [
   { href: '/dashboard/settings', label: 'Club Settings' }
 ];
 
+const presidentNav = [
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard/teams', label: 'Teams' },
+  { href: '/dashboard/members', label: 'Users' },
+  { href: '/dashboard/finances', label: 'Finances' },
+  { href: '/dashboard/reports', label: 'Team Reports' },
+  { href: '/dashboard/tasks', label: 'Tasks' },
+  { href: '/dashboard/purchases', label: 'Purchases' },
+  { href: '/dashboard/expenses', label: 'Expense Log' }
+];
+
 const leadNav = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/members', label: 'Manage Members' },
@@ -44,7 +55,7 @@ export default async function DashboardLayout({
     redirect('/login');
   }
 
-  const nav = profile.role === 'admin' ? adminNav : leadNav;
+  const nav = profile.role === 'admin' ? adminNav : profile.role === 'president' ? presidentNav : leadNav;
 
   const initials =
     profile?.full_name

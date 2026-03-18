@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { formatAcademicYear } from '@/lib/academic-calendar';
 import {
+  assignPresidentRoleAction,
+  removePresidentRoleAction,
   updateReceiptNotificationSettingsAction,
   updateReportNotificationSettingsAction
 } from '@/app/dashboard/actions';
@@ -75,6 +77,14 @@ export default async function SettingsPage() {
     ? await admin.from('profiles').select('id, full_name').in('id', actorIds)
     : { data: [] };
   const actorNameMap = new Map((actorProfiles || []).map((profile) => [profile.id, profile.full_name || 'Unknown user']));
+  const { data: allProfilesData } = await admin
+    .from('profiles')
+    .select('id, full_name, role, active')
+    .eq('active', true)
+    .order('full_name');
+  const allProfiles = allProfilesData || [];
+  const presidents = allProfiles.filter((profile) => profile.role === 'president');
+  const presidentCandidates = allProfiles.filter((profile) => profile.role !== 'admin' && profile.role !== 'president');
 
   return (
     <div className="hq-page">
@@ -108,6 +118,73 @@ export default async function SettingsPage() {
               {receiptQueueCount} receipt, {reportQueueCount} report
             </span>
           </div>
+        </div>
+      </section>
+
+      <section className="hq-panel hq-surface-muted">
+        <div className="hq-section-head">
+          <div className="hq-section-head-copy">
+            <p className="hq-eyebrow">Leadership</p>
+            <h2 className="hq-section-title hq-section-title-compact">President access</h2>
+          </div>
+        </div>
+
+        <div className="hq-lead-grid">
+          <section className="hq-lead-block">
+            <div className="hq-block-head">
+              <h3>Current presidents</h3>
+            </div>
+
+            {presidents.length > 0 ? (
+              <div className="hq-summary-list">
+                {presidents.map((profile) => (
+                  <div key={profile.id} className="hq-summary-row">
+                    <span>Read-only portal access</span>
+                    <strong>{profile.full_name || 'Unnamed user'}</strong>
+                    <form action={removePresidentRoleAction}>
+                      <input type="hidden" name="profile_id" value={profile.id} />
+                      <button className="button-secondary" type="submit">
+                        Remove
+                      </button>
+                    </form>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-note">No presidents assigned yet.</p>
+            )}
+          </section>
+
+          <section className="hq-lead-block">
+            <div className="hq-block-head">
+              <h3>Assign president</h3>
+            </div>
+
+            <form action={assignPresidentRoleAction} className="form-stack">
+              <div className="field">
+                <label className="label" htmlFor="president-profile-id">
+                  Portal user
+                </label>
+                <select className="select" id="president-profile-id" name="profile_id" defaultValue="">
+                  <option value="" disabled>
+                    Select a portal user
+                  </option>
+                  {presidentCandidates.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.full_name || profile.id.slice(0, 8)} · {profile.role === 'team_lead' ? 'Lead' : profile.role}
+                    </option>
+                  ))}
+                </select>
+                <span className="helper">Presidents can view all portal pages but cannot edit anything.</span>
+              </div>
+
+              <div className="button-row">
+                <button className="button" type="submit">
+                  Assign president
+                </button>
+              </div>
+            </form>
+          </section>
         </div>
       </section>
 

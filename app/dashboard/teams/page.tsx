@@ -29,7 +29,7 @@ type Membership = {
 type Profile = {
   id: string;
   full_name: string | null;
-  role: 'admin' | 'team_lead';
+  role: 'admin' | 'president' | 'team_lead';
   active: boolean;
 };
 
@@ -51,9 +51,10 @@ export default async function ManageTeamsPage() {
     .eq('id', user.id)
     .single<Profile>();
 
-  if (!me || me.role !== 'admin' || !me.active) {
+  if (!me || (me.role !== 'admin' && me.role !== 'president') || !me.active) {
     redirect('/dashboard');
   }
+  const canEdit = me.role === 'admin';
 
   const { data: teamsData } = await supabase
     .from('teams')
@@ -124,18 +125,20 @@ export default async function ManageTeamsPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">Admin</p>
+          <p className="hq-eyebrow">{canEdit ? 'Admin' : 'President'}</p>
           <h1 className="hq-page-title">Manage teams</h1>
           <p className="hq-subtitle">
-            Create teams, assign leads, and manage the team structure of Stanford Student Robotics.
+            {canEdit
+              ? 'Create teams, assign leads, and manage the team structure of Stanford Student Robotics.'
+              : 'Review teams, lead assignments, and team structure across Stanford Student Robotics.'}
           </p>
         </div>
 
-        <div className="hq-page-head-action">
+        {canEdit ? <div className="hq-page-head-action">
           <a href="#add-team" className="button">
             Add team
           </a>
-        </div>
+        </div> : null}
       </section>
 
       <div className="hq-teams-layout">
@@ -191,12 +194,14 @@ export default async function ManageTeamsPage() {
                                 <span>{lead.email || 'No email found'}</span>
                               </div>
 
-                              <form action={removeLeadFromTeamAction}>
-                                <input type="hidden" name="membership_id" value={lead.membershipId} />
-                                <button className="button-ghost" type="submit">
-                                  Remove
-                                </button>
-                              </form>
+                              {canEdit ? (
+                                <form action={removeLeadFromTeamAction}>
+                                  <input type="hidden" name="membership_id" value={lead.membershipId} />
+                                  <button className="button-ghost" type="submit">
+                                    Remove
+                                  </button>
+                                </form>
+                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -205,7 +210,7 @@ export default async function ManageTeamsPage() {
                       )}
                     </section>
 
-                    <section className="hq-team-column hq-team-column-form">
+                    {canEdit ? <section className="hq-team-column hq-team-column-form">
                       <h4 className="hq-team-label">Assign existing lead</h4>
                       <form action={assignExistingLeadAction} className="hq-team-assign-form">
                         <input type="hidden" name="team_id" value={team.id} />
@@ -269,7 +274,7 @@ export default async function ManageTeamsPage() {
                           Save profile
                         </button>
                       </form>
-                    </section>
+                    </section> : null}
                   </div>
                 </article>
               );
@@ -284,7 +289,7 @@ export default async function ManageTeamsPage() {
           </div>
         </section>
 
-        <aside id="add-team" className="hq-panel hq-sticky-panel hq-teams-side-panel">
+        {canEdit ? <aside id="add-team" className="hq-panel hq-sticky-panel hq-teams-side-panel">
           <div className="hq-section-head">
             <div className="hq-section-head-copy">
               <p className="hq-eyebrow">Create</p>
@@ -440,7 +445,7 @@ export default async function ManageTeamsPage() {
               </button>
             </div>
           </form>
-        </aside>
+        </aside> : null}
       </div>
     </div>
   );

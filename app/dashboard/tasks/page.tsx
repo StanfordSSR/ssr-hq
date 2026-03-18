@@ -59,6 +59,8 @@ export default async function TasksPage() {
   }
 
   const isAdmin = me.role === 'admin';
+  const isPresident = me.role === 'president';
+  const isPrivilegedViewer = isAdmin || isPresident;
   const reportState = getNextReportState(new Date());
 
   const { data: teamsData } = await admin.from('teams').select('id, name').order('name');
@@ -85,7 +87,7 @@ export default async function TasksPage() {
   let selectableTeams = teams;
   let pendingReceipts: ReceiptPurchase[] = [];
 
-  if (!isAdmin) {
+  if (!isPrivilegedViewer) {
     const { data: myMemberships } = await admin
       .from('team_memberships')
       .select('team_id')
@@ -119,20 +121,22 @@ export default async function TasksPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'Lead portal'}</p>
+          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : 'Lead portal'}</p>
           <h1 className="hq-page-title">{isAdmin ? 'Assign tasks' : 'Tasks'}</h1>
           <p className="hq-subtitle">
             {isAdmin
               ? 'Create work items for one team, several teams, or the entire club.'
+              : isPresident
+                ? 'Review active tasks assigned across the club.'
               : 'See active tasks assigned to your team and the current reporting window.'}
           </p>
         </div>
       </section>
 
-      <div className={isAdmin ? 'hq-lead-grid' : 'hq-task-layout'}>
+      <div className={isPrivilegedViewer ? 'hq-lead-grid' : 'hq-task-layout'}>
         <section className="hq-panel hq-lead-block">
           <div className="hq-block-head">
-            <h3>{isAdmin ? 'Create task' : 'Reporting window'}</h3>
+            <h3>{isAdmin ? 'Create task' : isPresident ? 'Task overview' : 'Reporting window'}</h3>
           </div>
 
           {isAdmin ? (
@@ -190,6 +194,11 @@ export default async function TasksPage() {
                 </button>
               </div>
             </form>
+          ) : isPresident ? (
+            <div className="hq-report-card">
+              <strong>Read-only access</strong>
+              <span>Presidents can view all assigned tasks but cannot create or remove them.</span>
+            </div>
           ) : (
             <div className="hq-report-card">
               <strong>{reportState.targetQuarter}</strong>
@@ -212,10 +221,10 @@ export default async function TasksPage() {
 
         <section className="hq-panel hq-lead-block">
           <div className="hq-block-head">
-            <h3>{isAdmin ? 'Assigned tasks' : 'Team tasks'}</h3>
+            <h3>{isPrivilegedViewer ? 'Assigned tasks' : 'Team tasks'}</h3>
           </div>
 
-          {isAdmin ? (
+          {isPrivilegedViewer ? (
             visibleTasks.length > 0 ? (
               <div className="hq-summary-list">
                 {visibleTasks.map((task) => {
@@ -229,14 +238,16 @@ export default async function TasksPage() {
                       <span>{teamNames.join(', ')}</span>
                       <strong>{task.title}</strong>
                       <strong>{task.details || 'No extra details yet.'}</strong>
-                      <div className="hq-inline-editor-actions">
-                        <form action={deleteTaskAction}>
-                          <input type="hidden" name="task_id" value={task.id} />
-                          <button className="button-secondary" type="submit">
-                            Delete task
-                          </button>
-                        </form>
-                      </div>
+                      {isAdmin ? (
+                        <div className="hq-inline-editor-actions">
+                          <form action={deleteTaskAction}>
+                            <input type="hidden" name="task_id" value={task.id} />
+                            <button className="button-secondary" type="submit">
+                              Delete task
+                            </button>
+                          </form>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

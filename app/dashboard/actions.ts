@@ -1472,3 +1472,95 @@ export async function deletePortalLeadAction(formData: FormData) {
   revalidatePath('/dashboard/tasks');
   revalidatePath('/dashboard/reports');
 }
+
+export async function assignPresidentRoleAction(formData: FormData) {
+  const { user } = await requireAdmin();
+
+  const profileId = String(formData.get('profile_id') || '').trim();
+  if (!profileId) {
+    throw new Error('Select a user to assign.');
+  }
+
+  const admin = createAdminClient();
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id, full_name, role, active')
+    .eq('id', profileId)
+    .maybeSingle();
+
+  if (!profile || !profile.active) {
+    throw new Error('Selected user was not found.');
+  }
+
+  if (profile.role === 'admin') {
+    throw new Error('Admins cannot be reassigned as presidents here.');
+  }
+
+  const { error } = await admin
+    .from('profiles')
+    .update({ role: 'president' })
+    .eq('id', profileId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'role.assigned',
+    targetType: 'profile',
+    targetId: profileId,
+    summary: `Assigned President role to ${profile.full_name || 'user'}.`,
+    details: {
+      role: 'president'
+    }
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/settings');
+  revalidatePath('/dashboard/members');
+}
+
+export async function removePresidentRoleAction(formData: FormData) {
+  const { user } = await requireAdmin();
+
+  const profileId = String(formData.get('profile_id') || '').trim();
+  if (!profileId) {
+    throw new Error('Missing president id.');
+  }
+
+  const admin = createAdminClient();
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id, full_name, role')
+    .eq('id', profileId)
+    .maybeSingle();
+
+  if (!profile || profile.role !== 'president') {
+    throw new Error('President not found.');
+  }
+
+  const { error } = await admin
+    .from('profiles')
+    .update({ role: 'team_lead' })
+    .eq('id', profileId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'role.removed',
+    targetType: 'profile',
+    targetId: profileId,
+    summary: `Removed President role from ${profile.full_name || 'user'}.`,
+    details: {
+      role: 'president'
+    }
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/settings');
+  revalidatePath('/dashboard/members');
+}

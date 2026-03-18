@@ -102,7 +102,9 @@ export default async function ExpenseLogPage({
   }
 
   const isAdmin = me.role === 'admin';
-  const { data: memberships } = isAdmin
+  const isPresident = me.role === 'president';
+  const isPrivilegedViewer = isAdmin || isPresident;
+  const { data: memberships } = isPrivilegedViewer
     ? { data: [] }
     : await admin
         .from('team_memberships')
@@ -111,8 +113,8 @@ export default async function ExpenseLogPage({
         .eq('team_role', 'lead')
         .eq('is_active', true);
 
-  const myTeamIds = isAdmin ? [] : (memberships || []).map((membership) => membership.team_id);
-  const { data: teamsData } = isAdmin
+  const myTeamIds = isPrivilegedViewer ? [] : (memberships || []).map((membership) => membership.team_id);
+  const { data: teamsData } = isPrivilegedViewer
     ? await admin.from('teams').select('id, name').order('name')
     : await admin.from('teams').select('id, name').in('id', myTeamIds).order('name');
   const teams = (teamsData || []) as Team[];
@@ -266,10 +268,12 @@ export default async function ExpenseLogPage({
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'Lead portal'}</p>
+          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : 'Lead portal'}</p>
           <h1 className="hq-page-title">Expense log</h1>
           <p className="hq-subtitle">
-            Review every recorded purchase, keep receipts current, and track how spending is distributed.
+            {isPresident
+              ? 'Review every recorded purchase, receipt status, and spending distribution with read-only access.'
+              : 'Review every recorded purchase, keep receipts current, and track how spending is distributed.'}
           </p>
         </div>
       </section>
@@ -389,7 +393,7 @@ export default async function ExpenseLogPage({
             </div>
           </form>
 
-          {!isAdmin && selectedTeamId !== 'all' ? (
+          {!isPrivilegedViewer && selectedTeamId !== 'all' ? (
             <div className="hq-danger-zone">
               <div className="hq-block-head">
                 <h3>Danger zone</h3>
@@ -404,7 +408,7 @@ export default async function ExpenseLogPage({
         </aside>
       </section>
 
-      {pendingReceiptPurchases.length > 0 ? (
+      {!isPresident && pendingReceiptPurchases.length > 0 ? (
         <section className="hq-panel hq-surface-muted hq-pending-section">
           <div className="hq-block-head">
             <h3>Pending receipt uploads</h3>
@@ -445,7 +449,7 @@ export default async function ExpenseLogPage({
                       : 'Upload the receipt as soon as possible so your expense log stays complete.'}
                   </p>
 
-                  <ReceiptUploadForm purchaseId={purchase.id} compact />
+                  {!isPresident ? <ReceiptUploadForm purchaseId={purchase.id} compact /> : null}
                 </article>
               );
             })}
@@ -484,7 +488,11 @@ export default async function ExpenseLogPage({
                     <td>{purchase.person_name || 'Unknown'}</td>
                     <td>{paymentMethodLabel[purchase.payment_method]}</td>
                     <td>
-                      <PurchaseCategoryForm purchaseId={purchase.id} category={purchase.category} />
+                      {!isPresident ? (
+                        <PurchaseCategoryForm purchaseId={purchase.id} category={purchase.category} />
+                      ) : (
+                        categoryLabel[purchase.category]
+                      )}
                     </td>
                     <td>
                       {purchase.receipt_path && receiptLinks.get(purchase.receipt_path) ? (

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 
-export type AppRole = 'admin' | 'team_lead';
+export type AppRole = 'admin' | 'president' | 'team_lead';
 
 export type Profile = {
   id: string;
@@ -52,6 +52,22 @@ export async function requireAdmin() {
     .single<Profile>();
 
   if (!profile || profile.role !== 'admin' || !profile.active) {
+    redirect('/dashboard');
+  }
+
+  return { supabase, user, profile };
+}
+
+export async function requireAdminOrPresident() {
+  const { supabase, user } = await requireSignedInUser();
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, full_name, role, active, created_at')
+    .eq('id', user.id)
+    .single<Profile>();
+
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'president') || !profile.active) {
     redirect('/dashboard');
   }
 
