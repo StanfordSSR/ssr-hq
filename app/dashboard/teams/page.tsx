@@ -56,14 +56,14 @@ export default async function ManageTeamsPage() {
   }
   const canEdit = me.role === 'admin';
 
-  const { data: teamsData } = await supabase
+  const { data: teamsData } = await admin
     .from('teams')
     .select('id, name, slug, description, logo_url, is_active')
     .order('name');
 
   const teams = (teamsData || []) as Team[];
 
-  const { data: membershipsData } = await supabase
+  const { data: membershipsData } = await admin
     .from('team_memberships')
     .select('id, team_id, user_id, team_role, is_active')
     .eq('is_active', true)
@@ -71,7 +71,7 @@ export default async function ManageTeamsPage() {
 
   const memberships = (membershipsData || []) as Membership[];
 
-  const { data: profilesData } = await supabase
+  const { data: profilesData } = await admin
     .from('profiles')
     .select('id, full_name, role, active')
     .order('full_name');
