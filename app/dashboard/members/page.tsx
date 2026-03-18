@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { addTeamRosterMemberAction, invitePortalMemberAction } from '@/app/dashboard/actions';
+import { invitePortalMemberAction } from '@/app/dashboard/actions';
+import { LeadRosterWorkspace } from '@/components/lead-roster-workspace';
 
 type Profile = {
   id: string;
@@ -333,82 +334,12 @@ export default async function ManageMembersPage() {
           </div>
         </aside>
 
-        <section className="hq-panel hq-lead-main hq-surface-muted">
-          <div className="hq-lead-grid">
-            <section className="hq-lead-block">
-              <div className="hq-block-head">
-                <h3>Add member</h3>
-              </div>
-
-              <form action={addTeamRosterMemberAction} className="form-stack">
-                <input type="hidden" name="team_id" value={primaryTeamId} />
-                <div className="field">
-                  <label className="label" htmlFor="member-full-name">
-                    Full name
-                  </label>
-                  <input className="input" id="member-full-name" name="full_name" required />
-                </div>
-
-                <div className="field">
-                  <label className="label" htmlFor="member-email">
-                    Stanford email
-                  </label>
-                  <input className="input" id="member-email" name="stanford_email" type="email" placeholder="sunet@stanford.edu" required />
-                </div>
-
-                <div className="hq-inline-grid">
-                  <div className="field">
-                    <label className="label" htmlFor="joined-month">
-                      Joined month
-                    </label>
-                    <select className="select" id="joined-month" name="joined_month" defaultValue={String(new Date().getMonth() + 1)}>
-                      {monthOptions.map((month, index) => (
-                        <option key={month} value={index + 1}>
-                          {month}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="field">
-                    <label className="label" htmlFor="joined-year">
-                      Joined year
-                    </label>
-                    <input className="input" id="joined-year" name="joined_year" type="number" min="2000" max="2100" defaultValue={new Date().getFullYear()} required />
-                  </div>
-                </div>
-
-                <div className="button-row">
-                  <button className="button" type="submit">
-                    Add member
-                  </button>
-                </div>
-              </form>
-            </section>
-
-            <section className="hq-lead-block">
-              <div className="hq-block-head">
-                <h3>Recorded members</h3>
-              </div>
-
-              {rosterMembers.length > 0 ? (
-                <div className="hq-summary-list">
-                  {rosterMembers.map((member) => (
-                    <div key={member.id} className="hq-summary-row">
-                      <span>
-                        {monthOptions[member.joined_month - 1]} {member.joined_year}
-                      </span>
-                      <strong>{member.full_name}</strong>
-                      <strong>{member.stanford_email}</strong>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty-note">No recorded members yet.</p>
-              )}
-            </section>
-          </div>
-        </section>
+        <LeadRosterWorkspace
+          teamId={primaryTeamId}
+          rosterMembers={rosterMembers}
+          leadCount={leadMemberships.length}
+          monthOptions={monthOptions}
+        />
       </div>
     </div>
   );

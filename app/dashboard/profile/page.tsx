@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
+import { updateOwnDisplayNameAction } from '@/app/dashboard/actions';
 
 export default async function PersonalProfilePage() {
   const supabase = await createClient();
@@ -44,6 +45,38 @@ export default async function PersonalProfilePage() {
             <span>{profile?.active ? 'Active' : 'Inactive'}</span>
           </div>
         </div>
+      </section>
+
+      <section className="hq-panel hq-surface-muted">
+        <div className="hq-section-head">
+          <div className="hq-section-head-copy">
+            <p className="hq-eyebrow">Profile</p>
+            <h2 className="hq-section-title hq-section-title-compact">Edit your name</h2>
+          </div>
+        </div>
+
+        <form action={updateOwnDisplayNameAction} className="form-stack">
+          <div className="field">
+            <label className="label" htmlFor="profile-full-name">
+              Full name
+            </label>
+            <input
+              className="input"
+              id="profile-full-name"
+              name="full_name"
+              defaultValue={profile?.full_name || ''}
+              maxLength={120}
+              required
+            />
+            <span className="helper">This updates how your name appears across the portal.</span>
+          </div>
+
+          <div className="button-row">
+            <button className="button" type="submit">
+              Save name
+            </button>
+          </div>
+        </form>
       </section>
     </div>
   );

@@ -1239,3 +1239,143 @@ export async function addTeamRosterMemberAction(formData: FormData) {
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/members');
 }
+
+export async function updateTeamRosterMemberAction(formData: FormData) {
+  const memberId = String(formData.get('member_id') || '').trim();
+  const fullName = String(formData.get('full_name') || '').trim();
+  const stanfordEmail = String(formData.get('stanford_email') || '').trim().toLowerCase();
+
+  if (!memberId || !fullName || !stanfordEmail) {
+    throw new Error('Member id, full name, and Stanford email are required.');
+  }
+
+  if (!stanfordEmail.endsWith('@stanford.edu')) {
+    throw new Error('Member email must be a Stanford email.');
+  }
+
+  const admin = createAdminClient();
+  const { data: rosterMember } = await admin
+    .from('team_roster_members')
+    .select('id, team_id')
+    .eq('id', memberId)
+    .maybeSingle();
+
+  if (!rosterMember) {
+    throw new Error('Recorded member not found.');
+  }
+
+  const { user } = await requireLeadTeam(rosterMember.team_id);
+  const { error } = await admin
+    .from('team_roster_members')
+    .update({
+      full_name: fullName,
+      stanford_email: stanfordEmail
+    })
+    .eq('id', memberId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.record.updated',
+    targetType: 'team_roster_member',
+    targetId: memberId,
+    summary: `Updated recorded member ${fullName}.`,
+    details: {
+      teamId: rosterMember.team_id,
+      fullName,
+      stanfordEmail
+    }
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/members');
+}
+
+export async function deleteTeamRosterMemberAction(formData: FormData) {
+  const memberId = String(formData.get('member_id') || '').trim();
+  const confirmationName = String(formData.get('confirmation_name') || '').trim();
+
+  if (!memberId) {
+    throw new Error('Missing member id.');
+  }
+
+  const admin = createAdminClient();
+  const { data: rosterMember } = await admin
+    .from('team_roster_members')
+    .select('id, team_id, full_name')
+    .eq('id', memberId)
+    .maybeSingle();
+
+  if (!rosterMember) {
+    throw new Error('Recorded member not found.');
+  }
+
+  if (confirmationName !== rosterMember.full_name) {
+    throw new Error('Confirmation name did not match.');
+  }
+
+  const { user } = await requireLeadTeam(rosterMember.team_id);
+  const { error } = await admin.from('team_roster_members').delete().eq('id', memberId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.record.deleted',
+    targetType: 'team_roster_member',
+    targetId: memberId,
+    summary: `Deleted recorded member ${rosterMember.full_name}.`,
+    details: {
+      teamId: rosterMember.team_id,
+      fullName: rosterMember.full_name
+    }
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/members');
+}
+
+export async function updateOwnDisplayNameAction(formData: FormData) {
+  const fullName = String(formData.get('full_name') || '').trim();
+
+  if (!fullName) {
+    throw new Error('Name is required.');
+  }
+
+  if (fullName.length > 120) {
+    throw new Error('Name must be 120 characters or fewer.');
+  }
+
+  const { user } = await requireSignedInUser();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('profiles')
+    .update({
+      full_name: fullName
+    })
+    .eq('id', user.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'profile.updated',
+    targetType: 'profile',
+    targetId: user.id,
+    summary: 'Updated personal display name.',
+    details: {
+      fullName
+    }
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/profile');
+  revalidatePath('/dashboard/members');
+}
