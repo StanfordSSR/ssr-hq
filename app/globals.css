@@ -312,6 +312,14 @@ button {
   color: var(--cardinal-dark);
 }
 
+.hq-inline-link-danger {
+  color: #8a2e2e;
+}
+
+.hq-inline-link-danger:hover {
+  color: #6f1010;
+}
+
 .layout {
   padding: 28px 0 56px;
   display: grid;
@@ -1815,6 +1823,22 @@ tr:last-child td {
   text-transform: uppercase;
 }
 
+.hq-member-static-note {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.hq-admin-delete-form {
+  padding: 12px 0 4px;
+}
+
+.hq-admin-delete-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
 .hq-pending-section {
   margin-bottom: 20px;
 }
@@ -2017,7 +2041,8 @@ tr:last-child td {
 
   .hq-receipt-upload,
   .hq-category-form,
-  .hq-pagination {
+  .hq-pagination,
+  .hq-admin-delete-grid {
     grid-template-columns: 1fr;
     display: grid;
   }

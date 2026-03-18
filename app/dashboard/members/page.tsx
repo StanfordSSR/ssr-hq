@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { invitePortalMemberAction } from '@/app/dashboard/actions';
+import { AdminMemberDirectory } from '@/components/admin-member-directory';
 import { LeadRosterWorkspace } from '@/components/lead-roster-workspace';
 
 type Profile = {
@@ -36,6 +37,7 @@ type RosterMember = {
 
 type AdminMemberRow = {
   id: string;
+  profileId?: string;
   name: string;
   email: string;
   role: string;
@@ -130,12 +132,14 @@ export default async function ManageMembersPage() {
 
     const adminRows: AdminMemberRow[] = profiles.map((profile) => ({
       id: `profile-${profile.id}`,
+      profileId: profile.id,
       name: profile.full_name || 'Unnamed user',
       email: emailMap.get(profile.id) || 'No email found',
       role: profile.role === 'admin' ? 'Admin' : 'Lead',
       permissions:
         profile.role === 'admin' ? 'Full portal access' : 'Lead workspace, purchases, tasks',
       teams: (teamNamesByUser.get(profile.id) || []).join(', ') || 'None',
+      canDeletePortal: profile.role === 'team_lead',
       sortGroup: profile.role === 'admin' ? 0 : 1,
       sortName: profile.full_name || '',
       sortJoined: 0
@@ -148,6 +152,7 @@ export default async function ManageMembersPage() {
       role: 'Recorded member',
       permissions: 'Record only',
       teams: teamMap.get(member.team_id) || 'Unknown team',
+      canDeletePortal: false,
       sortGroup: 2,
       sortName: member.full_name,
       sortJoined: member.joined_year * 100 + member.joined_month
@@ -173,32 +178,7 @@ export default async function ManageMembersPage() {
 
         <div className="hq-admin-members-layout">
           <section className="hq-panel hq-admin-members-main hq-surface-muted">
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Perms</th>
-                    <th>Team</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => {
-                    return (
-                      <tr key={row.id}>
-                        <td style={{ fontWeight: 700 }}>{row.name}</td>
-                        <td>{row.email}</td>
-                        <td>{row.role}</td>
-                        <td>{row.permissions}</td>
-                        <td>{row.teams}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <AdminMemberDirectory rows={rows} />
           </section>
 
           <aside className="hq-panel hq-admin-members-side hq-surface-muted">

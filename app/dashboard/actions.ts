@@ -1379,3 +1379,68 @@ export async function updateOwnDisplayNameAction(formData: FormData) {
   revalidatePath('/dashboard/profile');
   revalidatePath('/dashboard/members');
 }
+
+export async function deletePortalLeadAction(formData: FormData) {
+  const { user } = await requireAdmin();
+
+  const leadId = String(formData.get('lead_id') || '').trim();
+  const confirmationPhrase = String(formData.get('confirmation_phrase') || '').trim();
+  const confirmationName = String(formData.get('confirmation_name') || '').trim();
+
+  if (!leadId) {
+    throw new Error('Missing lead id.');
+  }
+
+  if (leadId === user.id) {
+    throw new Error('You cannot delete your own admin account from here.');
+  }
+
+  const admin = createAdminClient();
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id, full_name, role')
+    .eq('id', leadId)
+    .maybeSingle();
+
+  if (!profile) {
+    throw new Error('Portal user not found.');
+  }
+
+  if (profile.role !== 'team_lead') {
+    throw new Error('Only team leads can be removed from the portal here.');
+  }
+
+  const expectedName = profile.full_name || '';
+  if (confirmationPhrase !== 'DELETE') {
+    throw new Error('First confirmation must be DELETE.');
+  }
+
+  if (confirmationName !== expectedName) {
+    throw new Error('Second confirmation must match the lead name exactly.');
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.portal_deleted',
+    targetType: 'profile',
+    targetId: leadId,
+    summary: `Deleted portal access for ${expectedName || 'team lead'}.`,
+    details: {
+      leadId,
+      fullName: expectedName
+    }
+  });
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(leadId);
+
+  if (deleteError) {
+    throw new Error(deleteError.message);
+  }
+
+  await syncNotificationQueue();
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/members');
+  revalidatePath('/dashboard/teams');
+  revalidatePath('/dashboard/tasks');
+  revalidatePath('/dashboard/reports');
+}
