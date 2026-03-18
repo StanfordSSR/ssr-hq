@@ -312,6 +312,15 @@ button {
   color: var(--cardinal-dark);
 }
 
+.hq-inline-link-accent {
+  color: #1f5fbf;
+  font-weight: 700;
+}
+
+.hq-inline-link-accent:hover {
+  color: #154690;
+}
+
 .hq-inline-link-danger {
   color: #8a2e2e;
 }
@@ -1850,6 +1859,32 @@ tr:last-child td {
 
 .hq-member-access-off {
   color: #8a5f1f;
+}
+
+.hq-report-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.hq-report-list-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.hq-report-list-copy span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hq-report-list-copy strong {
+  font-size: 0.97rem;
+  line-height: 1.55;
 }
 
 .hq-admin-delete-form {

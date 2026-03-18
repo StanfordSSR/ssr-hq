@@ -123,6 +123,73 @@ export default async function ReportsPage({
       }
     }
 
+    if (selectedReport) {
+      return (
+        <div className="hq-page">
+          <section className="hq-page-head">
+            <div className="hq-page-head-copy">
+              <p className="hq-eyebrow">Admin</p>
+              <h1 className="hq-page-title">Report detail</h1>
+              <p className="hq-subtitle">
+                {teamNameMap.get(selectedReport.team_id) || 'Unknown team'} · {selectedReport.quarter} · {selectedReport.academic_year}
+              </p>
+            </div>
+
+            <div className="hq-page-head-action">
+              <Link href="/dashboard/reports" className="button-secondary">
+                ← Back to reports
+              </Link>
+            </div>
+          </section>
+
+          <section className="hq-panel hq-surface-muted">
+            <div className="hq-summary-list">
+              <div className="hq-summary-row">
+                <span>Team</span>
+                <strong>{teamNameMap.get(selectedReport.team_id) || 'Unknown team'}</strong>
+              </div>
+              <div className="hq-summary-row">
+                <span>Quarter</span>
+                <strong>
+                  {selectedReport.quarter} · {selectedReport.academic_year}
+                </strong>
+              </div>
+              <div className="hq-summary-row">
+                <span>Status</span>
+                <strong>{selectedReport.status}</strong>
+              </div>
+              <div className="hq-summary-row">
+                <span>Submitted</span>
+                <strong>
+                  {selectedReport.submitted_at ? formatDateLabel(new Date(selectedReport.submitted_at)) : 'Draft only'}
+                </strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="hq-panel hq-surface-muted">
+            <div className="hq-question-stack">
+              {answers
+                .sort((a, b) => (questionMap.get(a.question_id)?.sort_order || 0) - (questionMap.get(b.question_id)?.sort_order || 0))
+                .map((answer) => {
+                  const question = questionMap.get(answer.question_id);
+                  if (!question) {
+                    return null;
+                  }
+
+                  return (
+                    <div key={answer.question_id} className="hq-question-card">
+                      <h3>{question.prompt}</h3>
+                      <p>{answer.answer || 'No answer provided.'}</p>
+                    </div>
+                  );
+                })}
+            </div>
+          </section>
+        </div>
+      );
+    }
+
     return (
       <div className="hq-page">
         <section className="hq-page-head">
@@ -133,23 +200,19 @@ export default async function ReportsPage({
           </div>
         </section>
 
-        <div className="hq-two-col">
-          <section className="hq-panel hq-surface-muted">
-            <div className="hq-block-head">
-              <h3>This quarter</h3>
-              <span className="hq-inline-note">
-                {currentKey.quarter}, {currentKey.academicYear}
-              </span>
-            </div>
+        <section className="hq-panel hq-surface-muted">
+          <div className="hq-block-head">
+            <h3>This quarter</h3>
+            <span className="hq-inline-note">
+              {currentKey.quarter}, {currentKey.academicYear}
+            </span>
+          </div>
 
-            <div className="hq-summary-list">
-              {currentReports.length > 0 ? (
-                currentReports.map((report) => (
-                  <Link
-                    key={report.id}
-                    href={`/dashboard/reports?report_id=${report.id}`}
-                    className="hq-summary-row"
-                  >
+          <div className="hq-summary-list">
+            {currentReports.length > 0 ? (
+              currentReports.map((report) => (
+                <div key={report.id} className="hq-report-list-row">
+                  <div className="hq-report-list-copy">
                     <span>{teamNameMap.get(report.team_id) || 'Unknown team'}</span>
                     <strong>{report.status === 'submitted' ? 'Submitted' : 'Draft saved'}</strong>
                     <strong>
@@ -157,83 +220,46 @@ export default async function ReportsPage({
                         ? formatDateLabel(new Date(report.submitted_at))
                         : formatDateLabel(new Date(report.updated_at))}
                     </strong>
+                  </div>
+
+                  <Link href={`/dashboard/reports?report_id=${report.id}`} className="hq-inline-link hq-inline-link-accent">
+                    View →
                   </Link>
-                ))
-              ) : (
-                <p className="empty-note">No reports yet for the current quarter.</p>
-              )}
-            </div>
+                </div>
+              ))
+            ) : (
+              <p className="empty-note">No reports yet for the current quarter.</p>
+            )}
+          </div>
+        </section>
 
-            <div className="hq-block-head" style={{ marginTop: '24px' }}>
-              <h3>Past reports</h3>
-            </div>
+        <section className="hq-panel hq-surface-muted">
+          <div className="hq-block-head">
+            <h3>Past reports</h3>
+          </div>
 
-            <div className="hq-summary-list">
-              {historyReports.length > 0 ? (
-                historyReports.map((report) => (
-                  <Link
-                    key={report.id}
-                    href={`/dashboard/reports?report_id=${report.id}`}
-                    className="hq-summary-row"
-                  >
+          <div className="hq-summary-list">
+            {historyReports.length > 0 ? (
+              historyReports.map((report) => (
+                <div key={report.id} className="hq-report-list-row">
+                  <div className="hq-report-list-copy">
                     <span>
                       {teamNameMap.get(report.team_id) || 'Unknown team'} · {report.quarter}
                     </span>
                     <strong>{report.academic_year}</strong>
                     <strong>{report.submitted_at ? formatDateLabel(new Date(report.submitted_at)) : 'Draft only'}</strong>
+                  </div>
+
+                  <Link href={`/dashboard/reports?report_id=${report.id}`} className="hq-inline-link hq-inline-link-accent">
+                    View →
                   </Link>
-                ))
-              ) : (
-                <p className="empty-note">No past reports yet.</p>
-              )}
-            </div>
-          </section>
-
-          <aside className="hq-panel hq-surface-muted">
-            <div className="hq-block-head">
-              <h3>Report detail</h3>
-            </div>
-
-            {selectedReport ? (
-              <div className="hq-question-stack">
-                <div className="hq-summary-list">
-                  <div className="hq-summary-row">
-                    <span>Team</span>
-                    <strong>{teamNameMap.get(selectedReport.team_id) || 'Unknown team'}</strong>
-                  </div>
-                  <div className="hq-summary-row">
-                    <span>Quarter</span>
-                    <strong>
-                      {selectedReport.quarter} · {selectedReport.academic_year}
-                    </strong>
-                  </div>
-                  <div className="hq-summary-row">
-                    <span>Status</span>
-                    <strong>{selectedReport.status}</strong>
-                  </div>
                 </div>
-
-                {answers
-                  .sort((a, b) => (questionMap.get(a.question_id)?.sort_order || 0) - (questionMap.get(b.question_id)?.sort_order || 0))
-                  .map((answer) => {
-                    const question = questionMap.get(answer.question_id);
-                    if (!question) {
-                      return null;
-                    }
-
-                    return (
-                      <div key={answer.question_id} className="hq-question-card">
-                        <h3>{question.prompt}</h3>
-                        <p>{answer.answer || 'No answer provided.'}</p>
-                      </div>
-                    );
-                  })}
-              </div>
+              ))
             ) : (
-              <p className="empty-note">Pick a report to inspect its answers.</p>
+              <p className="empty-note">No past reports yet.</p>
             )}
-          </aside>
-        </div>
+          </div>
+        </section>
       </div>
     );
   }
