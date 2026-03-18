@@ -26,9 +26,19 @@ type ClubBudget = {
 type PurchaseLog = {
   team_id: string;
   amount_cents: number;
+  purchased_at: string;
 };
 
-export default async function FinancesPage() {
+function readSingle(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] || '' : value || '';
+}
+
+export default async function FinancesPage({
+  searchParams
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = (await searchParams) || {};
   const supabase = await createClient();
   const admin = createAdminClient();
   const {
@@ -51,6 +61,8 @@ export default async function FinancesPage() {
   const canEdit = me.role === 'admin';
 
   const cycle = formatAcademicYear(new Date());
+  const selectedTeamId = readSingle(params.team) || 'all';
+  const selectedRange = readSingle(params.range) || 'current_cycle';
   const { data: teamsData } = await admin.from('teams').select('id, name, logo_url').order('name');
   const { data: teamBudgetsData } = await admin
     .from('team_budgets')
@@ -63,10 +75,10 @@ export default async function FinancesPage() {
     .maybeSingle();
   const { data: purchasesData } = await admin
     .from('purchase_logs')
-    .select('team_id, amount_cents')
-    .eq('academic_year', cycle);
+    .select('team_id, amount_cents, purchased_at, academic_year');
 
   const teams = (teamsData || []) as Team[];
+  const validSelectedTeamId = selectedTeamId === 'all' || teams.some((team) => team.id === selectedTeamId) ? selectedTeamId : 'all';
   const teamBudgets = new Map(
     ((teamBudgetsData || []) as TeamBudget[]).map((entry) => [entry.team_id, entry.annual_budget_cents])
   );
@@ -81,10 +93,51 @@ export default async function FinancesPage() {
   for (const purchase of purchases) {
     spentByTeam.set(purchase.team_id, (spentByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
   }
+  const filteredPurchases = purchases.filter((purchase) => {
+    if (validSelectedTeamId !== 'all' && purchase.team_id !== validSelectedTeamId) {
+      return false;
+    }
+
+    if (selectedRange === 'all_time') {
+      return true;
+    }
+
+    if (selectedRange === 'last_90_days') {
+      return new Date(purchase.purchased_at).getTime() >= Date.now() - 90 * 24 * 60 * 60 * 1000;
+    }
+
+    return formatAcademicYear(new Date(purchase.purchased_at)) === cycle;
+  });
+  const filteredSpendTotal = filteredPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
+  const filteredPurchaseCount = filteredPurchases.length;
+  const filteredAverageSpend = filteredPurchaseCount > 0 ? Math.round(filteredSpendTotal / filteredPurchaseCount) : 0;
+  const filteredSpentTeams = new Set(filteredPurchases.map((purchase) => purchase.team_id)).size;
+  const filteredAllocatedBudget =
+    validSelectedTeamId === 'all'
+      ? allocatedTotal
+      : teamBudgets.get(validSelectedTeamId) || 0;
+  const filteredRemainingAllocated = Math.max(0, filteredAllocatedBudget - filteredSpendTotal);
+  const filteredTotalBudget =
+    validSelectedTeamId === 'all'
+      ? clubBudget.total_budget_cents
+      : teamBudgets.get(validSelectedTeamId) || 0;
+  const filteredRemainingTotal = Math.max(0, filteredTotalBudget - filteredSpendTotal);
+  const utilizationPercent =
+    filteredAllocatedBudget > 0 ? Math.min(100, Math.round((filteredSpendTotal / filteredAllocatedBudget) * 100)) : 0;
+
+  const chartEntries = teams
+    .map((team, index) => ({
+      id: team.id,
+      name: team.name,
+      amount: teamBudgets.get(team.id) || 0,
+      color: chartColors[index % chartColors.length]
+    }))
+    .filter((team) => team.amount > 0);
+
   let cursor = 0;
-  const slices = teams
-    .map((team, index) => {
-      const amount = teamBudgets.get(team.id) || 0;
+  const slices = chartEntries
+    .map((team) => {
+      const amount = team.amount;
       if (clubBudget.total_budget_cents <= 0 || amount <= 0) {
         return null;
       }
@@ -92,7 +145,7 @@ export default async function FinancesPage() {
       const start = cursor;
       const end = cursor + (amount / clubBudget.total_budget_cents) * 100;
       cursor = end;
-      return `${chartColors[index % chartColors.length]} ${start}% ${end}%`;
+      return `${team.color} ${start}% ${end}%`;
     })
     .filter(Boolean);
 
@@ -123,13 +176,52 @@ export default async function FinancesPage() {
               <p className="hq-eyebrow">Club financial overview</p>
               <h2 className="hq-section-title hq-section-title-compact">{cycle}</h2>
             </div>
+            <form className="hq-finance-filter-bar" method="get">
+              <select className="select" name="team" defaultValue={validSelectedTeamId}>
+                <option value="all">All teams</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
+              <select className="select" name="range" defaultValue={selectedRange}>
+                <option value="current_cycle">Current cycle</option>
+                <option value="last_90_days">Last 90 days</option>
+                <option value="all_time">All time</option>
+              </select>
+              <button className="button-secondary" type="submit">
+                Apply
+              </button>
+            </form>
           </div>
 
-          <div className="hq-budget-ring-wrap hq-budget-ring-wrap-large">
-            <div className="hq-budget-ring hq-budget-ring-large" style={{ background: chartBackground } as CSSProperties}>
-              <div className="hq-budget-ring-inner hq-budget-ring-inner-large">
-                <strong>{allocationPercent}%</strong>
-                <span>allocated</span>
+          <div className="hq-finance-hero">
+            <div className="hq-budget-ring-wrap hq-budget-ring-wrap-large">
+              <div className="hq-budget-ring hq-budget-ring-large" style={{ background: chartBackground } as CSSProperties}>
+                <div className="hq-budget-ring-inner hq-budget-ring-inner-large">
+                  <strong>{allocationPercent}%</strong>
+                  <span>allocated</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="hq-finance-callouts">
+              {chartEntries.map((team) => (
+                <div key={team.id} className="hq-finance-callout">
+                  <span className="hq-finance-callout-line" style={{ color: team.color }} aria-hidden="true" />
+                  <div>
+                    <span>{team.name}</span>
+                    <strong>${(team.amount / 100).toLocaleString()}</strong>
+                  </div>
+                </div>
+              ))}
+              <div className="hq-finance-callout">
+                <span className="hq-finance-callout-line" style={{ color: '#8f8888' }} aria-hidden="true" />
+                <div>
+                  <span>Unallocated</span>
+                  <strong>${(remainingBudget / 100).toLocaleString()}</strong>
+                </div>
               </div>
             </div>
           </div>
@@ -145,31 +237,42 @@ export default async function FinancesPage() {
             />
           ) : null}
 
-          <div className="hq-summary-list">
-            <div className="hq-summary-row">
+          <div className="hq-finance-metric-grid">
+            <div className="hq-finance-metric-card">
               <span>Total club budget</span>
               <strong>${(clubBudget.total_budget_cents / 100).toLocaleString()}</strong>
             </div>
-            <div className="hq-summary-row">
-              <span>Allocated to teams</span>
+            <div className="hq-finance-metric-card">
+              <span>Allocated</span>
               <strong>${(allocatedTotal / 100).toLocaleString()}</strong>
             </div>
-            <div className="hq-summary-row">
-              <span>Remaining</span>
+            <div className="hq-finance-metric-card">
+              <span>Unallocated</span>
               <strong>${(remainingBudget / 100).toLocaleString()}</strong>
             </div>
-          </div>
-
-          <div className="hq-summary-list">
-            {teams.map((team, index) => (
-              <div key={team.id} className="hq-summary-row">
-                <span style={{ color: chartColors[index % chartColors.length] }}>{team.name}</span>
-                <strong>${((teamBudgets.get(team.id) || 0) / 100).toLocaleString()}</strong>
-              </div>
-            ))}
-            <div className="hq-summary-row">
-              <span style={{ color: '#8f8888' }}>Remaining</span>
-              <strong>${(remainingBudget / 100).toLocaleString()}</strong>
+            <div className="hq-finance-metric-card">
+              <span>Filtered spend</span>
+              <strong>${(filteredSpendTotal / 100).toLocaleString()}</strong>
+            </div>
+            <div className="hq-finance-metric-card">
+              <span>Avg purchase</span>
+              <strong>${(filteredAverageSpend / 100).toLocaleString()}</strong>
+            </div>
+            <div className="hq-finance-metric-card">
+              <span>Utilization</span>
+              <strong>{utilizationPercent}%</strong>
+            </div>
+            <div className="hq-finance-metric-card">
+              <span>Remaining from allocated</span>
+              <strong>${(filteredRemainingAllocated / 100).toLocaleString()}</strong>
+            </div>
+            <div className="hq-finance-metric-card">
+              <span>Remaining from total</span>
+              <strong>${(filteredRemainingTotal / 100).toLocaleString()}</strong>
+            </div>
+            <div className="hq-finance-metric-card">
+              <span>Teams with spend</span>
+              <strong>{filteredSpentTeams}</strong>
             </div>
           </div>
         </aside>

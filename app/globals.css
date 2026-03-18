@@ -1209,6 +1209,13 @@ tr:last-child td {
   align-items: start;
 }
 
+.hq-finance-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .hq-admin-members-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.9fr) 340px;
@@ -1623,6 +1630,87 @@ tr:last-child td {
   grid-template-columns: 292px minmax(0, 1fr);
   gap: 24px;
   align-items: center;
+}
+
+.hq-finance-hero {
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.hq-finance-callouts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+}
+
+.hq-finance-callout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hq-finance-callout-line {
+  width: 26px;
+  height: 2px;
+  background: currentColor;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.hq-finance-callout-line::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.hq-finance-callout div {
+  display: grid;
+  gap: 3px;
+}
+
+.hq-finance-callout span:last-child,
+.hq-finance-callout div span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hq-finance-callout strong {
+  font-size: 0.95rem;
+}
+
+.hq-finance-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 22px;
+  border-top: 1px solid var(--line);
+}
+
+.hq-finance-metric-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.hq-finance-metric-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hq-finance-metric-card strong {
+  font-size: 1rem;
 }
 
 .hq-finance-overview .hq-summary-list + .hq-summary-list {
@@ -2102,7 +2190,13 @@ tr:last-child td {
 
   .hq-task-layout,
   .hq-expense-overview,
-  .hq-expense-summary-grid {
+  .hq-expense-summary-grid,
+  .hq-finance-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hq-finance-metric-grid,
+  .hq-finance-callouts {
     grid-template-columns: 1fr;
   }
 
