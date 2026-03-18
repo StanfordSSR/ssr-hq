@@ -1,8 +1,9 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
-import { createTaskAction } from '@/app/dashboard/actions';
+import { createTaskAction, deleteTaskAction } from '@/app/dashboard/actions';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { getReceiptTaskState } from '@/lib/purchases';
 
@@ -198,6 +199,13 @@ export default async function TasksPage() {
                   ? `Submit by ${formatDateLabel(reportState.dueAt)}.`
                   : `Submission opens on ${formatDateLabel(reportState.openAt)}.`}
               </p>
+              {reportState.reportState === 'open' ? (
+                <div className="button-row">
+                  <Link href="/dashboard/reports" className="button">
+                    Open report
+                  </Link>
+                </div>
+              ) : null}
             </div>
           )}
         </section>
@@ -221,6 +229,14 @@ export default async function TasksPage() {
                       <span>{teamNames.join(', ')}</span>
                       <strong>{task.title}</strong>
                       <strong>{task.details || 'No extra details yet.'}</strong>
+                      <div className="hq-inline-editor-actions">
+                        <form action={deleteTaskAction}>
+                          <input type="hidden" name="task_id" value={task.id} />
+                          <button className="button-secondary" type="submit">
+                            Delete task
+                          </button>
+                        </form>
+                      </div>
                     </div>
                   );
                 })}

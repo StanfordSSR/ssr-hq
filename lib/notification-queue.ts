@@ -28,9 +28,10 @@ function parseOffset(value: string) {
     return '-08:00';
   }
 
-  const hours = match[1].padStart(3, match[1].startsWith('-') ? '-' : '+').replace(/^([+-])(\d)$/, '$10$2');
+  const sign = match[1].startsWith('-') ? '-' : '+';
+  const hourValue = match[1].replace(/^[+-]/, '').padStart(2, '0');
   const minutes = match[2] || '00';
-  return `${hours}:${minutes}`;
+  return `${sign}${hourValue}:${minutes}`;
 }
 
 function pacificDateParts(date: Date) {

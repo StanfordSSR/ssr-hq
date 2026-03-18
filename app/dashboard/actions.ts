@@ -1030,6 +1030,55 @@ export async function createTaskAction(formData: FormData) {
   revalidatePath('/dashboard/tasks');
 }
 
+export async function deleteTaskAction(formData: FormData) {
+  const { user } = await requireAdmin();
+
+  const taskId = String(formData.get('task_id') || '').trim();
+
+  if (!taskId) {
+    throw new Error('Missing task id.');
+  }
+
+  const admin = createAdminClient();
+  const { data: task } = await admin
+    .from('tasks')
+    .select('id, title')
+    .eq('id', taskId)
+    .maybeSingle();
+
+  if (!task) {
+    throw new Error('Task not found.');
+  }
+
+  const { error } = await admin
+    .from('tasks')
+    .update({
+      is_active: false
+    })
+    .eq('id', taskId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await admin.from('task_recipients').delete().eq('task_id', taskId);
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'task.deleted',
+    targetType: 'task',
+    targetId: taskId,
+    summary: `Deleted task "${task.title}".`,
+    details: {
+      taskId,
+      title: task.title
+    }
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/tasks');
+}
+
 export async function invitePortalMemberAction(formData: FormData) {
   const { user } = await requireAdmin();
 

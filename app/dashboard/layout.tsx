@@ -16,7 +16,6 @@ const adminNav = [
 const leadNav = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/members', label: 'Manage Members' },
-  { href: '/dashboard/purchases', label: 'Log Purchase' },
   { href: '/dashboard/expenses', label: 'Expense Log' },
   { href: '/dashboard/tasks', label: 'Tasks' }
 ];

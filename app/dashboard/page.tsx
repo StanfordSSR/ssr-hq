@@ -259,6 +259,12 @@ export default async function DashboardPage() {
             Stay on top of team health, reporting windows, and spending for {team.name}.
           </p>
         </div>
+
+        <div className="hq-page-head-action">
+          <Link href="/dashboard/purchases" className="button">
+            Log purchase
+          </Link>
+        </div>
       </section>
 
       <div className="hq-lead-dashboard">
