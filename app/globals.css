@@ -1202,6 +1202,13 @@ tr:last-child td {
   align-items: start;
 }
 
+.hq-finance-layout {
+  display: grid;
+  grid-template-columns: minmax(380px, 1.14fr) minmax(0, 0.86fr);
+  gap: 20px;
+  align-items: start;
+}
+
 .hq-admin-members-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.9fr) 340px;
@@ -1616,6 +1623,28 @@ tr:last-child td {
   grid-template-columns: 292px minmax(0, 1fr);
   gap: 24px;
   align-items: center;
+}
+
+.hq-finance-overview .hq-summary-list + .hq-summary-list {
+  margin-top: 18px;
+}
+
+.hq-finance-allocations .hq-team-row {
+  padding: 14px 0 16px;
+}
+
+.hq-team-list-compact .hq-team-row-head {
+  margin-bottom: 10px;
+}
+
+.hq-finance-team-row {
+  display: grid;
+  gap: 10px;
+}
+
+.hq-finance-team-budget .hq-summary-list,
+.hq-finance-team-budget .hq-inline-budget-editor {
+  margin-top: 2px;
 }
 
 .hq-expense-chart {
@@ -2064,6 +2093,10 @@ tr:last-child td {
   }
 
   .hq-lead-dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .hq-finance-layout {
     grid-template-columns: 1fr;
   }
 

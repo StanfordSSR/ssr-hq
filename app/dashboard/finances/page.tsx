@@ -116,11 +116,11 @@ export default async function FinancesPage() {
         </div>
       </section>
 
-      <div className="hq-lead-dashboard">
-        <aside className="hq-panel hq-lead-sidebar hq-surface-muted">
+      <div className="hq-finance-layout">
+        <aside className="hq-panel hq-lead-sidebar hq-surface-muted hq-finance-overview">
           <div className="hq-section-head">
             <div className="hq-section-head-copy">
-              <p className="hq-eyebrow">Club budget</p>
+              <p className="hq-eyebrow">Club financial overview</p>
               <h2 className="hq-section-title hq-section-title-compact">{cycle}</h2>
             </div>
           </div>
@@ -147,6 +147,10 @@ export default async function FinancesPage() {
 
           <div className="hq-summary-list">
             <div className="hq-summary-row">
+              <span>Total club budget</span>
+              <strong>${(clubBudget.total_budget_cents / 100).toLocaleString()}</strong>
+            </div>
+            <div className="hq-summary-row">
               <span>Allocated to teams</span>
               <strong>${(allocatedTotal / 100).toLocaleString()}</strong>
             </div>
@@ -170,7 +174,7 @@ export default async function FinancesPage() {
           </div>
         </aside>
 
-        <section className="hq-panel hq-lead-main hq-surface-muted">
+        <section className="hq-panel hq-lead-main hq-surface-muted hq-finance-allocations">
           <div className="hq-section-head">
             <div className="hq-section-head-copy">
               <p className="hq-eyebrow">Team allocations</p>
@@ -178,7 +182,7 @@ export default async function FinancesPage() {
             </div>
           </div>
 
-          <div className="hq-team-list">
+          <div className="hq-team-list hq-team-list-compact">
             {teams.map((team) => (
               <div key={team.id} className="hq-team-row">
                 <div className="hq-team-row-head">
@@ -197,42 +201,46 @@ export default async function FinancesPage() {
                   </div>
                 </div>
 
-                {canEdit ? (
-                  <InlineBudgetEditor
-                    action={updateTeamBudgetAction}
-                    academicYear={cycle}
-                    hiddenName="team_id"
-                    hiddenValue={team.id}
-                    fieldName="annual_budget"
-                    label="Annual budget"
-                    value={(teamBudgets.get(team.id) || 0) / 100}
-                    confirmMessage={`Update the annual budget for ${team.name}?`}
-                  />
-                ) : (
-                  <div className="hq-summary-list">
-                    <div className="hq-summary-row">
-                      <span>Annual budget</span>
-                      <strong>${((teamBudgets.get(team.id) || 0) / 100).toLocaleString()}</strong>
-                    </div>
+                <div className="hq-finance-team-row">
+                  <div className="hq-finance-team-budget">
+                    {canEdit ? (
+                      <InlineBudgetEditor
+                        action={updateTeamBudgetAction}
+                        academicYear={cycle}
+                        hiddenName="team_id"
+                        hiddenValue={team.id}
+                        fieldName="annual_budget"
+                        label="Annual budget"
+                        value={(teamBudgets.get(team.id) || 0) / 100}
+                        confirmMessage={`Update the annual budget for ${team.name}?`}
+                      />
+                    ) : (
+                      <div className="hq-summary-list">
+                        <div className="hq-summary-row">
+                          <span>Annual budget</span>
+                          <strong>${((teamBudgets.get(team.id) || 0) / 100).toLocaleString()}</strong>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                <div className="hq-budget-row-meta">
-                  <div className="hq-budget-meta-line">
-                    <span>Spent</span>
-                    <strong>${((spentByTeam.get(team.id) || 0) / 100).toLocaleString()}</strong>
-                  </div>
-                  <div className="hq-budget-progress">
-                    <div
-                      className="hq-budget-progress-fill"
-                      style={{
-                        width: `${
-                          (teamBudgets.get(team.id) || 0) > 0
-                            ? Math.min(100, Math.round(((spentByTeam.get(team.id) || 0) / (teamBudgets.get(team.id) || 1)) * 100))
-                            : 0
-                        }%`
-                      }}
-                    />
+                  <div className="hq-budget-row-meta">
+                    <div className="hq-budget-meta-line">
+                      <span>Spent</span>
+                      <strong>${((spentByTeam.get(team.id) || 0) / 100).toLocaleString()}</strong>
+                    </div>
+                    <div className="hq-budget-progress">
+                      <div
+                        className="hq-budget-progress-fill"
+                        style={{
+                          width: `${
+                            (teamBudgets.get(team.id) || 0) > 0
+                              ? Math.min(100, Math.round(((spentByTeam.get(team.id) || 0) / (teamBudgets.get(team.id) || 1)) * 100))
+                              : 0
+                          }%`
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

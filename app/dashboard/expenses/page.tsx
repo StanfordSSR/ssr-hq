@@ -125,8 +125,9 @@ export default async function ExpenseLogPage({
 
   const currentCycle = formatAcademicYear(new Date());
   const rawTeam = readSingle(params.team);
+  const defaultTeamSelection = isPrivilegedViewer ? 'all' : teams[0]!.id;
   const selectedTeamId =
-    rawTeam === 'all' || teams.some((team) => team.id === rawTeam) ? rawTeam || teams[0]!.id : teams[0]!.id;
+    rawTeam === 'all' || teams.some((team) => team.id === rawTeam) ? rawTeam || defaultTeamSelection : defaultTeamSelection;
   const rawRange = readSingle(params.range) || 'current_cycle';
   const rawAcademicYear = readSingle(params.academic_year);
   const currentPage = Math.max(1, Number(readSingle(params.page) || 1));
@@ -204,7 +205,15 @@ export default async function ExpenseLogPage({
     .eq('academic_year', chartBudgetYear)
     .in('team_id', selectedTeamIds);
   const teamBudgets = (teamBudgetsData || []) as TeamBudget[];
-  const budgetTotalCents = teamBudgets.reduce((sum, budget) => sum + budget.annual_budget_cents, 0);
+  const allocatedBudgetCents = teamBudgets.reduce((sum, budget) => sum + budget.annual_budget_cents, 0);
+  const { data: clubBudgetData } = await admin
+    .from('club_budgets')
+    .select('total_budget_cents')
+    .eq('academic_year', chartBudgetYear)
+    .maybeSingle();
+  const clubBudgetTotalCents = clubBudgetData?.total_budget_cents || 0;
+  const budgetTotalCents =
+    isPrivilegedViewer && selectedTeamId === 'all' ? clubBudgetTotalCents : allocatedBudgetCents;
 
   const summaryPurchases = filteredPurchases;
   const totalSpentCents = summaryPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
@@ -296,6 +305,14 @@ export default async function ExpenseLogPage({
             </div>
 
             <div className="hq-expense-metrics">
+              <div className="hq-purchase-stat">
+                <span>Total club budget</span>
+                <strong>${(clubBudgetTotalCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+              </div>
+              <div className="hq-purchase-stat">
+                <span>Allocated</span>
+                <strong>${(allocatedBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+              </div>
               <div className="hq-purchase-stat">
                 <span>Spent</span>
                 <strong>${(totalSpentCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
