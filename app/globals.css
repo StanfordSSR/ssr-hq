@@ -506,7 +506,7 @@ tr:last-child td {
 }
 
 .hq-topbar-inner {
-  width: min(1480px, calc(100% - 24px));
+  width: min(1480px, calc(100% - 48px));
   margin: 0 auto;
   min-height: 72px;
   display: flex;
@@ -529,7 +529,7 @@ tr:last-child td {
   font-size: 1.28rem;
   font-weight: 700;
   white-space: nowrap;
-  margin-right: 6px;
+  margin-right: 16px;
 }
 
 .hq-nav {
@@ -538,6 +538,9 @@ tr:last-child td {
   gap: 6px;
   flex-wrap: wrap;
   min-width: 0;
+  flex: 1;
+  justify-content: flex-end;
+  padding-right: 10px;
 }
 
 .hq-nav-link {
