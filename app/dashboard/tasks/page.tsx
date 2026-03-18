@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
 import { createTaskAction } from '@/app/dashboard/actions';
+import { ReceiptUploadForm } from '@/components/receipt-upload-form';
+import { getReceiptTaskState } from '@/lib/purchases';
 
 type Team = {
   id: string;
@@ -21,6 +23,17 @@ type Task = {
 type TaskRecipient = {
   task_id: string;
   team_id: string;
+};
+
+type ReceiptPurchase = {
+  id: string;
+  team_id: string;
+  description: string;
+  amount_cents: number;
+  purchased_at: string;
+  payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
+  receipt_path: string | null;
+  receipt_not_needed: boolean;
 };
 
 export default async function TasksPage() {
@@ -69,6 +82,7 @@ export default async function TasksPage() {
 
   let visibleTasks = tasks;
   let selectableTeams = teams;
+  let pendingReceipts: ReceiptPurchase[] = [];
 
   if (!isAdmin) {
     const { data: myMemberships } = await admin
@@ -85,6 +99,17 @@ export default async function TasksPage() {
       const taskTeamIds = recipientMap.get(task.id) || [];
       return taskTeamIds.some((teamId) => myTeamIds.has(teamId));
     });
+
+    const { data: pendingReceiptsData } = await admin
+      .from('purchase_logs')
+      .select('id, team_id, description, amount_cents, purchased_at, payment_method, receipt_path, receipt_not_needed')
+      .in('team_id', Array.from(myTeamIds))
+      .eq('payment_method', 'credit_card')
+      .eq('receipt_not_needed', false)
+      .is('receipt_path', null)
+      .order('purchased_at', { ascending: true });
+
+    pendingReceipts = (pendingReceiptsData || []) as ReceiptPurchase[];
   }
 
   const teamNameMap = new Map(teams.map((team) => [team.id, team.name]));
@@ -103,7 +128,7 @@ export default async function TasksPage() {
         </div>
       </section>
 
-      <div className="hq-lead-grid">
+      <div className={isAdmin ? 'hq-lead-grid' : 'hq-task-layout'}>
         <section className="hq-panel hq-lead-block">
           <div className="hq-block-head">
             <h3>{isAdmin ? 'Create task' : 'Reporting window'}</h3>
@@ -179,11 +204,70 @@ export default async function TasksPage() {
 
         <section className="hq-panel hq-lead-block">
           <div className="hq-block-head">
-            <h3>{isAdmin ? 'Assigned tasks' : 'Your tasks'}</h3>
+            <h3>{isAdmin ? 'Assigned tasks' : 'Team tasks'}</h3>
           </div>
 
-          {visibleTasks.length > 0 ? (
-            <div className="hq-summary-list">
+          {isAdmin ? (
+            visibleTasks.length > 0 ? (
+              <div className="hq-summary-list">
+                {visibleTasks.map((task) => {
+                  const teamNames =
+                    task.recipient_scope === 'all_teams'
+                      ? ['All teams']
+                      : (recipientMap.get(task.id) || []).map((teamId) => teamNameMap.get(teamId) || 'Unknown team');
+
+                  return (
+                    <div key={task.id} className="hq-summary-row">
+                      <span>{teamNames.join(', ')}</span>
+                      <strong>{task.title}</strong>
+                      <strong>{task.details || 'No extra details yet.'}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="empty-note">No tasks have been assigned yet.</p>
+            )
+          ) : (
+            <div className="hq-task-stack">
+              {pendingReceipts.map((purchase) => {
+                const receiptState = getReceiptTaskState({
+                  paymentMethod: purchase.payment_method,
+                  purchasedAt: purchase.purchased_at,
+                  receiptPath: purchase.receipt_path,
+                  receiptNotNeeded: purchase.receipt_not_needed
+                });
+
+                return (
+                  <article
+                    key={`receipt-${purchase.id}`}
+                    className={`hq-task-card hq-task-card-receipt ${receiptState.overdue ? 'hq-task-card-alert' : ''}`}
+                  >
+                    <div className="hq-task-card-head">
+                      <div>
+                        <span className="hq-task-kicker">Receipt task</span>
+                        <h4>Upload receipt for {purchase.description}</h4>
+                      </div>
+                      {receiptState.overdue ? <strong className="hq-task-alert">OVERDUE</strong> : null}
+                    </div>
+
+                    <div className="hq-task-card-meta">
+                      <span>{teamNameMap.get(purchase.team_id) || 'Unknown team'}</span>
+                      <span>{formatDateLabel(new Date(purchase.purchased_at))}</span>
+                      <span>${(purchase.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+
+                    <p>
+                      {receiptState.overdue
+                        ? `This receipt is ${receiptState.ageDays} days old and needs immediate attention.`
+                        : 'Upload the receipt now to keep your team purchase log complete.'}
+                    </p>
+
+                    <ReceiptUploadForm purchaseId={purchase.id} compact />
+                  </article>
+                );
+              })}
+
               {visibleTasks.map((task) => {
                 const teamNames =
                   task.recipient_scope === 'all_teams'
@@ -191,16 +275,26 @@ export default async function TasksPage() {
                     : (recipientMap.get(task.id) || []).map((teamId) => teamNameMap.get(teamId) || 'Unknown team');
 
                 return (
-                  <div key={task.id} className="hq-summary-row">
-                    <span>{teamNames.join(', ')}</span>
-                    <strong>{task.title}</strong>
-                    <strong>{task.details || 'No extra details yet.'}</strong>
-                  </div>
+                  <article key={task.id} className="hq-task-card">
+                    <div className="hq-task-card-head">
+                      <div>
+                        <span className="hq-task-kicker">Assigned task</span>
+                        <h4>{task.title}</h4>
+                      </div>
+                    </div>
+                    <div className="hq-task-card-meta">
+                      <span>{teamNames.join(', ')}</span>
+                      <span>{formatDateLabel(new Date(task.created_at))}</span>
+                    </div>
+                    <p>{task.details || 'No extra details yet.'}</p>
+                  </article>
                 );
               })}
+
+              {pendingReceipts.length === 0 && visibleTasks.length === 0 ? (
+                <p className="empty-note">No tasks are assigned to your team yet.</p>
+              ) : null}
             </div>
-          ) : (
-            <p className="empty-note">{isAdmin ? 'No tasks have been assigned yet.' : 'No tasks are assigned to your team yet.'}</p>
           )}
         </section>
       </div>

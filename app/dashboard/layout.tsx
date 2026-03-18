@@ -8,6 +8,7 @@ const adminNav = [
   { href: '/dashboard/teams', label: 'Manage Teams' },
   { href: '/dashboard/members', label: 'Manage Members' },
   { href: '/dashboard/finances', label: 'Manage Finances' },
+  { href: '/dashboard/reports', label: 'Team Reports' },
   { href: '/dashboard/tasks', label: 'Assign Tasks' },
   { href: '/dashboard/settings', label: 'Club Settings' }
 ];
@@ -16,6 +17,7 @@ const leadNav = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/members', label: 'Manage Members' },
   { href: '/dashboard/purchases', label: 'Log Purchase' },
+  { href: '/dashboard/expenses', label: 'Expense Log' },
   { href: '/dashboard/tasks', label: 'Tasks' }
 ];
 

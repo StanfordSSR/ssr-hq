@@ -75,6 +75,19 @@ export function formatCountdown(target: Date, now: Date) {
   return `${days} days`;
 }
 
+export function formatPacificDateKey(date: Date) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
+}
+
+export function getReportingWindow(academicYear: string, quarter: string) {
+  return REPORTING_WINDOWS.find((window) => window.academicYear === academicYear && window.quarter === quarter) ?? null;
+}
+
 export function getNextReportState(now = new Date()): NextReportState {
   const currentWindow =
     REPORTING_WINDOWS.find((window) => now >= window.start && now <= window.end) ?? null;

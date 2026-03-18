@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { recordAuditEvent } from '@/lib/audit';
+import { syncNotificationQueue } from '@/lib/notification-queue';
 
 const slugify = (value: string) =>
   value
@@ -43,7 +45,7 @@ export async function signOutAction() {
 }
 
 export async function createTeamAction(formData: FormData) {
-  await requireAdminProfile();
+  const { user } = await requireAdminProfile();
 
   const name = String(formData.get('name') || '').trim();
   const description = String(formData.get('description') || '').trim();
@@ -114,6 +116,19 @@ export async function createTeamAction(formData: FormData) {
     }
   }
 
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'team.created',
+    targetType: 'team',
+    targetId: team.id,
+    summary: `Created team "${name}".`,
+    details: {
+      description,
+      initialLeadIds
+    }
+  });
+
+  await syncNotificationQueue();
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/teams');
   revalidatePath('/dashboard/members');
@@ -174,6 +189,18 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
     throw new Error(error.message);
   }
 
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'team.updated',
+    targetType: 'team',
+    targetId: teamId,
+    summary: 'Updated team description or logo.',
+    details: {
+      description,
+      logoUrl: logoUrl || null
+    }
+  });
+
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/members');
   revalidatePath('/dashboard/purchases');
@@ -182,7 +209,7 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
 }
 
 export async function assignExistingLeadAction(formData: FormData) {
-  await requireAdminProfile();
+  const { user } = await requireAdminProfile();
 
   const teamId = String(formData.get('team_id') || '').trim();
   const userId = String(formData.get('user_id') || '').trim();
@@ -225,13 +252,26 @@ export async function assignExistingLeadAction(formData: FormData) {
     throw new Error(error.message);
   }
 
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'lead.assigned',
+    targetType: 'team_membership',
+    targetId: `${teamId}:${userId}`,
+    summary: 'Assigned an existing lead to a team.',
+    details: {
+      teamId,
+      userId
+    }
+  });
+
+  await syncNotificationQueue();
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/teams');
   revalidatePath('/dashboard/members');
 }
 
 export async function removeLeadFromTeamAction(formData: FormData) {
-  await requireAdminProfile();
+  const { user } = await requireAdminProfile();
 
   const membershipId = String(formData.get('membership_id') || '').trim();
 
@@ -240,6 +280,16 @@ export async function removeLeadFromTeamAction(formData: FormData) {
   }
 
   const admin = createAdminClient();
+
+  const { data: membership } = await admin
+    .from('team_memberships')
+    .select('id, team_id, user_id')
+    .eq('id', membershipId)
+    .maybeSingle();
+
+  if (!membership) {
+    throw new Error('Membership not found.');
+  }
 
   const { error } = await admin
     .from('team_memberships')
@@ -250,6 +300,19 @@ export async function removeLeadFromTeamAction(formData: FormData) {
     throw new Error(error.message);
   }
 
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'lead.removed',
+    targetType: 'team_membership',
+    targetId: membershipId,
+    summary: 'Removed a lead from a team.',
+    details: {
+      teamId: membership.team_id,
+      userId: membership.user_id
+    }
+  });
+
+  await syncNotificationQueue();
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/teams');
   revalidatePath('/dashboard/members');

@@ -4,9 +4,29 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { requireAdmin, requireSignedInUser } from '@/lib/auth';
-import { formatAcademicYear } from '@/lib/academic-calendar';
+import { formatAcademicYear, formatPacificDateKey, getReportingWindow } from '@/lib/academic-calendar';
 import { sendInviteEmail, sendTaskEmails } from '@/lib/notifications';
 import { env } from '@/lib/env';
+import {
+  detectPurchaseCategory,
+  normalizeReminderDays,
+  normalizePaymentMethod,
+  normalizePurchaseDate,
+  parsePurchaseAmount,
+  RECEIPT_ALLOWED_TYPES,
+  RECEIPT_BUCKET,
+  RECEIPT_MAX_BYTES,
+  sanitizeStorageFileName
+} from '@/lib/purchases';
+import {
+  countWords,
+  formatQuarterKey,
+  formatQuarterReportTitle,
+  getOpenReportContext,
+  normalizeReportQuestions
+} from '@/lib/reports';
+import { recordAuditEvent } from '@/lib/audit';
+import { syncNotificationQueue } from '@/lib/notification-queue';
 
 async function requireActiveProfile() {
   const { supabase, user } = await requireSignedInUser();
@@ -46,8 +66,220 @@ async function requireLeadTeam(teamId: string) {
   return { user, profile };
 }
 
+async function uploadReceiptToStorage({
+  purchaseId,
+  teamId,
+  file,
+  existingPath
+}: {
+  purchaseId: string;
+  teamId: string;
+  file: File;
+  existingPath?: string | null;
+}) {
+  if (!file.size) {
+    throw new Error('A receipt file is required.');
+  }
+
+  if (file.size > RECEIPT_MAX_BYTES) {
+    throw new Error('Receipt files must be under 2 MB.');
+  }
+
+  if (file.type && !RECEIPT_ALLOWED_TYPES.includes(file.type)) {
+    throw new Error('Receipt files must be a PDF, PNG, JPG, or WEBP.');
+  }
+
+  const extension = file.name.includes('.') ? file.name.split('.').pop() || 'pdf' : 'pdf';
+  const safeName = sanitizeStorageFileName(file.name.replace(/\.[^.]+$/, ''));
+  const path = `${teamId}/${purchaseId}-${Date.now()}-${safeName}.${extension.toLowerCase()}`;
+  const admin = createAdminClient();
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+  const { error } = await admin.storage.from(RECEIPT_BUCKET).upload(path, fileBuffer, {
+    contentType: file.type || undefined,
+    upsert: true
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (existingPath && existingPath !== path) {
+    await admin.storage.from(RECEIPT_BUCKET).remove([existingPath]);
+  }
+
+  return {
+    path,
+    fileName: file.name
+  };
+}
+
+async function getTeamMemberCount(teamId: string) {
+  const admin = createAdminClient();
+  const [{ count: membershipCount }, { count: rosterCount }] = await Promise.all([
+    admin
+      .from('team_memberships')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_id', teamId)
+      .eq('is_active', true),
+    admin
+      .from('team_roster_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_id', teamId)
+  ]);
+
+  return (membershipCount || 0) + (rosterCount || 0);
+}
+
+async function getQuarterFundsSpent(teamId: string, academicYear: string, quarter: string) {
+  const window = getReportingWindow(academicYear, quarter);
+  if (!window) {
+    return 0;
+  }
+
+  const admin = createAdminClient();
+  const { data: purchasesData } = await admin
+    .from('purchase_logs')
+    .select('amount_cents, purchased_at')
+    .eq('team_id', teamId)
+    .eq('academic_year', academicYear);
+
+  const startKey = formatPacificDateKey(window.start);
+  const endKey = formatPacificDateKey(window.end);
+
+  return ((purchasesData || []) as Array<{ amount_cents: number; purchased_at: string }>).reduce((sum, purchase) => {
+    const purchaseKey = formatPacificDateKey(new Date(purchase.purchased_at));
+    if (purchaseKey < startKey || purchaseKey > endKey) {
+      return sum;
+    }
+
+    return sum + purchase.amount_cents;
+  }, 0);
+}
+
+function formatCurrencyFromCents(cents: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2
+  }).format(cents / 100);
+}
+
+async function saveTeamReport(formData: FormData, status: 'draft' | 'submitted') {
+  const teamId = String(formData.get('team_id') || '').trim();
+  const academicYear = String(formData.get('academic_year') || '').trim();
+  const quarter = String(formData.get('quarter') || '').trim();
+
+  if (!teamId || !academicYear || !quarter) {
+    throw new Error('Missing report context.');
+  }
+
+  const { user } = await requireLeadTeam(teamId);
+  const admin = createAdminClient();
+  const { data: questionsData } = await admin
+    .from('report_questions')
+    .select('id, prompt, field_type, word_limit, sort_order')
+    .eq('is_active', true)
+    .order('sort_order');
+  const questions =
+    (questionsData || []) as Array<{
+      id: string;
+      prompt: string;
+      field_type: 'short_text' | 'long_text' | 'member_count' | 'funds_spent';
+      word_limit: number;
+      sort_order: number;
+    }>;
+
+  if (questions.length === 0) {
+    throw new Error('No report questions are configured yet.');
+  }
+
+  if (status === 'submitted') {
+    const { reportState, canSubmit } = getOpenReportContext();
+    const expected = formatQuarterKey(reportState);
+    if (!canSubmit || expected.academicYear !== academicYear || expected.quarter !== quarter) {
+      throw new Error('This report is not currently open for submission.');
+    }
+  }
+
+  const memberCount = await getTeamMemberCount(teamId);
+  const quarterFundsSpentCents = await getQuarterFundsSpent(teamId, academicYear, quarter);
+  const answers = questions.map((question) => {
+    const rawAnswer =
+      question.field_type === 'member_count'
+        ? String(memberCount)
+        : question.field_type === 'funds_spent'
+          ? formatCurrencyFromCents(quarterFundsSpentCents)
+        : String(formData.get(`question_${question.id}`) || '').trim();
+
+    if (question.field_type !== 'member_count' && question.field_type !== 'funds_spent' && countWords(rawAnswer) > question.word_limit) {
+      throw new Error(`"${question.prompt}" exceeds its ${question.word_limit} word limit.`);
+    }
+
+    return {
+      question_id: question.id,
+      answer: rawAnswer
+    };
+  });
+
+  const { data: report, error: reportError } = await admin
+    .from('team_reports')
+    .upsert(
+      {
+        team_id: teamId,
+        academic_year: academicYear,
+        quarter,
+        status,
+        submitted_at: status === 'submitted' ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      },
+      { onConflict: 'team_id,academic_year,quarter' }
+    )
+    .select('id')
+    .single();
+
+  if (reportError || !report) {
+    throw new Error(reportError?.message || 'Failed to save report.');
+  }
+
+  const { error: answersError } = await admin.from('team_report_answers').upsert(
+    answers.map((answer) => ({
+      report_id: report.id,
+      question_id: answer.question_id,
+      answer: answer.answer,
+      updated_at: new Date().toISOString()
+    })),
+    { onConflict: 'report_id,question_id' }
+  );
+
+  if (answersError) {
+    throw new Error(answersError.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: `report.${status}`,
+    targetType: 'team_report',
+    targetId: report.id,
+    summary: `${status === 'submitted' ? 'Submitted' : 'Saved draft for'} ${formatQuarterReportTitle(quarter)}.`,
+    details: {
+      teamId,
+      academicYear,
+      quarter,
+      memberCount,
+      quarterFundsSpentCents
+    }
+  });
+
+  await syncNotificationQueue();
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/reports');
+  revalidatePath('/dashboard/settings');
+}
+
 export async function updateClubBudgetAction(formData: FormData) {
-  await requireAdmin();
+  const { user } = await requireAdmin();
 
   const academicYear = String(formData.get('academic_year') || '').trim();
   const totalBudget = Number(formData.get('total_budget') || 0);
@@ -66,12 +298,24 @@ export async function updateClubBudgetAction(formData: FormData) {
     throw new Error(error.message);
   }
 
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'budget.club.updated',
+    targetType: 'club_budget',
+    targetId: academicYear,
+    summary: `Updated total club budget for ${academicYear}.`,
+    details: {
+      academicYear,
+      totalBudgetCents: Math.max(0, Math.round(totalBudget * 100))
+    }
+  });
+
   revalidatePath('/dashboard/finances');
   revalidatePath('/dashboard');
 }
 
 export async function updateTeamBudgetAction(formData: FormData) {
-  await requireAdmin();
+  const { user } = await requireAdmin();
 
   const academicYear = String(formData.get('academic_year') || '').trim();
   const teamId = String(formData.get('team_id') || '').trim();
@@ -92,15 +336,37 @@ export async function updateTeamBudgetAction(formData: FormData) {
     throw new Error(error.message);
   }
 
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'budget.team.updated',
+    targetType: 'team_budget',
+    targetId: teamId,
+    summary: `Updated annual team budget for ${academicYear}.`,
+    details: {
+      teamId,
+      academicYear,
+      annualBudgetCents: Math.max(0, Math.round(annualBudget * 100))
+    }
+  });
+
   revalidatePath('/dashboard/finances');
   revalidatePath('/dashboard');
 }
 
 export async function logPurchaseAction(formData: FormData) {
   const teamId = String(formData.get('team_id') || '').trim();
-  const amount = Number(formData.get('amount') || 0);
+  const amount = parsePurchaseAmount(formData.get('amount'));
   const description = String(formData.get('description') || '').trim();
   const academicYear = String(formData.get('academic_year') || formatAcademicYear(new Date())).trim();
+  const personName = String(formData.get('person_name') || '').trim();
+  const purchasedAt = String(formData.get('purchased_at') || '').trim();
+  const paymentMethod = normalizePaymentMethod(String(formData.get('payment_method') || 'unknown'));
+  const categoryValue = String(formData.get('category') || 'equipment').trim();
+  const receiptFile = formData.get('receipt');
+  const category =
+    categoryValue === 'food' || categoryValue === 'travel' || categoryValue === 'equipment'
+      ? categoryValue
+      : detectPurchaseCategory(description);
 
   if (!teamId || !description) {
     throw new Error('Team and description are required.');
@@ -112,22 +378,532 @@ export async function logPurchaseAction(formData: FormData) {
 
   const { user } = await requireLeadTeam(teamId);
 
+  const purchaseId = crypto.randomUUID();
+  let receiptPath: string | null = null;
+  let receiptFileName: string | null = null;
+  let receiptUploadedAt: string | null = null;
+
+  if (receiptFile instanceof File && receiptFile.size > 0) {
+    const uploaded = await uploadReceiptToStorage({
+      purchaseId,
+      teamId,
+      file: receiptFile
+    });
+    receiptPath = uploaded.path;
+    receiptFileName = uploaded.fileName;
+    receiptUploadedAt = new Date().toISOString();
+  }
+
   const admin = createAdminClient();
   const { error } = await admin.from('purchase_logs').insert({
+    id: purchaseId,
     team_id: teamId,
     created_by: user.id,
     academic_year: academicYear,
     amount_cents: Math.round(amount * 100),
-    description
+    description,
+    person_name: personName || null,
+    purchased_at: normalizePurchaseDate(purchasedAt) || new Date().toISOString(),
+    payment_method: paymentMethod,
+    category,
+    receipt_path: receiptPath,
+    receipt_file_name: receiptFileName,
+    receipt_uploaded_at: receiptUploadedAt
   });
 
   if (error) {
     throw new Error(error.message);
   }
 
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'purchase.logged',
+    targetType: 'purchase_log',
+    targetId: purchaseId,
+    summary: `Logged purchase "${description}".`,
+    details: {
+      teamId,
+      academicYear,
+      amountCents: Math.round(amount * 100),
+      paymentMethod,
+      category,
+      receiptUploaded: Boolean(receiptPath)
+    }
+  });
+
+  if (receiptPath) {
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'file.uploaded',
+      targetType: 'purchase_receipt',
+      targetId: purchaseId,
+      summary: `Uploaded receipt for "${description}".`,
+      details: {
+        teamId,
+        fileName: receiptFileName,
+        receiptPath
+      }
+    });
+  }
+
+  await syncNotificationQueue();
   revalidatePath('/dashboard');
+  revalidatePath('/dashboard/expenses');
   revalidatePath('/dashboard/purchases');
   revalidatePath('/dashboard/finances');
+  revalidatePath('/dashboard/tasks');
+}
+
+export async function importPurchasesAction(
+  _prevState: {
+    message?: string;
+    addedAmount?: number;
+    skippedRows?: number[];
+  } | null,
+  formData: FormData
+) {
+  const teamId = String(formData.get('team_id') || '').trim();
+  const academicYear = String(formData.get('academic_year') || formatAcademicYear(new Date())).trim();
+  const payloadRaw = String(formData.get('import_payload') || '').trim();
+
+  if (!teamId || !payloadRaw) {
+    return { message: 'Missing team or import payload.', addedAmount: 0, skippedRows: [] };
+  }
+
+  const { user } = await requireLeadTeam(teamId);
+  let parsed: {
+    purchases: Array<{
+      rowNumber?: number;
+      description: string;
+      amount: number;
+      personName?: string;
+      purchasedAt?: string;
+      paymentMethod?: string;
+      category?: string;
+    }>;
+    skippedRows: number[];
+  };
+
+  try {
+    parsed = JSON.parse(payloadRaw) as typeof parsed;
+  } catch {
+    return { message: 'The import file could not be parsed.', addedAmount: 0, skippedRows: [] };
+  }
+
+  const skippedRows = new Set<number>((parsed.skippedRows || []).filter((row) => Number.isFinite(row)));
+  const validPurchases = (parsed.purchases || []).flatMap((purchase) => {
+    const description = String(purchase.description || '').trim();
+    const amount = parsePurchaseAmount(purchase.amount);
+    const rowNumber = Number(purchase.rowNumber || 0);
+
+    if (!description || !Number.isFinite(amount) || amount < 0.5) {
+      if (rowNumber > 0) {
+        skippedRows.add(rowNumber);
+      }
+      return [];
+    }
+
+    return [
+      {
+        team_id: teamId,
+        created_by: user.id,
+        academic_year: academicYear,
+        amount_cents: Math.round(amount * 100),
+        description,
+        person_name: purchase.personName ? String(purchase.personName).trim() || null : null,
+        purchased_at: normalizePurchaseDate(purchase.purchasedAt) || new Date().toISOString(),
+        payment_method: normalizePaymentMethod(purchase.paymentMethod || 'unknown'),
+        category:
+          purchase.category === 'food' || purchase.category === 'travel' || purchase.category === 'equipment'
+            ? purchase.category
+            : detectPurchaseCategory(description),
+        receipt_not_needed: true
+      }
+    ];
+  });
+
+  if (validPurchases.length === 0) {
+    return {
+      message: 'No valid purchases were found to import.',
+      addedAmount: 0,
+      skippedRows: Array.from(skippedRows).sort((a, b) => a - b)
+    };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.from('purchase_logs').insert(validPurchases);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const addedAmount = validPurchases.reduce((sum, purchase) => sum + purchase.amount_cents / 100, 0);
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'purchase.imported',
+    targetType: 'purchase_log',
+    summary: `Imported ${validPurchases.length} purchases.`,
+    details: {
+      teamId,
+      academicYear,
+      purchaseCount: validPurchases.length,
+      addedAmount,
+      skippedRows: Array.from(skippedRows).sort((a, b) => a - b)
+    }
+  });
+
+  await syncNotificationQueue();
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/expenses');
+  revalidatePath('/dashboard/purchases');
+  revalidatePath('/dashboard/finances');
+  revalidatePath('/dashboard/tasks');
+
+  return {
+    message: `Imported ${validPurchases.length} purchases.`,
+    addedAmount,
+    skippedRows: Array.from(skippedRows).sort((a, b) => a - b)
+  };
+}
+
+export async function updatePurchaseCategoryAction(formData: FormData) {
+  const purchaseId = String(formData.get('purchase_id') || '').trim();
+  const category = String(formData.get('category') || '').trim();
+
+  if (!purchaseId) {
+    throw new Error('Missing purchase id.');
+  }
+
+  if (category !== 'equipment' && category !== 'food' && category !== 'travel') {
+    throw new Error('Invalid category.');
+  }
+
+  const admin = createAdminClient();
+  const { data: purchase } = await admin.from('purchase_logs').select('id, team_id').eq('id', purchaseId).single();
+
+  if (!purchase) {
+    throw new Error('Purchase not found.');
+  }
+
+  const { user } = await requireLeadTeam(purchase.team_id);
+
+  const { error } = await admin.from('purchase_logs').update({ category }).eq('id', purchaseId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'purchase.category.updated',
+    targetType: 'purchase_log',
+    targetId: purchaseId,
+    summary: `Updated purchase category to ${category}.`,
+    details: {
+      teamId: purchase.team_id,
+      category
+    }
+  });
+
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/expenses');
+  revalidatePath('/dashboard/purchases');
+  revalidatePath('/dashboard/finances');
+}
+
+export async function clearTeamExpenseLogAction(formData: FormData) {
+  const teamId = String(formData.get('team_id') || '').trim();
+
+  if (!teamId) {
+    throw new Error('Missing team id.');
+  }
+
+  const { user } = await requireLeadTeam(teamId);
+  const admin = createAdminClient();
+  const { data: team } = await admin.from('teams').select('id, name').eq('id', teamId).single();
+
+  if (!team) {
+    throw new Error('Team not found.');
+  }
+
+  const confirmOne = String(formData.get('confirm_delete') || '').trim();
+  const confirmTwo = String(formData.get('confirm_team_name') || '').trim();
+
+  if (confirmOne !== 'DELETE' || confirmTwo !== team.name) {
+    throw new Error('Expense log clear confirmation did not match.');
+  }
+
+  const { data: purchases } = await admin
+    .from('purchase_logs')
+    .select('id, receipt_path')
+    .eq('team_id', teamId);
+
+  const receiptPaths = (purchases || [])
+    .map((purchase) => purchase.receipt_path)
+    .filter((path): path is string => Boolean(path));
+
+  if (receiptPaths.length > 0) {
+    await admin.storage.from(RECEIPT_BUCKET).remove(receiptPaths);
+  }
+
+  const { error } = await admin.from('purchase_logs').delete().eq('team_id', teamId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'purchase.cleared',
+    targetType: 'purchase_log',
+    targetId: teamId,
+    summary: `Cleared all expense log entries for ${team.name}.`,
+    details: {
+      teamId,
+      deletedPurchaseCount: (purchases || []).length,
+      deletedReceiptCount: receiptPaths.length
+    }
+  });
+
+  await syncNotificationQueue();
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/expenses');
+  revalidatePath('/dashboard/purchases');
+  revalidatePath('/dashboard/tasks');
+  revalidatePath('/dashboard/finances');
+}
+
+export async function uploadPurchaseReceiptAction(formData: FormData) {
+  const purchaseId = String(formData.get('purchase_id') || '').trim();
+  const receiptFile = formData.get('receipt');
+
+  if (!purchaseId) {
+    throw new Error('Missing purchase id.');
+  }
+
+  if (!(receiptFile instanceof File) || receiptFile.size === 0) {
+    throw new Error('Please choose a receipt file to upload.');
+  }
+
+  const admin = createAdminClient();
+  const { data: purchase } = await admin
+    .from('purchase_logs')
+    .select('id, team_id, receipt_path')
+    .eq('id', purchaseId)
+    .single();
+
+  if (!purchase) {
+    throw new Error('Purchase not found.');
+  }
+
+  const { user } = await requireLeadTeam(purchase.team_id);
+  const uploaded = await uploadReceiptToStorage({
+    purchaseId,
+    teamId: purchase.team_id,
+    file: receiptFile,
+    existingPath: purchase.receipt_path
+  });
+
+  const { error } = await admin
+    .from('purchase_logs')
+    .update({
+      receipt_path: uploaded.path,
+      receipt_file_name: uploaded.fileName,
+      receipt_uploaded_at: new Date().toISOString()
+    })
+    .eq('id', purchaseId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'file.uploaded',
+    targetType: 'purchase_receipt',
+    targetId: purchaseId,
+    summary: 'Uploaded a purchase receipt.',
+    details: {
+      teamId: purchase.team_id,
+      fileName: uploaded.fileName,
+      receiptPath: uploaded.path
+    }
+  });
+
+  await syncNotificationQueue();
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/expenses');
+  revalidatePath('/dashboard/purchases');
+  revalidatePath('/dashboard/tasks');
+}
+
+export async function updateReceiptNotificationSettingsAction(formData: FormData) {
+  const { user } = await requireAdmin();
+
+  const reminderDays = normalizeReminderDays([
+    formData.get('reminder_day_one')?.toString(),
+    formData.get('reminder_day_two')?.toString(),
+    formData.get('reminder_day_three')?.toString()
+  ]);
+  const emailEnabled = String(formData.get('email_enabled') || '') === 'on';
+
+  const admin = createAdminClient();
+  const { error } = await admin.from('receipt_notification_settings').upsert({
+    id: 1,
+    email_enabled: emailEnabled,
+    reminder_days: reminderDays,
+    updated_at: new Date().toISOString()
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'settings.receipt_reminders.updated',
+    targetType: 'receipt_notification_settings',
+    targetId: '1',
+    summary: 'Updated receipt reminder settings.',
+    details: {
+      emailEnabled,
+      reminderDays
+    }
+  });
+
+  await syncNotificationQueue();
+  revalidatePath('/dashboard/settings');
+  revalidatePath('/dashboard/tasks');
+}
+
+export async function updateReportNotificationSettingsAction(formData: FormData) {
+  const { user } = await requireAdmin();
+
+  const reminderDays = normalizeReminderDays([
+    formData.get('report_reminder_day_one')?.toString(),
+    formData.get('report_reminder_day_two')?.toString(),
+    formData.get('report_reminder_day_three')?.toString()
+  ]);
+  const emailEnabled = String(formData.get('report_email_enabled') || '') === 'on';
+
+  const admin = createAdminClient();
+  const { error } = await admin.from('report_notification_settings').upsert({
+    id: 1,
+    email_enabled: emailEnabled,
+    reminder_days: reminderDays,
+    updated_at: new Date().toISOString()
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'settings.report_reminders.updated',
+    targetType: 'report_notification_settings',
+    targetId: '1',
+    summary: 'Updated report reminder settings.',
+    details: {
+      emailEnabled,
+      reminderDays
+    }
+  });
+
+  await syncNotificationQueue();
+  revalidatePath('/dashboard/settings');
+  revalidatePath('/dashboard/reports');
+}
+
+export async function saveReportQuestionsAction(formData: FormData) {
+  const { user } = await requireAdmin();
+
+  const payloadRaw = String(formData.get('questions_json') || '[]');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadRaw);
+  } catch {
+    throw new Error('Report questions payload could not be parsed.');
+  }
+
+  const questions = normalizeReportQuestions(parsed);
+  if (questions.length === 0) {
+    throw new Error('At least one report question is required.');
+  }
+
+  const admin = createAdminClient();
+  const { data: existingQuestions } = await admin
+    .from('report_questions')
+    .select('id')
+    .eq('is_active', true);
+  const existingIds = new Set((existingQuestions || []).map((question) => question.id));
+  const incomingIds = new Set(questions.map((question) => question.id).filter(Boolean));
+
+  for (const question of questions) {
+    if (question.id) {
+      const { error } = await admin
+        .from('report_questions')
+        .update({
+          prompt: question.prompt,
+          field_type: question.fieldType,
+          word_limit: question.wordLimit,
+          sort_order: question.sortOrder,
+          is_active: true
+        })
+        .eq('id', question.id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    } else {
+      const { error } = await admin.from('report_questions').insert({
+        prompt: question.prompt,
+        field_type: question.fieldType,
+        word_limit: question.wordLimit,
+        sort_order: question.sortOrder,
+        is_active: true
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    }
+  }
+
+  const retireIds = Array.from(existingIds).filter((id) => !incomingIds.has(id));
+  if (retireIds.length > 0) {
+    const { error } = await admin
+      .from('report_questions')
+      .update({ is_active: false })
+      .in('id', retireIds);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'settings.report_questions.updated',
+    targetType: 'report_question',
+    summary: 'Updated quarterly report questions.',
+    details: {
+      questionCount: questions.length,
+      retiredQuestionCount: retireIds.length
+    }
+  });
+
+  revalidatePath('/dashboard/settings');
+  revalidatePath('/dashboard/reports');
+}
+
+export async function saveTeamReportDraftAction(formData: FormData) {
+  await saveTeamReport(formData, 'draft');
+}
+
+export async function submitTeamReportAction(formData: FormData) {
+  await saveTeamReport(formData, 'submitted');
 }
 
 export async function createTaskAction(formData: FormData) {
@@ -223,15 +999,39 @@ export async function createTaskAction(formData: FormData) {
         title,
         details: details || 'Open SSR HQ to review this task.'
       });
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'email.sent',
+        targetType: 'task',
+        targetId: task.id,
+        summary: `Sent task email for "${title}".`,
+        details: {
+          recipientCount: recipientEmails.length
+        }
+      });
     }
   }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'task.created',
+    targetType: 'task',
+    targetId: task.id,
+    summary: `Created task "${title}".`,
+    details: {
+      recipientScope,
+      pushNotification,
+      teamIds: allowedTeamIds
+    }
+  });
 
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/tasks');
 }
 
 export async function invitePortalMemberAction(formData: FormData) {
-  await requireAdmin();
+  const { user } = await requireAdmin();
 
   const email = String(formData.get('email') || '').trim().toLowerCase();
   const fullName = String(formData.get('full_name') || '').trim();
@@ -303,6 +1103,33 @@ export async function invitePortalMemberAction(formData: FormData) {
     actionLink: generated.properties.action_link
   });
 
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.invited',
+    targetType: 'profile',
+    targetId: generated.user.id,
+    summary: `Invited ${email} to the portal${teamName ? ` as lead for ${teamName}` : ''}.`,
+    details: {
+      email,
+      teamId: teamId || null,
+      teamName,
+      role: 'team_lead'
+    }
+  });
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'email.sent',
+    targetType: 'profile',
+    targetId: generated.user.id,
+    summary: `Sent invite email to ${email}.`,
+    details: {
+      email,
+      teamId: teamId || null
+    }
+  });
+
+  await syncNotificationQueue();
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/teams');
   revalidatePath('/dashboard/members');
@@ -345,6 +1172,20 @@ export async function addTeamRosterMemberAction(formData: FormData) {
   if (error) {
     throw new Error(error.message);
   }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.recorded',
+    targetType: 'team_roster_member',
+    summary: `Added ${fullName} to the team roster.`,
+    details: {
+      teamId,
+      fullName,
+      stanfordEmail,
+      joinedMonth,
+      joinedYear
+    }
+  });
 
   revalidatePath('/dashboard');
   revalidatePath('/dashboard/members');

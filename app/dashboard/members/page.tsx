@@ -33,6 +33,18 @@ type RosterMember = {
   joined_year: number;
 };
 
+type AdminMemberRow = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  permissions: string;
+  teams: string;
+  sortGroup: number;
+  sortName: string;
+  sortJoined: number;
+};
+
 const monthOptions = [
   'January',
   'February',
@@ -91,6 +103,14 @@ export default async function ManageMembersPage() {
       .eq('is_active', true);
 
     const memberships = (membershipsData || []) as Membership[];
+    const { data: rosterData } = await admin
+      .from('team_roster_members')
+      .select('id, team_id, full_name, stanford_email, joined_month, joined_year')
+      .order('joined_year')
+      .order('joined_month')
+      .order('full_name');
+    const rosterMembers = (rosterData || []) as RosterMember[];
+
     const teamNamesByUser = new Map<string, string[]>();
     for (const membership of memberships) {
       const teamName = teamMap.get(membership.team_id);
@@ -107,6 +127,37 @@ export default async function ManageMembersPage() {
       emailMap.set(authUser.id, authUser.email || '');
     }
 
+    const adminRows: AdminMemberRow[] = profiles.map((profile) => ({
+      id: `profile-${profile.id}`,
+      name: profile.full_name || 'Unnamed user',
+      email: emailMap.get(profile.id) || 'No email found',
+      role: profile.role === 'admin' ? 'Admin' : 'Lead',
+      permissions:
+        profile.role === 'admin' ? 'Full portal access' : 'Lead workspace, purchases, tasks',
+      teams: (teamNamesByUser.get(profile.id) || []).join(', ') || 'None',
+      sortGroup: profile.role === 'admin' ? 0 : 1,
+      sortName: profile.full_name || '',
+      sortJoined: 0
+    }));
+
+    const rosterRows: AdminMemberRow[] = rosterMembers.map((member) => ({
+      id: `roster-${member.id}`,
+      name: member.full_name,
+      email: member.stanford_email,
+      role: 'Recorded member',
+      permissions: 'Record only',
+      teams: teamMap.get(member.team_id) || 'Unknown team',
+      sortGroup: 2,
+      sortName: member.full_name,
+      sortJoined: member.joined_year * 100 + member.joined_month
+    }));
+
+    const rows = [...adminRows, ...rosterRows].sort((a, b) => {
+      if (a.sortGroup !== b.sortGroup) return a.sortGroup - b.sortGroup;
+      if (a.sortGroup === 2 && a.sortJoined !== b.sortJoined) return a.sortJoined - b.sortJoined;
+      return a.sortName.localeCompare(b.sortName);
+    });
+
     return (
       <div className="hq-page">
         <section className="hq-page-head">
@@ -119,37 +170,28 @@ export default async function ManageMembersPage() {
           </div>
         </section>
 
-        <div className="hq-lead-dashboard">
-          <section className="hq-panel hq-lead-main hq-surface-muted">
+        <div className="hq-admin-members-layout">
+          <section className="hq-panel hq-admin-members-main hq-surface-muted">
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Name</th>
                     <th>Email</th>
-                    <th>Portal role</th>
-                    <th>Associated teams</th>
-                    <th>Status</th>
+                    <th>Role</th>
+                    <th>Perms</th>
+                    <th>Team</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {profiles.map((profile) => {
-                    const teamsForUser = teamNamesByUser.get(profile.id) || [];
+                  {rows.map((row) => {
                     return (
-                      <tr key={profile.id}>
-                        <td style={{ fontWeight: 700 }}>{profile.full_name || 'Unnamed user'}</td>
-                        <td>{emailMap.get(profile.id) || 'No email found'}</td>
-                        <td>
-                          <span className={`badge ${profile.role === 'admin' ? 'badge-admin' : 'badge-team'}`}>
-                            {profile.role === 'admin' ? 'Admin' : 'Lead'}
-                          </span>
-                        </td>
-                        <td>{teamsForUser.length > 0 ? teamsForUser.join(', ') : 'None'}</td>
-                        <td>
-                          <span className={`badge ${profile.active ? 'badge-team' : 'badge-off'}`}>
-                            {profile.active ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
+                      <tr key={row.id}>
+                        <td style={{ fontWeight: 700 }}>{row.name}</td>
+                        <td>{row.email}</td>
+                        <td>{row.role}</td>
+                        <td>{row.permissions}</td>
+                        <td>{row.teams}</td>
                       </tr>
                     );
                   })}
@@ -158,7 +200,7 @@ export default async function ManageMembersPage() {
             </div>
           </section>
 
-          <aside className="hq-panel hq-lead-sidebar hq-surface-muted">
+          <aside className="hq-panel hq-admin-members-side hq-surface-muted">
             <div className="hq-section-head">
               <div className="hq-section-head-copy">
                 <p className="hq-eyebrow">Invite</p>

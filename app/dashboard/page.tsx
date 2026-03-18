@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { updateLeadTeamDescriptionAction } from '@/app/dashboard/teams/actions';
+import { getReceiptTaskState } from '@/lib/purchases';
+import { formatQuarterReportTitle } from '@/lib/reports';
 
 type Team = {
   id: string;
@@ -28,6 +30,15 @@ type RosterMember = {
   team_id: string;
 };
 
+type PendingReceipt = {
+  id: string;
+  description: string;
+  purchased_at: string;
+  payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
+  receipt_path: string | null;
+  receipt_not_needed: boolean;
+};
+
 const adminCards = [
   {
     href: '/dashboard/teams',
@@ -43,6 +54,11 @@ const adminCards = [
     href: '/dashboard/finances',
     title: 'Manage finances',
     description: 'Set club and team budgets for the current academic cycle.'
+  },
+  {
+    href: '/dashboard/reports',
+    title: 'Team reports',
+    description: 'Review current quarter submissions and past report history.'
   },
   {
     href: '/dashboard/tasks',
@@ -94,6 +110,12 @@ export default async function DashboardPage() {
     const teams = (teamsData || []) as Team[];
     const memberships = (membershipsData || []) as Membership[];
     const activeLeadMemberships = memberships.filter((membership) => membership.team_role === 'lead');
+    const { count } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('active', true);
+    const { data: rosterMembersData } = await admin.from('team_roster_members').select('id');
+    const totalMembers = (count || 0) + (rosterMembersData || []).length;
 
     return (
       <div className="hq-page">
@@ -116,8 +138,8 @@ export default async function DashboardPage() {
               <span>lead assignments</span>
             </div>
             <div className="hq-mini-stat">
-              <strong>{formatAcademicYear(new Date())}</strong>
-              <span>current cycle</span>
+              <strong>{totalMembers}</strong>
+              <span>total members</span>
             </div>
           </div>
         </section>
@@ -194,6 +216,14 @@ export default async function DashboardPage() {
     .select('amount_cents')
     .eq('team_id', team.id)
     .eq('academic_year', cycle);
+  const { data: pendingReceiptsData } = await admin
+    .from('purchase_logs')
+    .select('id, description, purchased_at, payment_method, receipt_path, receipt_not_needed')
+    .eq('team_id', team.id)
+    .eq('payment_method', 'credit_card')
+    .eq('receipt_not_needed', false)
+    .is('receipt_path', null)
+    .order('purchased_at', { ascending: true });
   const { data: tasksData } = await admin
     .from('tasks')
     .select('id, title, recipient_scope')
@@ -209,7 +239,15 @@ export default async function DashboardPage() {
     (sum, purchase) => sum + purchase.amount_cents / 100,
     0
   );
+  const pendingReceipts = (pendingReceiptsData || []) as PendingReceipt[];
   const spentPercent = annualBudget > 0 ? Math.min(100, Math.round((spent / annualBudget) * 100)) : 0;
+  const { data: reportRecord } = await admin
+    .from('team_reports')
+    .select('id, status')
+    .eq('team_id', team.id)
+    .eq('academic_year', reportState.academicYear)
+    .eq('quarter', reportState.targetQuarter)
+    .maybeSingle();
 
   return (
     <div className="hq-page">
@@ -347,6 +385,24 @@ export default async function DashboardPage() {
               </div>
               {teamTasks.length > 0 ? (
                 <div className="hq-summary-list">
+                  {pendingReceipts.slice(0, 2).map((purchase) => {
+                    const receiptState = getReceiptTaskState({
+                      paymentMethod: purchase.payment_method,
+                      purchasedAt: purchase.purchased_at,
+                      receiptPath: purchase.receipt_path,
+                      receiptNotNeeded: purchase.receipt_not_needed
+                    });
+
+                    return (
+                      <div key={purchase.id} className="hq-summary-row">
+                        <span style={{ color: receiptState.overdue ? '#8c1515' : undefined }}>
+                          {receiptState.overdue ? 'Receipt overdue' : 'Receipt pending'}
+                        </span>
+                        <strong>Upload receipt for {purchase.description}</strong>
+                        <strong>{formatDateLabel(new Date(purchase.purchased_at))}</strong>
+                      </div>
+                    );
+                  })}
                   {teamTasks.slice(0, 3).map((task) => (
                     <div key={task.id} className="hq-summary-row">
                       <span>{task.recipient_scope === 'all_teams' ? 'All teams' : team.name}</span>
@@ -355,7 +411,30 @@ export default async function DashboardPage() {
                   ))}
                 </div>
               ) : (
-                <p className="empty-note">No tasks yet.</p>
+                pendingReceipts.length > 0 ? (
+                  <div className="hq-summary-list">
+                    {pendingReceipts.slice(0, 3).map((purchase) => {
+                      const receiptState = getReceiptTaskState({
+                        paymentMethod: purchase.payment_method,
+                        purchasedAt: purchase.purchased_at,
+                        receiptPath: purchase.receipt_path,
+                        receiptNotNeeded: purchase.receipt_not_needed
+                      });
+
+                      return (
+                        <div key={purchase.id} className="hq-summary-row">
+                          <span style={{ color: receiptState.overdue ? '#8c1515' : undefined }}>
+                            {receiptState.overdue ? 'Receipt overdue' : 'Receipt pending'}
+                          </span>
+                          <strong>Upload receipt for {purchase.description}</strong>
+                          <strong>{formatDateLabel(new Date(purchase.purchased_at))}</strong>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="empty-note">No tasks yet.</p>
+                )
               )}
             </section>
 
@@ -370,9 +449,17 @@ export default async function DashboardPage() {
               </div>
 
               <div className="hq-report-card">
-                <strong>{reportState.targetQuarter}</strong>
+                <strong>{formatQuarterReportTitle(reportState.targetQuarter)}</strong>
                 <span>{reportState.message}</span>
                 <p>{reportState.reportState === 'open' ? `Deadline in ${reportState.countdownLabel}.` : `${reportState.countdownLabel} until reporting opens.`}</p>
+                {reportState.reportState === 'open' && reportRecord?.status !== 'submitted' ? (
+                  <div className="button-row">
+                    <Link href="/dashboard/reports" className="button">
+                      Open report
+                    </Link>
+                  </div>
+                ) : null}
+                {reportRecord?.status === 'submitted' ? <p>Submitted for this quarter.</p> : null}
               </div>
             </section>
           </div>
