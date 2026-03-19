@@ -287,7 +287,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="hq-page">
-      <section className="hq-page-head">
+      <section className="hq-page-head hq-page-head-lead">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">Lead portal</p>
           <h1 className="hq-page-title">Dashboard</h1>
@@ -296,7 +296,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="hq-page-head-action">
+        <div className="hq-page-head-action hq-page-head-action-lead">
           <Link href="/dashboard/purchases" className="button">
             Log purchase
           </Link>
@@ -417,7 +417,7 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          <div className="hq-lead-grid">
+          <div className="hq-lead-grid hq-lead-grid-secondary">
             <section className="hq-lead-block">
               <div className="hq-block-head">
                 <h3>Tasks</h3>
@@ -425,37 +425,10 @@ export default async function DashboardPage() {
                   Open tasks
                 </Link>
               </div>
-              {teamTasks.length > 0 ? (
-                <div className="hq-summary-list">
-                  {pendingReceipts.slice(0, 2).map((purchase) => {
-                    const receiptState = getReceiptTaskState({
-                      paymentMethod: purchase.payment_method,
-                      purchasedAt: purchase.purchased_at,
-                      receiptPath: purchase.receipt_path,
-                      receiptNotNeeded: purchase.receipt_not_needed
-                    });
-
-                    return (
-                      <div key={purchase.id} className="hq-summary-row">
-                        <span style={{ color: receiptState.overdue ? '#8c1515' : undefined }}>
-                          {receiptState.overdue ? 'Receipt overdue' : 'Receipt pending'}
-                        </span>
-                        <strong>Upload receipt for {purchase.description}</strong>
-                        <strong>{formatDateLabel(new Date(purchase.purchased_at))}</strong>
-                      </div>
-                    );
-                  })}
-                  {teamTasks.slice(0, 3).map((task) => (
-                    <div key={task.id} className="hq-summary-row">
-                      <span>{task.recipient_scope === 'all_teams' ? 'All teams' : team.name}</span>
-                      <strong>{task.title}</strong>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                pendingReceipts.length > 0 ? (
+              <div className="hq-report-card">
+                {teamTasks.length > 0 ? (
                   <div className="hq-summary-list">
-                    {pendingReceipts.slice(0, 3).map((purchase) => {
+                    {pendingReceipts.slice(0, 2).map((purchase) => {
                       const receiptState = getReceiptTaskState({
                         paymentMethod: purchase.payment_method,
                         purchasedAt: purchase.purchased_at,
@@ -473,11 +446,40 @@ export default async function DashboardPage() {
                         </div>
                       );
                     })}
+                    {teamTasks.slice(0, 3).map((task) => (
+                      <div key={task.id} className="hq-summary-row">
+                        <span>{task.recipient_scope === 'all_teams' ? 'All teams' : team.name}</span>
+                        <strong>{task.title}</strong>
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  <p className="empty-note">No tasks yet.</p>
-                )
-              )}
+                  pendingReceipts.length > 0 ? (
+                    <div className="hq-summary-list">
+                      {pendingReceipts.slice(0, 3).map((purchase) => {
+                        const receiptState = getReceiptTaskState({
+                          paymentMethod: purchase.payment_method,
+                          purchasedAt: purchase.purchased_at,
+                          receiptPath: purchase.receipt_path,
+                          receiptNotNeeded: purchase.receipt_not_needed
+                        });
+
+                        return (
+                          <div key={purchase.id} className="hq-summary-row">
+                            <span style={{ color: receiptState.overdue ? '#8c1515' : undefined }}>
+                              {receiptState.overdue ? 'Receipt overdue' : 'Receipt pending'}
+                            </span>
+                            <strong>Upload receipt for {purchase.description}</strong>
+                            <strong>{formatDateLabel(new Date(purchase.purchased_at))}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="empty-note">No tasks yet.</p>
+                  )
+                )}
+              </div>
             </section>
 
             <section className="hq-lead-block">

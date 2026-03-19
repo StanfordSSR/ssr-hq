@@ -784,6 +784,14 @@ tr:last-child td {
   align-items: center;
 }
 
+.hq-page-head-lead {
+  align-items: center;
+}
+
+.hq-page-head-action-lead {
+  align-self: center;
+}
+
 .hq-eyebrow {
   margin: 0 0 8px;
   color: var(--cardinal);
@@ -1423,6 +1431,10 @@ tr:last-child td {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.hq-lead-grid-secondary {
+  margin-top: 22px;
 }
 
 .hq-roster-top {
