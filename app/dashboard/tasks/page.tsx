@@ -86,6 +86,11 @@ export default async function TasksPage() {
   let visibleTasks = tasks;
   let selectableTeams = teams;
   let pendingReceipts: ReceiptPurchase[] = [];
+  let reportTask: {
+    title: string;
+    message: string;
+    dueLabel: string;
+  } | null = null;
 
   if (!isPrivilegedViewer) {
     const { data: myMemberships } = await admin
@@ -113,6 +118,26 @@ export default async function TasksPage() {
       .order('purchased_at', { ascending: true });
 
     pendingReceipts = (pendingReceiptsData || []) as ReceiptPurchase[];
+
+    if (reportState.reportState === 'open' && myTeamIds.size > 0) {
+      const { data: submittedReport } = await admin
+        .from('team_reports')
+        .select('id')
+        .in('team_id', Array.from(myTeamIds))
+        .eq('academic_year', reportState.academicYear)
+        .eq('quarter', reportState.targetQuarter)
+        .eq('status', 'submitted')
+        .limit(1)
+        .maybeSingle();
+
+      if (!submittedReport) {
+        reportTask = {
+          title: `${reportState.targetQuarter} report`,
+          message: reportState.message,
+          dueLabel: formatDateLabel(reportState.dueAt)
+        };
+      }
+    }
   }
 
   const teamNameMap = new Map(teams.map((team) => [team.id, team.name]));
@@ -257,6 +282,27 @@ export default async function TasksPage() {
             )
           ) : (
             <div className="hq-task-stack">
+              {reportTask ? (
+                <article className="hq-task-card hq-task-card-report">
+                  <div className="hq-task-card-head">
+                    <div>
+                      <span className="hq-task-kicker">Report task</span>
+                      <h4>{reportTask.title} submission is open</h4>
+                    </div>
+                    <Link href="/dashboard/reports" className="hq-task-arrow" aria-label="Open report">
+                      →
+                    </Link>
+                  </div>
+
+                  <div className="hq-task-card-meta">
+                    <span>Report due {reportTask.dueLabel}</span>
+                    <span>{reportState.countdownLabel} remaining</span>
+                  </div>
+
+                  <p>{reportTask.message}</p>
+                </article>
+              ) : null}
+
               {pendingReceipts.map((purchase) => {
                 const receiptState = getReceiptTaskState({
                   paymentMethod: purchase.payment_method,
@@ -318,7 +364,7 @@ export default async function TasksPage() {
                 );
               })}
 
-              {pendingReceipts.length === 0 && visibleTasks.length === 0 ? (
+              {pendingReceipts.length === 0 && visibleTasks.length === 0 && !reportTask ? (
                 <p className="empty-note">No tasks are assigned to your team yet.</p>
               ) : null}
             </div>

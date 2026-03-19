@@ -636,12 +636,23 @@ tr:last-child td {
   padding: 8px 9px;
   border-radius: 8px;
   font-size: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   transition: background 0.18s ease, color 0.18s ease;
 }
 
 .hq-nav-link:hover {
   background: #f6f0f0;
   color: var(--text);
+}
+
+.hq-nav-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #b42318;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.16);
 }
 
 .hq-user {
@@ -1650,6 +1661,11 @@ tr:last-child td {
   background: #fff5f5;
 }
 
+.hq-task-card-report {
+  border-color: #d9d5e8;
+  background: #fbfbff;
+}
+
 .hq-task-card-head {
   display: flex;
   align-items: flex-start;
@@ -1687,6 +1703,17 @@ tr:last-child td {
   margin: 0;
   color: var(--text);
   line-height: 1.6;
+}
+
+.hq-task-arrow {
+  color: #1f5fbf;
+  font-size: 1.5rem;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.hq-task-arrow:hover {
+  color: #154690;
 }
 
 .hq-receipt-upload {
