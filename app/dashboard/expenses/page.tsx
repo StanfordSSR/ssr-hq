@@ -87,7 +87,9 @@ export default async function ExpenseLogPage({
   const { user, profile: me, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
   const isPresident = currentRole === 'president';
-  const isPrivilegedViewer = isAdmin || isPresident;
+  const isFinancialOfficer = currentRole === 'financial_officer';
+  const isReadOnlyFinanceViewer = isPresident || isFinancialOfficer;
+  const isPrivilegedViewer = isAdmin || isReadOnlyFinanceViewer;
   const { data: memberships } = isPrivilegedViewer
     ? { data: [] }
     : await admin
@@ -273,12 +275,12 @@ export default async function ExpenseLogPage({
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : 'Lead portal'}</p>
+          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>
           <h1 className="hq-page-title">
             {isPrivilegedViewer ? 'Expense log' : `${selectedTeamName} expense log`}
           </h1>
           <p className="hq-subtitle">
-            {isPresident
+            {isReadOnlyFinanceViewer
               ? 'Review every recorded purchase, receipt status, and spending distribution with read-only access.'
               : 'Review every recorded purchase, keep receipts current, and track how spending is distributed.'}
           </p>
@@ -440,7 +442,7 @@ export default async function ExpenseLogPage({
         </aside>
       </section>
 
-      {!isPresident && pendingReceiptPurchases.length > 0 ? (
+      {!isReadOnlyFinanceViewer && pendingReceiptPurchases.length > 0 ? (
         <section className="hq-panel hq-surface-muted hq-pending-section">
           <div className="hq-block-head">
             <h3>Pending receipt uploads</h3>
@@ -481,7 +483,7 @@ export default async function ExpenseLogPage({
                       : 'Upload the receipt as soon as possible so your expense log stays complete.'}
                   </p>
 
-                  {!isPresident ? <ReceiptUploadForm purchaseId={purchase.id} compact /> : null}
+                  {!isReadOnlyFinanceViewer ? <ReceiptUploadForm purchaseId={purchase.id} compact /> : null}
                 </article>
               );
             })}
@@ -509,7 +511,7 @@ export default async function ExpenseLogPage({
                     <th>Category</th>
                     <th>Receipt</th>
                     <th>Team</th>
-                    {!isPresident ? <th>Actions</th> : null}
+                    {!isReadOnlyFinanceViewer ? <th>Actions</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -521,7 +523,7 @@ export default async function ExpenseLogPage({
                     <td>{purchase.person_name || 'Unknown'}</td>
                     <td>{paymentMethodLabel[purchase.payment_method]}</td>
                     <td>
-                      {!isPresident ? (
+                      {!isReadOnlyFinanceViewer ? (
                         <PurchaseCategoryForm purchaseId={purchase.id} category={purchase.category} />
                       ) : (
                         categoryLabel[purchase.category]
@@ -541,7 +543,7 @@ export default async function ExpenseLogPage({
                       )}
                       </td>
                       <td>{teamNameMap.get(purchase.team_id) || 'Unknown team'}</td>
-                      {!isPresident ? (
+                      {!isReadOnlyFinanceViewer ? (
                         <td>
                           <PurchaseEntryActions
                             purchaseId={purchase.id}

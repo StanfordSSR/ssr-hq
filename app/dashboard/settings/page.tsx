@@ -4,8 +4,11 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import Link from 'next/link';
 import { getAcademicCalendarTemplate, getCurrentAcademicYear, getReportingWindows, formatDateLabel } from '@/lib/academic-calendar';
 import {
+  assignFinancialOfficerRoleAction,
   assignPresidentRoleAction,
+  inviteFinancialOfficerAction,
   invitePresidentAction,
+  removeFinancialOfficerRoleAction,
   removePresidentRoleAction,
   updateAcademicCalendarSettingsAction,
   updateReceiptNotificationSettingsAction,
@@ -15,7 +18,14 @@ import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { SettingsTabs } from '@/components/settings-tabs';
-import { getRoleLabel, getViewerContext, profileHasAdminRole, profileHasLeadRole, profileHasPresidentRole } from '@/lib/auth';
+import {
+  getRoleLabel,
+  getViewerContext,
+  profileHasAdminRole,
+  profileHasFinancialOfficerRole,
+  profileHasLeadRole,
+  profileHasPresidentRole
+} from '@/lib/auth';
 
 function formatAuditTimestamp(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -52,7 +62,11 @@ export default async function SettingsPage() {
       admin.from('report_notification_settings').select('email_enabled, reminder_days').eq('id', 1).maybeSingle(),
       admin.from('notification_queue').select('id, notification_type').eq('status', 'queued'),
       admin.from('audit_log_entries').select('id, actor_id, action, target_type, target_id, summary, created_at').order('created_at', { ascending: false }).limit(40),
-      admin.from('profiles').select('id, full_name, role, is_admin, is_president, active').eq('active', true).order('full_name')
+      admin
+        .from('profiles')
+        .select('id, full_name, role, is_admin, is_president, is_financial_officer, active')
+        .eq('active', true)
+        .order('full_name')
     ]);
   const reportingWindows = await getReportingWindows(currentAcademicYear);
   const reportQuestionsData = reportQuestionsResponse.data || [];
@@ -85,6 +99,8 @@ export default async function SettingsPage() {
   const leadUserIds = new Set((leadMemberships || []).map((membership) => membership.user_id));
   const presidents = allProfiles.filter((profile) => profileHasPresidentRole(profile));
   const presidentCandidates = allProfiles.filter((profile) => !profileHasPresidentRole(profile));
+  const financialOfficers = allProfiles.filter((profile) => profileHasFinancialOfficerRole(profile));
+  const financialOfficerCandidates = allProfiles.filter((profile) => !profileHasFinancialOfficerRole(profile));
 
   return (
     <div className="hq-page">
@@ -161,7 +177,33 @@ export default async function SettingsPage() {
               ) : (
                 <p className="empty-note">No presidents assigned yet.</p>
               )}
-            </section>
+                </section>
+                <section className="hq-lead-block">
+                  <div className="hq-block-head">
+                    <h3>Current financial officers</h3>
+                  </div>
+
+                  {financialOfficers.length > 0 ? (
+                    <div className="hq-summary-list">
+                      {financialOfficers.map((profile) => (
+                        <div key={profile.id} className="hq-summary-row">
+                          <span>Read-only finance oversight</span>
+                          <strong>{profile.full_name || 'Unnamed user'}</strong>
+                          {canEdit ? (
+                            <form action={removeFinancialOfficerRoleAction}>
+                              <input type="hidden" name="profile_id" value={profile.id} />
+                              <button className="button-secondary" type="submit">
+                                Remove
+                              </button>
+                            </form>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="empty-note">No financial officers assigned yet.</p>
+                  )}
+                </section>
 
             {canEdit ? (
               <>
@@ -199,6 +241,40 @@ export default async function SettingsPage() {
                 </section>
 
                 <section className="hq-lead-block">
+                  <div className="hq-block-head">
+                    <h3>Assign financial officer</h3>
+                  </div>
+
+                  <form action={assignFinancialOfficerRoleAction} className="form-stack">
+                    <div className="field">
+                      <label className="label" htmlFor="financial-officer-profile-id">
+                        Portal user
+                      </label>
+                      <select className="select" id="financial-officer-profile-id" name="profile_id" defaultValue="">
+                        <option value="" disabled>
+                          Select a portal user
+                        </option>
+                        {financialOfficerCandidates.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.full_name || profile.id.slice(0, 8)} · {[
+                              profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
+                              profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+                              profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
+                            ].filter(Boolean).join(', ') || 'Portal user'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="button-row">
+                      <button className="button" type="submit">
+                        Assign financial officer
+                      </button>
+                    </div>
+                  </form>
+                </section>
+
+                <section className="hq-lead-block">
                   <details className="hq-compact-disclosure">
                     <summary className="hq-compact-disclosure-summary">
                       <span>Invite new president</span>
@@ -225,6 +301,39 @@ export default async function SettingsPage() {
                       <div className="button-row">
                         <button className="button-secondary" type="submit">
                           Invite president
+                        </button>
+                      </div>
+                    </form>
+                  </details>
+                </section>
+
+                <section className="hq-lead-block">
+                  <details className="hq-compact-disclosure">
+                    <summary className="hq-compact-disclosure-summary">
+                      <span>Invite new financial officer</span>
+                      <span className="hq-user-caret" aria-hidden="true">
+                        ▾
+                      </span>
+                    </summary>
+
+                    <form action={inviteFinancialOfficerAction} className="form-stack hq-compact-disclosure-body">
+                      <div className="field">
+                        <label className="label" htmlFor="financial-officer-full-name">
+                          Full name
+                        </label>
+                        <input className="input" id="financial-officer-full-name" name="full_name" required />
+                      </div>
+
+                      <div className="field">
+                        <label className="label" htmlFor="financial-officer-email">
+                          Stanford email
+                        </label>
+                        <input className="input" id="financial-officer-email" name="email" type="email" required />
+                      </div>
+
+                      <div className="button-row">
+                        <button className="button-secondary" type="submit">
+                          Invite financial officer
                         </button>
                       </div>
                     </form>

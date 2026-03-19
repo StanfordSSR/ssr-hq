@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 
-export type AppRole = 'admin' | 'president' | 'team_lead';
+export type AppRole = 'admin' | 'president' | 'financial_officer' | 'team_lead';
 export const ACTIVE_ROLE_COOKIE = 'hq_active_role';
 
 export type Profile = {
@@ -14,6 +14,7 @@ export type Profile = {
   role: AppRole;
   is_admin?: boolean | null;
   is_president?: boolean | null;
+  is_financial_officer?: boolean | null;
   active: boolean;
   created_at: string;
 };
@@ -57,11 +58,18 @@ export function profileHasPresidentRole(profile: Pick<Profile, 'role' | 'is_pres
   return profile.role === 'president' || Boolean(profile.is_president);
 }
 
+export function profileHasFinancialOfficerRole(profile: Pick<Profile, 'role' | 'is_financial_officer'>) {
+  return profile.role === 'financial_officer' || Boolean(profile.is_financial_officer);
+}
+
 export function profileHasLeadRole(profile: Pick<Profile, 'role'>, hasLeadRole: boolean) {
   return hasLeadRole || profile.role === 'team_lead';
 }
 
-export function getAvailableRoles(profile: Pick<Profile, 'role' | 'is_admin' | 'is_president'>, hasLeadRole: boolean) {
+export function getAvailableRoles(
+  profile: Pick<Profile, 'role' | 'is_admin' | 'is_president' | 'is_financial_officer'>,
+  hasLeadRole: boolean
+) {
   const roles: AppRole[] = [];
 
   if (profileHasAdminRole(profile)) {
@@ -70,6 +78,10 @@ export function getAvailableRoles(profile: Pick<Profile, 'role' | 'is_admin' | '
 
   if (profileHasPresidentRole(profile)) {
     roles.push('president');
+  }
+
+  if (profileHasFinancialOfficerRole(profile)) {
+    roles.push('financial_officer');
   }
 
   if (profileHasLeadRole(profile, hasLeadRole)) {
@@ -82,6 +94,7 @@ export function getAvailableRoles(profile: Pick<Profile, 'role' | 'is_admin' | '
 function getDefaultRole(roles: AppRole[]) {
   if (roles.includes('admin')) return 'admin';
   if (roles.includes('president')) return 'president';
+  if (roles.includes('financial_officer')) return 'financial_officer';
   return 'team_lead';
 }
 
@@ -91,7 +104,7 @@ export const getViewerContext = cache(async function getViewerContext() {
   const [{ data: profile }, { count: leadMembershipCount }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('id, full_name, email, role, is_admin, is_president, active, created_at')
+      .select('id, full_name, email, role, is_admin, is_president, is_financial_officer, active, created_at')
       .eq('id', user.id)
       .single<Profile>(),
     admin
@@ -147,5 +160,6 @@ export async function requireAdminOrPresident() {
 export function getRoleLabel(role: AppRole) {
   if (role === 'admin') return 'Admin';
   if (role === 'president') return 'President';
+  if (role === 'financial_officer') return 'Financial officer';
   return 'Team lead';
 }

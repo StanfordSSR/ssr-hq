@@ -4,15 +4,23 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { invitePortalMemberAction } from '@/app/dashboard/actions';
 import { AdminMemberDirectory } from '@/components/admin-member-directory';
 import { LeadRosterWorkspace } from '@/components/lead-roster-workspace';
-import { getRoleLabel, getViewerContext, profileHasAdminRole, profileHasLeadRole, profileHasPresidentRole } from '@/lib/auth';
+import {
+  getRoleLabel,
+  getViewerContext,
+  profileHasAdminRole,
+  profileHasFinancialOfficerRole,
+  profileHasLeadRole,
+  profileHasPresidentRole
+} from '@/lib/auth';
 
 type Profile = {
   id: string;
   full_name: string | null;
   email?: string | null;
-  role: 'admin' | 'president' | 'team_lead';
+  role: 'admin' | 'president' | 'financial_officer' | 'team_lead';
   is_admin?: boolean | null;
   is_president?: boolean | null;
+  is_financial_officer?: boolean | null;
   active: boolean;
 };
 
@@ -101,7 +109,7 @@ export default async function ManageMembersPage() {
       await Promise.all([
         admin
           .from('profiles')
-          .select('id, full_name, email, role, is_admin, is_president, active')
+          .select('id, full_name, email, role, is_admin, is_president, is_financial_officer, active')
           .order('role')
           .order('full_name'),
         admin.from('teams').select('id, name').order('name'),
@@ -146,11 +154,13 @@ export default async function ManageMembersPage() {
       const roleLabels = [
         profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
         profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+        profileHasFinancialOfficerRole(profile) ? getRoleLabel('financial_officer') : null,
         profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
       ].filter(Boolean) as string[];
       const permissionLabels = [
         profileHasAdminRole(profile) ? 'Full portal access' : null,
         profileHasPresidentRole(profile) ? 'Read-only club-wide access' : null,
+        profileHasFinancialOfficerRole(profile) ? 'Read-only finance access' : null,
         profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)) ? 'Lead workspace, purchases, tasks' : null
       ].filter(Boolean) as string[];
 
@@ -168,8 +178,9 @@ export default async function ManageMembersPage() {
         isAdmin &&
         !profileHasAdminRole(profile) &&
         !profileHasPresidentRole(profile) &&
+        !profileHasFinancialOfficerRole(profile) &&
         profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)),
-      sortGroup: profileHasAdminRole(profile) ? 0 : profileHasPresidentRole(profile) ? 1 : 2,
+      sortGroup: profileHasAdminRole(profile) ? 0 : profileHasPresidentRole(profile) ? 1 : profileHasFinancialOfficerRole(profile) ? 2 : 3,
       sortName: profile.full_name || '',
       sortJoined: 0
       };
@@ -185,7 +196,7 @@ export default async function ManageMembersPage() {
       accessLabel: '',
       accessDetail: '',
       canDeletePortal: false,
-      sortGroup: 3,
+      sortGroup: 4,
       sortName: member.full_name,
       sortJoined: member.joined_year * 100 + member.joined_month
     }));

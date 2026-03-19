@@ -106,14 +106,38 @@ const presidentCards = [
   }
 ];
 
+const financialOfficerCards = [
+  {
+    href: '/dashboard/finances',
+    title: 'Finances',
+    description: 'Review club and team budgets, allocations, and spend.'
+  },
+  {
+    href: '/dashboard/purchases',
+    title: 'Purchases',
+    description: 'Review purchase history across teams in read-only mode.'
+  },
+  {
+    href: '/dashboard/expenses',
+    title: 'Expense log',
+    description: 'Inspect spending, receipts, and category trends.'
+  },
+  {
+    href: '/dashboard/receipts',
+    title: 'Receipts',
+    description: 'Review receipt submissions from the most recently completed month.'
+  }
+];
+
 export default async function DashboardPage() {
   const supabase = await createClient();
   const admin = createAdminClient();
   const { user, profile: me, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
   const isPresident = currentRole === 'president';
+  const isFinancialOfficer = currentRole === 'financial_officer';
 
-  if (isAdmin || isPresident) {
+  if (isAdmin || isPresident || isFinancialOfficer) {
     const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }] = await Promise.all([
       admin
         .from('teams')
@@ -139,12 +163,14 @@ export default async function DashboardPage() {
       <div className="hq-page">
         <section className="hq-hero">
           <div>
-            <p className="hq-eyebrow">{isAdmin ? 'Admin portal' : 'President portal'}</p>
+            <p className="hq-eyebrow">{isAdmin ? 'Admin portal' : isPresident ? 'President portal' : 'Financial officer portal'}</p>
             <h1 className="hq-title">Welcome back, {me.full_name || 'operator'}.</h1>
             <p className="hq-subtitle">
               {isAdmin
                 ? "Use HQ to manage teams, leads, members, and the club's operating structure."
-                : 'Use HQ to review teams, reports, finances, and member activity with read-only access.'}
+                : isPresident
+                  ? 'Use HQ to review teams, reports, finances, and member activity with read-only access.'
+                  : 'Use HQ to review finances, purchases, receipts, and the shared expense log with read-only access.'}
             </p>
           </div>
 
@@ -165,7 +191,7 @@ export default async function DashboardPage() {
         </section>
 
         <section className="hq-admin-grid">
-          {(isAdmin ? adminCards : presidentCards).map((card) => (
+          {(isAdmin ? adminCards : isPresident ? presidentCards : financialOfficerCards).map((card) => (
             <Link href={card.href} key={card.href} className="hq-admin-link">
               <strong>{card.title}</strong>
               <span>{card.description}</span>

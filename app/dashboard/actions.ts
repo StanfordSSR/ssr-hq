@@ -5,9 +5,17 @@ import { headers } from 'next/headers';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { ACTIVE_ROLE_COOKIE, getViewerContext, profileHasAdminRole, profileHasPresidentRole, requireAdmin, requireSignedInUser, type AppRole } from '@/lib/auth';
+import {
+  ACTIVE_ROLE_COOKIE,
+  getViewerContext,
+  profileHasAdminRole,
+  profileHasPresidentRole,
+  requireAdmin,
+  requireSignedInUser,
+  type AppRole
+} from '@/lib/auth';
 import { getCurrentAcademicYear, formatAcademicYear, formatPacificDateKey, getReportingWindow } from '@/lib/academic-calendar';
-import { sendInviteEmail, sendPresidentInviteEmail, sendTaskEmails } from '@/lib/notifications';
+import { sendFinancialOfficerInviteEmail, sendInviteEmail, sendPresidentInviteEmail, sendTaskEmails } from '@/lib/notifications';
 import { env } from '@/lib/env';
 import {
   detectPurchaseCategory,
@@ -44,7 +52,8 @@ const REVALIDATE_PATHS = {
   members: ['/dashboard', '/dashboard/members'],
   profile: ['/dashboard', '/dashboard/profile', '/dashboard/members'],
   deleteLead: ['/dashboard', '/dashboard/members', '/dashboard/teams', '/dashboard/tasks', '/dashboard/reports'],
-  presidentRole: ['/dashboard', '/dashboard/settings', '/dashboard/members']
+  presidentRole: ['/dashboard', '/dashboard/settings', '/dashboard/members'],
+  financialOfficerRole: ['/dashboard', '/dashboard/settings', '/dashboard/finances', '/dashboard/purchases', '/dashboard/expenses']
 } satisfies Record<string, string[]>;
 
 function revalidatePaths(paths: string[]) {
@@ -308,7 +317,7 @@ async function createPortalInviteProfile({
 }: {
   email: string;
   fullName: string;
-  role: 'team_lead' | 'president';
+  role: 'team_lead' | 'president' | 'financial_officer';
 }) {
   const admin = createAdminClient();
   const { data: generated, error: generateError } = await admin.auth.admin.generateLink({
@@ -334,6 +343,7 @@ async function createPortalInviteProfile({
     role,
     is_admin: role === 'president' ? false : undefined,
     is_president: role === 'president',
+    is_financial_officer: role === 'financial_officer',
     active: true
   });
 
@@ -2165,6 +2175,158 @@ export async function invitePresidentAction(formData: FormData) {
       });
 
       revalidatePaths(REVALIDATE_PATHS.presidentRole);
+    }
+  });
+}
+
+export async function assignFinancialOfficerRoleAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Assigned the Financial Officer role.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const profileId = String(formData.get('profile_id') || '').trim();
+      if (!profileId) {
+        throw new Error('Select a user to assign.');
+      }
+
+      const admin = createAdminClient();
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('id, full_name, is_financial_officer, active')
+        .eq('id', profileId)
+        .maybeSingle();
+
+      if (!profile || !profile.active) {
+        throw new Error('Selected user was not found.');
+      }
+
+      if (profile.is_financial_officer) {
+        throw new Error('That user already has Financial Officer access.');
+      }
+
+      const { error } = await admin
+        .from('profiles')
+        .update({ is_financial_officer: true })
+        .eq('id', profileId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'role.assigned',
+        targetType: 'profile',
+        targetId: profileId,
+        summary: `Assigned Financial Officer role to ${profile.full_name || 'user'}.`,
+        details: {
+          role: 'financial_officer'
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.financialOfficerRole.concat(REVALIDATE_PATHS.presidentRole));
+    }
+  });
+}
+
+export async function removeFinancialOfficerRoleAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Removed the Financial Officer role.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const profileId = String(formData.get('profile_id') || '').trim();
+      if (!profileId) {
+        throw new Error('Missing financial officer id.');
+      }
+
+      const admin = createAdminClient();
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('id, full_name, is_financial_officer')
+        .eq('id', profileId)
+        .maybeSingle();
+
+      if (!profile || !profile.is_financial_officer) {
+        throw new Error('Financial Officer not found.');
+      }
+
+      const { error } = await admin
+        .from('profiles')
+        .update({ is_financial_officer: false })
+        .eq('id', profileId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'role.removed',
+        targetType: 'profile',
+        targetId: profileId,
+        summary: `Removed Financial Officer role from ${profile.full_name || 'user'}.`,
+        details: {
+          role: 'financial_officer'
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.financialOfficerRole.concat(REVALIDATE_PATHS.presidentRole));
+    }
+  });
+}
+
+export async function inviteFinancialOfficerAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Sent the Financial Officer invite.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const email = String(formData.get('email') || '').trim().toLowerCase();
+      const fullName = String(formData.get('full_name') || '').trim();
+
+      if (!email) {
+        throw new Error('Email is required.');
+      }
+
+      const { generated, actionLink } = await createPortalInviteProfile({
+        email,
+        fullName,
+        role: 'financial_officer'
+      });
+
+      await sendFinancialOfficerInviteEmail({
+        to: email,
+        fullName,
+        actionLink
+      });
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'member.invited',
+        targetType: 'profile',
+        targetId: generated.user.id,
+        summary: `Invited ${email} to the portal as Financial Officer.`,
+        details: {
+          email,
+          role: 'financial_officer'
+        }
+      });
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'email.sent',
+        targetType: 'profile',
+        targetId: generated.user.id,
+        summary: `Sent financial officer invite email to ${email}.`,
+        details: {
+          email,
+          role: 'financial_officer'
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.financialOfficerRole.concat(REVALIDATE_PATHS.presidentRole));
     }
   });
 }

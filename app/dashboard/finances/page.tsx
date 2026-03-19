@@ -43,7 +43,7 @@ export default async function FinancesPage({
   const params = (await searchParams) || {};
   const admin = createAdminClient();
   const { currentRole } = await getViewerContext();
-  if (currentRole !== 'admin' && currentRole !== 'president') {
+  if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'financial_officer') {
     redirect('/dashboard');
   }
   const canEdit = currentRole === 'admin';
@@ -225,7 +225,7 @@ export default async function FinancesPage({
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{canEdit ? 'Admin' : 'President'}</p>
+          <p className="hq-eyebrow">{canEdit ? 'Admin' : currentRole === 'president' ? 'President' : 'Financial officer'}</p>
           <h1 className="hq-page-title">Manage finances</h1>
           <p className="hq-subtitle">
             {canEdit
