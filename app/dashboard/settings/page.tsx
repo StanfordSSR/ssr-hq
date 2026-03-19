@@ -3,9 +3,8 @@ import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import Link from 'next/link';
 import {
+  getAcademicCalendarSettings,
   getAcademicCalendarTemplate,
-  getCurrentAcademicYear,
-  getPreviousAcademicYear,
   getReportingWindows,
   formatDateLabel
 } from '@/lib/academic-calendar';
@@ -17,6 +16,7 @@ import {
   removeFinancialOfficerRoleAction,
   removePresidentRoleAction,
   updateAcademicCalendarSettingsAction,
+  updateAcademicRolloverSettingsAction,
   updateReceiptNotificationSettingsAction,
   updateReportNotificationSettingsAction
 } from '@/app/dashboard/actions';
@@ -52,22 +52,17 @@ export default async function SettingsPage() {
 
   const canEdit = currentRole === 'admin';
   const [
-    currentAcademicYear,
+    calendarSettings,
     calendarTemplate,
     receiptSettings,
     reportQuestionsResponse,
     reportNotificationSettingsResponse,
     queuedNotificationsResponse,
     auditEntriesResponse,
-    allProfilesResponse,
-    currentClubBudgetResponse,
-    currentTeamBudgetsResponse,
-    previousClubBudgetResponse,
-    previousTeamBudgetsResponse,
-    previousPurchasesResponse
+    allProfilesResponse
   ] =
     await Promise.all([
-      getCurrentAcademicYear(),
+      getAcademicCalendarSettings(),
       getAcademicCalendarTemplate(),
       getReceiptNotificationSettings(),
       admin.from('report_questions').select('id, prompt, field_type, word_limit, sort_order').eq('is_active', true).order('sort_order'),
@@ -78,15 +73,25 @@ export default async function SettingsPage() {
         .from('profiles')
         .select('id, full_name, role, is_admin, is_president, is_financial_officer, active')
         .eq('active', true)
-        .order('full_name'),
-      admin.from('club_budgets').select('total_budget_cents').eq('academic_year', await getCurrentAcademicYear()).maybeSingle(),
-      admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', await getCurrentAcademicYear()),
-      admin.from('club_budgets').select('total_budget_cents').eq('academic_year', getPreviousAcademicYear(await getCurrentAcademicYear())).maybeSingle(),
-      admin.from('team_budgets').select('annual_budget_cents').eq('academic_year', getPreviousAcademicYear(await getCurrentAcademicYear())),
-      admin.from('purchase_logs').select('amount_cents').eq('academic_year', getPreviousAcademicYear(await getCurrentAcademicYear()))
+        .order('full_name')
     ]);
-  const reportingWindows = await getReportingWindows(currentAcademicYear);
-  const previousAcademicYear = getPreviousAcademicYear(currentAcademicYear);
+  const currentAcademicYear = calendarSettings.effectiveAcademicYear;
+  const nextAcademicYear = calendarSettings.nextAcademicYear;
+  const [
+    reportingWindows,
+    currentClubBudgetData,
+    currentTeamBudgetsData,
+    currentPurchasesData,
+    nextClubBudgetData,
+    nextTeamBudgetsData
+  ] = await Promise.all([
+    getReportingWindows(currentAcademicYear),
+    admin.from('club_budgets').select('total_budget_cents').eq('academic_year', currentAcademicYear).maybeSingle(),
+    admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', currentAcademicYear),
+    admin.from('purchase_logs').select('amount_cents').eq('academic_year', currentAcademicYear),
+    admin.from('club_budgets').select('total_budget_cents').eq('academic_year', nextAcademicYear).maybeSingle(),
+    admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', nextAcademicYear)
+  ]);
   const reportQuestionsData = reportQuestionsResponse.data || [];
   const reportNotificationSettings = reportNotificationSettingsResponse.data;
   const queuedNotificationsData = queuedNotificationsResponse.data || [];
@@ -119,17 +124,18 @@ export default async function SettingsPage() {
   const presidentCandidates = allProfiles.filter((profile) => !profileHasPresidentRole(profile));
   const financialOfficers = allProfiles.filter((profile) => profileHasFinancialOfficerRole(profile));
   const financialOfficerCandidates = allProfiles.filter((profile) => !profileHasFinancialOfficerRole(profile));
-  const currentBudgetInitialized = Boolean(currentClubBudgetResponse.data) || (currentTeamBudgetsResponse.data || []).length > 0;
-  const previousAllocatedCents = (previousTeamBudgetsResponse.data || []).reduce(
+  const currentBudgetInitialized = Boolean(currentClubBudgetData.data) || (currentTeamBudgetsData.data || []).length > 0;
+  const nextBudgetInitialized = Boolean(nextClubBudgetData.data) || (nextTeamBudgetsData.data || []).length > 0;
+  const currentAllocatedCents = (currentTeamBudgetsData.data || []).reduce(
     (sum, budget) => sum + budget.annual_budget_cents,
     0
   );
-  const previousSpentCents = (previousPurchasesResponse.data || []).reduce(
+  const currentSpentCents = (currentPurchasesData.data || []).reduce(
     (sum, purchase) => sum + purchase.amount_cents,
     0
   );
-  const previousReturnedCents = Math.max(0, previousAllocatedCents - previousSpentCents);
-  const previousClubBudgetCents = previousClubBudgetResponse.data?.total_budget_cents || 0;
+  const previousReturnedCents = Math.max(0, currentAllocatedCents - currentSpentCents);
+  const previousClubBudgetCents = currentClubBudgetData.data?.total_budget_cents || 0;
 
   return (
     <div className="hq-page">
@@ -149,7 +155,13 @@ export default async function SettingsPage() {
         <div className="hq-settings-grid">
           <div className="hq-setting-tile">
             <strong>Current academic cycle</strong>
-            <span>{currentAcademicYear}<br />Auto-rolls forward after summer quarter ends.</span>
+            <span>
+              {currentAcademicYear}
+              <br />
+              {calendarSettings.autoRolloverEnabled
+                ? `Auto-rollover on · date-derived ${calendarSettings.derivedAcademicYear}`
+                : `Manual rollover mode · stored ${calendarSettings.storedAcademicYear}`}
+            </span>
           </div>
           <div className="hq-setting-tile">
             <strong>Queued reminders</strong>
@@ -459,6 +471,18 @@ export default async function SettingsPage() {
                     </div>
                     <span className="helper">Use MM-DD. Winter, spring, and summer each start the day after the previous quarter ends. The academic cycle auto-advances the day after summer quarter ends.</span>
                     <div className="hq-summary-list">
+                      <div className="hq-summary-row">
+                        <span>Rollover mode</span>
+                        <strong>{calendarSettings.autoRolloverEnabled ? 'Automatic' : 'Manual'}</strong>
+                      </div>
+                      <div className="hq-summary-row">
+                        <span>Stored cycle setting</span>
+                        <strong>{calendarSettings.storedAcademicYear}</strong>
+                      </div>
+                      <div className="hq-summary-row">
+                        <span>Date-derived cycle</span>
+                        <strong>{calendarSettings.derivedAcademicYear}</strong>
+                      </div>
                       {reportingWindows.map((window) => (
                         <div key={window.quarter} className="hq-summary-row">
                           <span>{window.quarter} preview</span>
@@ -469,46 +493,74 @@ export default async function SettingsPage() {
                     <div className="button-row"><button className="button" type="submit">Save academic calendar</button></div>
                   </form>
 
+                  <form action={updateAcademicRolloverSettingsAction} className="form-stack">
+                    <label className="hq-switch">
+                      <input
+                        type="checkbox"
+                        name="auto_rollover_enabled"
+                        defaultChecked={calendarSettings.autoRolloverEnabled}
+                      />
+                      <span className="hq-switch-track" aria-hidden="true" />
+                      <span className="hq-switch-copy">
+                        <strong>Auto-roll over academic year</strong>
+                        <small>
+                          When enabled, the portal automatically advances after summer quarter ends. When disabled,
+                          admins control rollover manually.
+                        </small>
+                      </span>
+                    </label>
+                    <div className="button-row">
+                      <button className="button-secondary" type="submit">
+                        Save rollover setting
+                      </button>
+                    </div>
+                  </form>
+
                   <div className="hq-danger-zone">
                     <div className="hq-block-head">
                       <h3>Budget year transition</h3>
                     </div>
                     <div className="hq-summary-list">
                       <div className="hq-summary-row">
-                        <span>Current cycle</span>
+                        <span>Current effective cycle</span>
                         <strong>{currentAcademicYear}</strong>
                       </div>
                       <div className="hq-summary-row">
-                        <span>Budget setup status</span>
-                        <strong>{currentBudgetInitialized ? 'Already initialized' : 'Ready to initialize'}</strong>
+                        <span>Next cycle target</span>
+                        <strong>{nextAcademicYear}</strong>
                       </div>
                       <div className="hq-summary-row">
-                        <span>{previousAcademicYear} unused team funds</span>
+                        <span>{nextAcademicYear} setup status</span>
+                        <strong>{nextBudgetInitialized ? 'Already rolled over' : 'Ready to roll over'}</strong>
+                      </div>
+                      <div className="hq-summary-row">
+                        <span>{currentAcademicYear} unused team funds</span>
                         <strong>${(previousReturnedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                       </div>
                       <div className="hq-summary-row">
-                        <span>{previousAcademicYear} total club budget</span>
+                        <span>{currentAcademicYear} total club budget</span>
                         <strong>${(previousClubBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                       </div>
                     </div>
                     <p className="helper">
-                      This is the protected once-per-cycle step that creates a fresh {currentAcademicYear} club budget at
-                      $0 and resets every active team budget for the new cycle to $0. Prior-year leftover funds are
-                      treated as closeout only and do not carry into the new cycle.
+                      Rolling over preserves historical purchases and past-year spending visibility, but it starts
+                      {` ${nextAcademicYear} `}with a fresh club budget at $0 and resets every active team budget to $0.
+                      Prior-year leftover funds are treated as closeout only and do not carry into the next cycle.
                     </p>
-                    {currentBudgetInitialized ? (
+                    {nextBudgetInitialized ? (
                       <p className="empty-note">
-                        {currentAcademicYear} budget setup already exists. Edit the total and team budgets from Manage
-                        Finances.
+                        {nextAcademicYear} already has budget setup. Edit that year from Manage Finances instead of
+                        rolling over again.
                       </p>
                     ) : (
-                      <AcademicYearInitializerForm academicYear={currentAcademicYear} />
+                      <AcademicYearInitializerForm nextAcademicYear={nextAcademicYear} />
                     )}
                   </div>
                 </div>
               ) : (
                 <div className="hq-summary-list">
                   <div className="hq-summary-row"><span>Current cycle</span><strong>{currentAcademicYear}</strong></div>
+                  <div className="hq-summary-row"><span>Rollover mode</span><strong>{calendarSettings.autoRolloverEnabled ? 'Automatic' : 'Manual'}</strong></div>
                   <div className="hq-summary-row"><span>Budget setup</span><strong>{currentBudgetInitialized ? 'Initialized' : 'Awaiting admin setup'}</strong></div>
                   {reportingWindows.map((window) => (
                     <div key={window.quarter} className="hq-summary-row">

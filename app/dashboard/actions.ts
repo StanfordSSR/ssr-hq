@@ -15,9 +15,11 @@ import {
   type AppRole
 } from '@/lib/auth';
 import {
+  getAcademicCalendarSettings,
   getCurrentAcademicYear,
   formatAcademicYear,
   formatPacificDateKey,
+  getNextAcademicYear,
   getPreviousAcademicYear,
   getReportingWindow
 } from '@/lib/academic-calendar';
@@ -559,65 +561,115 @@ export async function updateTeamBudgetAction(formData: FormData) {
   });
 }
 
-export async function initializeAcademicYearBudgetsAction(formData: FormData) {
+export async function updateAcademicRolloverSettingsAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/settings',
-    successMessage: 'Initialized the new academic year budget cycle.',
+    successMessage: 'Updated academic year rollover settings.',
     action: async () => {
       const { user } = await requireAdmin();
-      const confirmPhrase = String(formData.get('confirm_initialize') || '').trim();
-      const confirmYear = String(formData.get('confirm_academic_year') || '').trim();
-      const currentAcademicYear = await getCurrentAcademicYear();
-      const previousAcademicYear = getPreviousAcademicYear(currentAcademicYear);
+      const autoRolloverEnabled = String(formData.get('auto_rollover_enabled') || '') === 'on';
+      const settings = await getAcademicCalendarSettings();
+      const admin = createAdminClient();
+      const { error } = await admin.from('academic_calendar_settings').upsert({
+        id: 1,
+        current_academic_year: settings.storedAcademicYear,
+        auto_rollover_enabled: autoRolloverEnabled,
+        updated_at: new Date().toISOString()
+      });
 
-      if (confirmPhrase !== 'INITIALIZE') {
-        throw new Error('Type INITIALIZE to confirm the year transition.');
+      if (error) {
+        throw new Error(error.message);
       }
 
-      if (confirmYear !== currentAcademicYear) {
-        throw new Error(`Type ${currentAcademicYear} exactly to confirm the new cycle.`);
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'settings.academic_rollover.updated',
+        targetType: 'academic_calendar_settings',
+        targetId: '1',
+        summary: `Turned academic year auto-rollover ${autoRolloverEnabled ? 'on' : 'off'}.`,
+        details: {
+          autoRolloverEnabled,
+          storedAcademicYear: settings.storedAcademicYear,
+          effectiveAcademicYear: settings.effectiveAcademicYear
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.settingsDashboardReportsTasks.concat(REVALIDATE_PATHS.finances));
+    }
+  });
+}
+
+export async function rolloverAcademicYearAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Rolled over to the next academic year.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const settings = await getAcademicCalendarSettings();
+      const currentAcademicYear = settings.effectiveAcademicYear;
+      const nextAcademicYear = getNextAcademicYear(currentAcademicYear);
+      const confirmPhrase = String(formData.get('confirm_rollover') || '').trim();
+      const confirmYear = String(formData.get('confirm_next_academic_year') || '').trim();
+
+      if (confirmPhrase !== 'ROLLOVER') {
+        throw new Error('Type ROLLOVER to confirm the year transition.');
+      }
+
+      if (confirmYear !== nextAcademicYear) {
+        throw new Error(`Type ${nextAcademicYear} exactly to confirm the new cycle.`);
       }
 
       const admin = createAdminClient();
       const [
         { data: teamsData },
+        { data: nextClubBudget },
+        { data: nextTeamBudgets },
         { data: currentClubBudget },
         { data: currentTeamBudgets },
-        { data: previousClubBudget },
-        { data: previousTeamBudgets },
-        { data: previousPurchases }
+        { data: currentPurchases }
       ] = await Promise.all([
         admin.from('teams').select('id').eq('is_active', true),
-        admin.from('club_budgets').select('academic_year, total_budget_cents').eq('academic_year', currentAcademicYear).maybeSingle(),
-        admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', currentAcademicYear),
-        admin.from('club_budgets').select('total_budget_cents').eq('academic_year', previousAcademicYear).maybeSingle(),
-        admin.from('team_budgets').select('annual_budget_cents').eq('academic_year', previousAcademicYear),
-        admin.from('purchase_logs').select('amount_cents').eq('academic_year', previousAcademicYear)
+        admin.from('club_budgets').select('academic_year, total_budget_cents').eq('academic_year', nextAcademicYear).maybeSingle(),
+        admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', nextAcademicYear),
+        admin.from('club_budgets').select('total_budget_cents').eq('academic_year', currentAcademicYear).maybeSingle(),
+        admin.from('team_budgets').select('annual_budget_cents').eq('academic_year', currentAcademicYear),
+        admin.from('purchase_logs').select('amount_cents').eq('academic_year', currentAcademicYear)
       ]);
 
-      if (currentClubBudget || (currentTeamBudgets || []).length > 0) {
+      if (nextClubBudget || (nextTeamBudgets || []).length > 0) {
         throw new Error(
-          `${currentAcademicYear} budget setup already exists. Edit the totals from Manage Finances instead of re-initializing it.`
+          `${nextAcademicYear} budget setup already exists. That cycle has already been rolled over.`
         );
       }
 
       const activeTeams = teamsData || [];
-      const previousAllocatedCents = (previousTeamBudgets || []).reduce(
+      const previousAllocatedCents = (currentTeamBudgets || []).reduce(
         (sum, budget) => sum + budget.annual_budget_cents,
         0
       );
-      const previousSpentCents = (previousPurchases || []).reduce(
+      const previousSpentCents = (currentPurchases || []).reduce(
         (sum, purchase) => sum + purchase.amount_cents,
         0
       );
       const returnedToGeneralFundCents = Math.max(0, previousAllocatedCents - previousSpentCents);
       const previousGeneralFundBalanceCents = Math.max(
         0,
-        (previousClubBudget?.total_budget_cents || 0) - previousAllocatedCents
+        (currentClubBudget?.total_budget_cents || 0) - previousAllocatedCents
       );
 
+      const { error: settingsError } = await admin.from('academic_calendar_settings').upsert({
+        id: 1,
+        current_academic_year: nextAcademicYear,
+        auto_rollover_enabled: settings.autoRolloverEnabled,
+        updated_at: new Date().toISOString()
+      });
+
+      if (settingsError) {
+        throw new Error(settingsError.message);
+      }
+
       const { error: clubBudgetError } = await admin.from('club_budgets').upsert({
-        academic_year: currentAcademicYear,
+        academic_year: nextAcademicYear,
         total_budget_cents: 0
       });
 
@@ -629,7 +681,7 @@ export async function initializeAcademicYearBudgetsAction(formData: FormData) {
         const { error: teamBudgetError } = await admin.from('team_budgets').upsert(
           activeTeams.map((team) => ({
             team_id: team.id,
-            academic_year: currentAcademicYear,
+            academic_year: nextAcademicYear,
             annual_budget_cents: 0
           })),
           { onConflict: 'team_id,academic_year' }
@@ -642,24 +694,33 @@ export async function initializeAcademicYearBudgetsAction(formData: FormData) {
 
       await recordAuditEvent({
         actorId: user.id,
-        action: 'budget.cycle.initialized',
+        action: 'budget.cycle.rolled_over',
         targetType: 'academic_year',
-        targetId: currentAcademicYear,
-        summary: `Initialized budget setup for ${currentAcademicYear}.`,
+        targetId: nextAcademicYear,
+        summary: `Rolled over from ${currentAcademicYear} to ${nextAcademicYear}.`,
         details: {
-          currentAcademicYear,
-          previousAcademicYear,
+          previousAcademicYear: currentAcademicYear,
+          nextAcademicYear,
           activeTeamCount: activeTeams.length,
-          currentClubBudgetCents: 0,
-          previousClubBudgetCents: previousClubBudget?.total_budget_cents || 0,
+          nextClubBudgetCents: 0,
+          previousClubBudgetCents: currentClubBudget?.total_budget_cents || 0,
           previousAllocatedCents,
           previousSpentCents,
           returnedToGeneralFundCents,
-          previousGeneralFundBalanceCents
+          previousGeneralFundBalanceCents,
+          autoRolloverEnabled: settings.autoRolloverEnabled
         }
       });
 
-      revalidatePaths(REVALIDATE_PATHS.finances.concat(REVALIDATE_PATHS.settings));
+      revalidatePaths(
+        REVALIDATE_PATHS.finances.concat(
+          REVALIDATE_PATHS.settings,
+          REVALIDATE_PATHS.dashboard,
+          REVALIDATE_PATHS.reports,
+          REVALIDATE_PATHS.tasks,
+          REVALIDATE_PATHS.purchases
+        )
+      );
     }
   });
 }

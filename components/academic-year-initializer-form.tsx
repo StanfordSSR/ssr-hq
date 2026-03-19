@@ -1,42 +1,43 @@
 'use client';
 
 import { useState } from 'react';
-import { initializeAcademicYearBudgetsAction } from '@/app/dashboard/actions';
+import { rolloverAcademicYearAction } from '@/app/dashboard/actions';
 
 type AcademicYearInitializerFormProps = {
-  academicYear: string;
+  nextAcademicYear: string;
 };
 
-export function AcademicYearInitializerForm({ academicYear }: AcademicYearInitializerFormProps) {
+export function AcademicYearInitializerForm({ nextAcademicYear }: AcademicYearInitializerFormProps) {
   const [open, setOpen] = useState(false);
 
   if (!open) {
     return (
       <button className="button-ghost" type="button" onClick={() => setOpen(true)}>
-        Initialize {academicYear} budgets
+        Roll over to {nextAcademicYear}
       </button>
     );
   }
 
   return (
-    <form action={initializeAcademicYearBudgetsAction} className="form-stack hq-danger-form">
+    <form action={rolloverAcademicYearAction} className="form-stack hq-danger-form">
       <div className="field">
         <label className="label" htmlFor="academic-year-init-confirm">
-          Type INITIALIZE
+          Type ROLLOVER
         </label>
-        <input className="input" id="academic-year-init-confirm" name="confirm_initialize" required />
+        <input className="input" id="academic-year-init-confirm" name="confirm_rollover" required />
       </div>
 
       <div className="field">
         <label className="label" htmlFor="academic-year-init-cycle">
-          Type {academicYear}
+          Type {nextAcademicYear}
         </label>
-        <input className="input" id="academic-year-init-cycle" name="confirm_academic_year" required />
+        <input className="input" id="academic-year-init-cycle" name="confirm_next_academic_year" required />
       </div>
 
       <span className="helper">
-        This creates a fresh {academicYear} club budget at $0, resets every active team budget for the new cycle to $0,
-        and treats prior-year unused team allocations as returned to general fund for closeout tracking.
+        This rolls the portal into {nextAcademicYear}, creates a fresh club budget at $0, resets every active team budget
+        for the new cycle to $0, and treats prior-year unused team allocations as returned to general fund for closeout
+        tracking only.
       </span>
 
       <div className="hq-inline-editor-actions">
@@ -44,7 +45,7 @@ export function AcademicYearInitializerForm({ academicYear }: AcademicYearInitia
           Cancel
         </button>
         <button className="button" type="submit">
-          Initialize new cycle
+          Roll over year
         </button>
       </div>
     </form>

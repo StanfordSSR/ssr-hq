@@ -29,6 +29,14 @@ export type AcademicCalendarTemplate = {
   summerEndMonthDay: string;
 };
 
+export type AcademicCalendarSettings = {
+  storedAcademicYear: string;
+  derivedAcademicYear: string;
+  effectiveAcademicYear: string;
+  nextAcademicYear: string;
+  autoRolloverEnabled: boolean;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TEMPLATE: AcademicCalendarTemplate = {
   autumnStartMonthDay: '09-22',
@@ -53,6 +61,15 @@ function formatAcademicYearFromStartYear(startYear: number) {
 function parseAcademicYearStartYear(academicYear: string) {
   const parsed = Number(academicYear.slice(0, 4));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function maxAcademicYear(left: string, right: string) {
+  const leftYear = parseAcademicYearStartYear(left);
+  const rightYear = parseAcademicYearStartYear(right);
+
+  if (leftYear === null) return right;
+  if (rightYear === null) return left;
+  return leftYear >= rightYear ? left : right;
 }
 
 export function formatAcademicYear(date: Date) {
@@ -162,8 +179,33 @@ function buildWindowsForStartYear(startYear: number, template: AcademicCalendarT
 }
 
 export async function getCurrentAcademicYear(now = new Date()) {
+  const settings = await getAcademicCalendarSettings(now);
+  return settings.effectiveAcademicYear;
+}
+
+export async function getAcademicCalendarSettings(now = new Date()): Promise<AcademicCalendarSettings> {
   const template = await getAcademicCalendarTemplate();
-  return formatAcademicYearFromStartYear(getAcademicYearStartYear(now, template));
+  const derivedAcademicYear = formatAcademicYearFromStartYear(getAcademicYearStartYear(now, template));
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('academic_calendar_settings')
+    .select('current_academic_year, auto_rollover_enabled')
+    .eq('id', 1)
+    .maybeSingle();
+
+  const storedAcademicYear = data?.current_academic_year || derivedAcademicYear;
+  const autoRolloverEnabled = data?.auto_rollover_enabled ?? true;
+  const effectiveAcademicYear = autoRolloverEnabled
+    ? maxAcademicYear(storedAcademicYear, derivedAcademicYear)
+    : storedAcademicYear;
+
+  return {
+    storedAcademicYear,
+    derivedAcademicYear,
+    effectiveAcademicYear,
+    nextAcademicYear: getNextAcademicYear(effectiveAcademicYear),
+    autoRolloverEnabled
+  };
 }
 
 export async function getReportingWindows(academicYear?: string) {
