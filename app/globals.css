@@ -675,12 +675,22 @@ tr:last-child td {
 }
 
 .hq-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   color: var(--cardinal);
   font-family: var(--font-brand), ui-sans-serif, sans-serif;
   font-size: 1.28rem;
   font-weight: 700;
   white-space: nowrap;
   margin-right: 16px;
+}
+
+.hq-brand-mark {
+  width: 1.55rem;
+  height: 1.55rem;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 .hq-nav {

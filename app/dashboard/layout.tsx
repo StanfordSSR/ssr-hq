@@ -134,6 +134,8 @@ export default async function DashboardLayout({
         <div className="hq-topbar-inner">
           <div className="hq-topbar-left">
             <Link href="/dashboard" className="hq-brand">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icon.png" alt="" className="hq-brand-mark" />
               Stanford Student Robotics HQ
             </Link>
 
