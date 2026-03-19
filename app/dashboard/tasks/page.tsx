@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
-import { createTaskAction, deleteTaskAction } from '@/app/dashboard/actions';
+import { completeTaskAction, createTaskAction, deleteTaskAction } from '@/app/dashboard/actions';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
@@ -23,6 +23,11 @@ type Task = {
 };
 
 type TaskRecipient = {
+  task_id: string;
+  team_id: string;
+};
+
+type TaskCompletion = {
   task_id: string;
   team_id: string;
 };
@@ -57,8 +62,12 @@ export default async function TasksPage() {
     .order('created_at', { ascending: false });
   const tasks = (tasksData || []) as Task[];
 
-  const { data: recipientsData } = await admin.from('task_recipients').select('task_id, team_id');
+  const [{ data: recipientsData }, { data: completionsData }] = await Promise.all([
+    admin.from('task_recipients').select('task_id, team_id'),
+    admin.from('task_completions').select('task_id, team_id')
+  ]);
   const recipients = (recipientsData || []) as TaskRecipient[];
+  const completions = (completionsData || []) as TaskCompletion[];
   const recipientMap = new Map<string, string[]>();
   for (const recipient of recipients) {
     if (!recipientMap.has(recipient.task_id)) {
@@ -85,8 +94,16 @@ export default async function TasksPage() {
       .eq('is_active', true);
 
     const myTeamIds = new Set((myMemberships || []).map((membership) => membership.team_id));
+    const completedTaskIds = new Set(
+      completions
+        .filter((completion) => myTeamIds.has(completion.team_id))
+        .map((completion) => completion.task_id)
+    );
     selectableTeams = teams.filter((team) => myTeamIds.has(team.id));
     visibleTasks = tasks.filter((task) => {
+      if (completedTaskIds.has(task.id)) {
+        return false;
+      }
       if (task.recipient_scope === 'all_teams') return true;
       const taskTeamIds = recipientMap.get(task.id) || [];
       return taskTeamIds.some((teamId) => myTeamIds.has(teamId));
@@ -344,6 +361,14 @@ export default async function TasksPage() {
                       <span>{formatDateLabel(new Date(task.created_at))}</span>
                     </div>
                     <p>{task.details || 'No extra details yet.'}</p>
+                    <div className="button-row">
+                      <form action={completeTaskAction}>
+                        <input type="hidden" name="task_id" value={task.id} />
+                        <button className="button-secondary" type="submit">
+                          Done
+                        </button>
+                      </form>
+                    </div>
                   </article>
                 );
               })}

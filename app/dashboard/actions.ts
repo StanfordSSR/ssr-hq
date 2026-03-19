@@ -1717,6 +1717,83 @@ export async function deleteTaskAction(formData: FormData) {
   });
 }
 
+export async function completeTaskAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/tasks',
+    successMessage: 'Marked the task as done.',
+    action: async () => {
+      const { user, currentRole } = await requireActiveProfile();
+      const taskId = String(formData.get('task_id') || '').trim();
+
+      if (currentRole !== 'team_lead') {
+        redirect('/dashboard');
+      }
+
+      if (!taskId) {
+        throw new Error('Missing task id.');
+      }
+
+      const admin = createAdminClient();
+      const [{ data: myMemberships }, { data: task }, { data: recipients }] = await Promise.all([
+        admin
+          .from('team_memberships')
+          .select('team_id')
+          .eq('user_id', user.id)
+          .eq('team_role', 'lead')
+          .eq('is_active', true),
+        admin
+          .from('tasks')
+          .select('id, title, recipient_scope')
+          .eq('id', taskId)
+          .eq('is_active', true)
+          .maybeSingle(),
+        admin.from('task_recipients').select('team_id').eq('task_id', taskId)
+      ]);
+
+      if (!task) {
+        throw new Error('Task not found.');
+      }
+
+      const myTeamIds = new Set((myMemberships || []).map((membership) => membership.team_id));
+      const visibleTeamIds =
+        task.recipient_scope === 'all_teams'
+          ? Array.from(myTeamIds)
+          : (recipients || []).map((recipient) => recipient.team_id).filter((teamId) => myTeamIds.has(teamId));
+
+      if (visibleTeamIds.length === 0) {
+        throw new Error('You cannot complete a task for a team you do not lead.');
+      }
+
+      const { error } = await admin.from('task_completions').upsert(
+        visibleTeamIds.map((teamId) => ({
+          task_id: taskId,
+          team_id: teamId,
+          completed_by: user.id,
+          completed_at: new Date().toISOString()
+        })),
+        { onConflict: 'task_id,team_id' }
+      );
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'task.completed',
+        targetType: 'task',
+        targetId: taskId,
+        summary: `Marked task "${task.title}" as done.`,
+        details: {
+          teamIds: visibleTeamIds
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.tasks.concat(REVALIDATE_PATHS.dashboard));
+    }
+  });
+}
+
 export async function invitePortalMemberAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/members',

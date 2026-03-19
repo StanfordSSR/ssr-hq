@@ -77,7 +77,7 @@ export default async function DashboardLayout({
     const myTeamIds = (memberships || []).map((membership) => membership.team_id);
 
     if (myTeamIds.length > 0) {
-      const [{ count: pendingReceiptCount }, { count: allTeamsTaskCount }, { data: taskRecipients }, reportState] = await Promise.all([
+      const [{ count: pendingReceiptCount }, { count: allTeamsTaskCount }, { data: taskRecipients }, { data: taskCompletions }, reportState] = await Promise.all([
         admin
           .from('purchase_logs')
           .select('id', { count: 'exact', head: true })
@@ -91,10 +91,14 @@ export default async function DashboardLayout({
           .eq('is_active', true)
           .eq('recipient_scope', 'all_teams'),
         admin.from('task_recipients').select('task_id, team_id').in('team_id', myTeamIds),
+        admin.from('task_completions').select('task_id, team_id').in('team_id', myTeamIds),
         getNextReportState(new Date())
       ]);
 
-      const hasAssignedTasks = (allTeamsTaskCount || 0) > 0 || (taskRecipients || []).length > 0;
+      const completedTaskIds = new Set((taskCompletions || []).map((entry) => entry.task_id));
+      const hasAssignedAllTeamTask = (allTeamsTaskCount || 0) > completedTaskIds.size;
+      const hasSpecificAssignedTasks = (taskRecipients || []).some((entry) => !completedTaskIds.has(entry.task_id));
+      const hasAssignedTasks = hasAssignedAllTeamTask || hasSpecificAssignedTasks;
       const hasPendingReceipts = (pendingReceiptCount || 0) > 0;
       let hasPendingReport = false;
 

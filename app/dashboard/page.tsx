@@ -252,7 +252,7 @@ export default async function DashboardPage() {
   const teamMemberships = (teamMembershipsData || []) as Membership[];
   const rosterMembers = (rosterMembersData || []) as RosterMember[];
   const memberCount = teamMemberships.length + rosterMembers.length;
-  const [{ data: teamBudget }, { data: purchasesData }, { data: pendingReceiptsData }, { data: tasksData }, { data: taskRecipients }] =
+  const [{ data: teamBudget }, { data: purchasesData }, { data: pendingReceiptsData }, { data: tasksData }, { data: taskRecipients }, { data: taskCompletions }] =
     await Promise.all([
       admin
         .from('team_budgets')
@@ -278,11 +278,13 @@ export default async function DashboardPage() {
         .select('id, title, recipient_scope')
         .eq('is_active', true)
         .order('created_at', { ascending: false }),
-      admin.from('task_recipients').select('task_id, team_id').eq('team_id', team.id)
+      admin.from('task_recipients').select('task_id, team_id').eq('team_id', team.id),
+      admin.from('task_completions').select('task_id').eq('team_id', team.id)
     ]);
   const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
+  const completedTaskIds = new Set((taskCompletions || []).map((entry) => entry.task_id));
   const teamTasks = (tasksData || []).filter(
-    (task) => task.recipient_scope === 'all_teams' || recipientTaskIds.has(task.id)
+    (task) => !completedTaskIds.has(task.id) && (task.recipient_scope === 'all_teams' || recipientTaskIds.has(task.id))
   );
   const annualBudget = teamBudget?.annual_budget_cents ? teamBudget.annual_budget_cents / 100 : 0;
   const spent = ((purchasesData || []) as Array<{ amount_cents: number }>).reduce(
