@@ -86,7 +86,7 @@ export default async function ReportsPage({
   const isPresident = me.role === 'president';
 
   if (isAdmin || isPresident) {
-    const reportState = getNextReportState(new Date());
+    const reportState = await getNextReportState(new Date());
     const currentKey = formatQuarterKey(reportState);
     const { data: reportsData } = await admin
       .from('team_reports')
@@ -278,7 +278,7 @@ export default async function ReportsPage({
     redirect('/dashboard');
   }
 
-  const reportContext = getOpenReportContext(new Date());
+  const reportContext = await getOpenReportContext(new Date());
   const reportKey = formatQuarterKey(reportContext.reportState);
   const { data: team } = await admin.from('teams').select('id, name').eq('id', teamId).single<Team>();
   const memberCountData = await Promise.all([
@@ -300,7 +300,7 @@ export default async function ReportsPage({
     .eq('is_active', true)
     .order('sort_order');
   const questions = (questionsData || []) as Question[];
-  const reportingWindow = getReportingWindow(reportKey.academicYear, reportKey.quarter);
+  const reportingWindow = await getReportingWindow(reportKey.academicYear, reportKey.quarter);
   const { data: quarterPurchasesData } = await admin
     .from('purchase_logs')
     .select('amount_cents, purchased_at')

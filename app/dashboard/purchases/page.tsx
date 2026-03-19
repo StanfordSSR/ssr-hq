@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
+import { getCurrentAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { PurchaseImport } from '@/components/purchase-import';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { getReceiptTaskState } from '@/lib/purchases';
@@ -93,7 +93,7 @@ export default async function PurchasesPage() {
     );
   }
 
-  const academicYear = formatAcademicYear(new Date());
+  const academicYear = await getCurrentAcademicYear();
   const accessibleTeamIds = teams.map((team) => team.id);
   const teamNameMap = new Map<string, string>(teams.map((team) => [team.id, team.name]));
 

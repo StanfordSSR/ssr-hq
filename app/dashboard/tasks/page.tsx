@@ -61,7 +61,7 @@ export default async function TasksPage() {
   const isAdmin = me.role === 'admin';
   const isPresident = me.role === 'president';
   const isPrivilegedViewer = isAdmin || isPresident;
-  const reportState = getNextReportState(new Date());
+  const reportState = await getNextReportState(new Date());
 
   const { data: teamsData } = await admin.from('teams').select('id, name').order('name');
   const teams = (teamsData || []) as Team[];

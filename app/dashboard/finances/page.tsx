@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { formatAcademicYear } from '@/lib/academic-calendar';
+import { getCurrentAcademicYear, formatAcademicYear } from '@/lib/academic-calendar';
 import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/actions';
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
 
@@ -61,7 +61,7 @@ export default async function FinancesPage({
   }
   const canEdit = me.role === 'admin';
 
-  const cycle = formatAcademicYear(new Date());
+  const cycle = await getCurrentAcademicYear();
   const selectedTeamId = readSingle(params.team) || 'all';
   const selectedRange = readSingle(params.range) || 'current_cycle';
   const { data: teamsData } = await admin.from('teams').select('id, name, logo_url').order('name');

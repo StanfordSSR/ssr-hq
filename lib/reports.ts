@@ -87,8 +87,8 @@ export function normalizeReportQuestions(value: unknown) {
   }));
 }
 
-export function getOpenReportContext(now = new Date()) {
-  const reportState = getNextReportState(now);
+export async function getOpenReportContext(now = new Date()) {
+  const reportState = await getNextReportState(now);
   return {
     reportState,
     canSubmit: reportState.reportState === 'open'

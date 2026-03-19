@@ -1,17 +1,21 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { formatAcademicYear } from '@/lib/academic-calendar';
+import { getCurrentAcademicYear, getReportingWindows } from '@/lib/academic-calendar';
 import {
   assignPresidentRoleAction,
   invitePresidentAction,
   removePresidentRoleAction,
+  updateAcademicCalendarSettingsAction,
   updateReceiptNotificationSettingsAction,
   updateReportNotificationSettingsAction
 } from '@/app/dashboard/actions';
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { normalizeReminderDays } from '@/lib/purchases';
+
+type SettingsTab = 'board' | 'reminders' | 'reporting' | 'audit';
 
 function formatAuditTimestamp(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -22,7 +26,18 @@ function formatAuditTimestamp(value: string) {
   }).format(new Date(value));
 }
 
-export default async function SettingsPage() {
+function readTab(value: string | string[] | undefined): SettingsTab {
+  const raw = Array.isArray(value) ? value[0] || '' : value || '';
+  return raw === 'board' || raw === 'reminders' || raw === 'reporting' || raw === 'audit' ? raw : 'board';
+}
+
+export default async function SettingsPage({
+  searchParams
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = (await searchParams) || {};
+  const tab = readTab(params.tab);
   const supabase = await createClient();
   const admin = createAdminClient();
   const {
@@ -42,7 +57,10 @@ export default async function SettingsPage() {
   if (!me?.active || (me.role !== 'admin' && me.role !== 'president')) {
     redirect('/dashboard');
   }
+
   const canEdit = me.role === 'admin';
+  const currentAcademicYear = await getCurrentAcademicYear();
+  const reportingWindows = await getReportingWindows(currentAcademicYear);
   const receiptSettings = await getReceiptNotificationSettings();
   const { data: reportQuestionsData } = await admin
     .from('report_questions')
@@ -88,6 +106,13 @@ export default async function SettingsPage() {
   const presidents = allProfiles.filter((profile) => profile.role === 'president');
   const presidentCandidates = allProfiles.filter((profile) => profile.role !== 'admin' && profile.role !== 'president');
 
+  const tabs: Array<{ id: SettingsTab; label: string }> = [
+    { id: 'board', label: 'Board' },
+    { id: 'reminders', label: 'Reminders' },
+    { id: 'reporting', label: 'Reporting' },
+    { id: 'audit', label: 'Audit log' }
+  ];
+
   return (
     <div className="hq-page">
       <section className="hq-page-head">
@@ -96,25 +121,17 @@ export default async function SettingsPage() {
           <h1 className="hq-page-title">Club settings</h1>
           <p className="hq-subtitle">
             {canEdit
-              ? 'A home for club-wide operating settings, cycle references, and future portal controls.'
-              : 'Review club-wide operating settings, leadership access, reminder timing, and the audit log in read-only mode.'}
+              ? 'Configure the operating calendar, reminders, reporting setup, and leadership access.'
+              : 'Review the operating calendar, reminders, reporting setup, and audit log in read-only mode.'}
           </p>
         </div>
       </section>
 
-      <section className="hq-panel">
+      <section className="hq-panel hq-surface-muted">
         <div className="hq-settings-grid">
           <div className="hq-setting-tile">
             <strong>Current academic cycle</strong>
-            <span>{formatAcademicYear(new Date())}</span>
-          </div>
-          <div className="hq-setting-tile">
-            <strong>Task assignment</strong>
-            <span>Managed from the Assign Tasks page.</span>
-          </div>
-          <div className="hq-setting-tile">
-            <strong>Team branding</strong>
-            <span>Team logos can be updated from Manage Teams and the lead dashboard.</span>
+            <span>{currentAcademicYear}</span>
           </div>
           <div className="hq-setting-tile">
             <strong>Queued reminders</strong>
@@ -124,344 +141,252 @@ export default async function SettingsPage() {
               {receiptQueueCount} receipt, {reportQueueCount} report
             </span>
           </div>
+          <div className="hq-setting-tile">
+            <strong>Quarter schedule</strong>
+            <span>{reportingWindows[0]?.quarter || 'Autumn Quarter'} through {reportingWindows[3]?.quarter || 'Summer Quarter'}</span>
+          </div>
+          <div className="hq-setting-tile">
+            <strong>Portal mode</strong>
+            <span>{canEdit ? 'Editable admin controls' : 'Read-only president view'}</span>
+          </div>
         </div>
       </section>
 
       <section className="hq-panel hq-surface-muted">
-        <div className="hq-section-head">
-          <div className="hq-section-head-copy">
-            <p className="hq-eyebrow">Leadership</p>
-            <h2 className="hq-section-title hq-section-title-compact">President access</h2>
-          </div>
+        <div className="hq-tab-row">
+          {tabs.map((item) => (
+            <Link
+              key={item.id}
+              href={`/dashboard/settings?tab=${item.id}`}
+              className={`hq-tab-button ${tab === item.id ? 'hq-tab-button-active' : ''}`}
+            >
+              {item.label}
+            </Link>
+          ))}
         </div>
 
-        <div className="hq-lead-grid">
-          <section className="hq-lead-block">
-            <div className="hq-block-head">
-              <h3>Current presidents</h3>
-            </div>
-
-            {presidents.length > 0 ? (
-              <div className="hq-summary-list">
-                {presidents.map((profile) => (
-                  <div key={profile.id} className="hq-summary-row">
-                    <span>Read-only portal access</span>
-                    <strong>{profile.full_name || 'Unnamed user'}</strong>
-                    {canEdit ? (
-                      <form action={removePresidentRoleAction}>
-                        <input type="hidden" name="profile_id" value={profile.id} />
-                        <button className="button-secondary" type="submit">
-                          Remove
-                        </button>
-                      </form>
-                    ) : null}
-                  </div>
-                ))}
+        {tab === 'board' ? (
+          <div className="hq-lead-grid">
+            <section className="hq-lead-block">
+              <div className="hq-block-head">
+                <h3>Current presidents</h3>
               </div>
-            ) : (
-              <p className="empty-note">No presidents assigned yet.</p>
-            )}
-          </section>
 
-          {canEdit ? (
-            <>
-              <section className="hq-lead-block">
-                <div className="hq-block-head">
-                  <h3>Assign president</h3>
-                </div>
-
-                <form action={assignPresidentRoleAction} className="form-stack">
-                  <div className="field">
-                    <label className="label" htmlFor="president-profile-id">
-                      Portal user
-                    </label>
-                    <select className="select" id="president-profile-id" name="profile_id" defaultValue="">
-                      <option value="" disabled>
-                        Select a portal user
-                      </option>
-                      {presidentCandidates.map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {profile.full_name || profile.id.slice(0, 8)} · {profile.role === 'team_lead' ? 'Lead' : profile.role}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="helper">Presidents can view all portal pages but cannot edit anything.</span>
-                  </div>
-
-                  <div className="button-row">
-                    <button className="button" type="submit">
-                      Assign president
-                    </button>
-                  </div>
-                </form>
-              </section>
-
-              <section className="hq-lead-block">
-                <details className="hq-compact-disclosure">
-                  <summary className="hq-compact-disclosure-summary">
-                    <span>Invite new president</span>
-                    <span className="hq-user-caret" aria-hidden="true">
-                      ▾
-                    </span>
-                  </summary>
-
-                  <form action={invitePresidentAction} className="form-stack hq-compact-disclosure-body">
-                    <div className="field">
-                      <label className="label" htmlFor="president-full-name">
-                        Full name
-                      </label>
-                      <input className="input" id="president-full-name" name="full_name" required />
+              {presidents.length > 0 ? (
+                <div className="hq-summary-list">
+                  {presidents.map((profile) => (
+                    <div key={profile.id} className="hq-summary-row">
+                      <span>Read-only portal access</span>
+                      <strong>{profile.full_name || 'Unnamed user'}</strong>
+                      {canEdit ? (
+                        <form action={removePresidentRoleAction}>
+                          <input type="hidden" name="profile_id" value={profile.id} />
+                          <button className="button-secondary" type="submit">
+                            Remove
+                          </button>
+                        </form>
+                      ) : null}
                     </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-note">No presidents assigned yet.</p>
+              )}
+            </section>
 
+            {canEdit ? (
+              <>
+                <section className="hq-lead-block">
+                  <div className="hq-block-head">
+                    <h3>Assign president</h3>
+                  </div>
+
+                  <form action={assignPresidentRoleAction} className="form-stack">
                     <div className="field">
-                      <label className="label" htmlFor="president-email">
-                        Stanford email
+                      <label className="label" htmlFor="president-profile-id">
+                        Portal user
                       </label>
-                      <input
-                        className="input"
-                        id="president-email"
-                        name="email"
-                        type="email"
-                        placeholder="sunet@stanford.edu"
-                        required
-                      />
-                      <span className="helper">This sends a read-only President portal invite with the secure account confirmation link.</span>
+                      <select className="select" id="president-profile-id" name="profile_id" defaultValue="">
+                        <option value="" disabled>
+                          Select a portal user
+                        </option>
+                        {presidentCandidates.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.full_name || profile.id.slice(0, 8)} · {profile.role === 'team_lead' ? 'Lead' : profile.role}
+                          </option>
+                        ))}
+                      </select>
                     </div>
 
                     <div className="button-row">
-                      <button className="button-secondary" type="submit">
-                        Invite president
+                      <button className="button" type="submit">
+                        Assign president
                       </button>
                     </div>
                   </form>
-                </details>
-              </section>
-            </>
-          ) : null}
-        </div>
-      </section>
+                </section>
 
-      <section className="hq-panel hq-surface-muted">
-        <div className="hq-section-head">
-          <div className="hq-section-head-copy">
-            <p className="hq-eyebrow">Receipts</p>
-            <h2 className="hq-section-title hq-section-title-compact">Receipt reminder settings</h2>
+                <section className="hq-lead-block">
+                  <details className="hq-compact-disclosure">
+                    <summary className="hq-compact-disclosure-summary">
+                      <span>Invite new president</span>
+                      <span className="hq-user-caret" aria-hidden="true">
+                        ▾
+                      </span>
+                    </summary>
+
+                    <form action={invitePresidentAction} className="form-stack hq-compact-disclosure-body">
+                      <div className="field">
+                        <label className="label" htmlFor="president-full-name">
+                          Full name
+                        </label>
+                        <input className="input" id="president-full-name" name="full_name" required />
+                      </div>
+
+                      <div className="field">
+                        <label className="label" htmlFor="president-email">
+                          Stanford email
+                        </label>
+                        <input className="input" id="president-email" name="email" type="email" required />
+                      </div>
+
+                      <div className="button-row">
+                        <button className="button-secondary" type="submit">
+                          Invite president
+                        </button>
+                      </div>
+                    </form>
+                  </details>
+                </section>
+              </>
+            ) : null}
           </div>
-        </div>
+        ) : null}
 
-        {canEdit ? (
-          <form action={updateReceiptNotificationSettingsAction} className="form-stack">
-            <label className="hq-switch">
-              <input type="checkbox" name="email_enabled" defaultChecked={receiptSettings.emailEnabled} />
-              <span className="hq-switch-track" aria-hidden="true" />
-              <span className="hq-switch-copy">
-                <strong>Email team leads</strong>
-                <small>Turn receipt reminder emails on or off without changing the in-portal receipt tasks.</small>
-              </span>
-            </label>
-
-            <div className="hq-inline-grid">
-              <div className="field">
-                <label className="label" htmlFor="reminder-day-one">
-                  Reminder 1
-                </label>
-                <input
-                  className="input"
-                  id="reminder-day-one"
-                  name="reminder_day_one"
-                  type="number"
-                  min="1"
-                  max="365"
-                  defaultValue={receiptSettings.reminderDays[0] || ''}
-                  placeholder="3"
-                />
+        {tab === 'reminders' ? (
+          <div className="hq-lead-grid">
+            <section className="hq-lead-block">
+              <div className="hq-block-head">
+                <h3>Receipt reminders</h3>
               </div>
-
-              <div className="field">
-                <label className="label" htmlFor="reminder-day-two">
-                  Reminder 2
-                </label>
-                <input
-                  className="input"
-                  id="reminder-day-two"
-                  name="reminder_day_two"
-                  type="number"
-                  min="1"
-                  max="365"
-                  defaultValue={receiptSettings.reminderDays[1] || ''}
-                  placeholder="7"
-                />
-              </div>
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="reminder-day-three">
-                Reminder 3
-              </label>
-              <input
-                className="input"
-                id="reminder-day-three"
-                name="reminder_day_three"
-                type="number"
-                min="1"
-                max="365"
-                defaultValue={receiptSettings.reminderDays[2] || ''}
-                placeholder="14"
-              />
-              <span className="helper">Set up to three reminder timings in days after purchase. Leave a field blank to skip it.</span>
-            </div>
-
-            <div className="button-row">
-              <button className="button" type="submit">
-                Save receipt settings
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="hq-summary-list">
-            <div className="hq-summary-row">
-              <span>Email reminders</span>
-              <strong>{receiptSettings.emailEnabled ? 'Enabled' : 'Disabled'}</strong>
-            </div>
-            <div className="hq-summary-row">
-              <span>Reminder cadence</span>
-              <strong>{receiptSettings.reminderDays.length ? receiptSettings.reminderDays.map((day) => `Day ${day}`).join(', ') : 'No reminders configured'}</strong>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="hq-panel hq-surface-muted">
-        <div className="hq-section-head">
-          <div className="hq-section-head-copy">
-            <p className="hq-eyebrow">Reports</p>
-            <h2 className="hq-section-title hq-section-title-compact">Quarterly report questions</h2>
-          </div>
-        </div>
-
-        <ReportQuestionEditor initialQuestions={reportQuestions} readOnly={!canEdit} />
-      </section>
-
-      <section className="hq-panel hq-surface-muted">
-        <div className="hq-section-head">
-          <div className="hq-section-head-copy">
-            <p className="hq-eyebrow">Reports</p>
-            <h2 className="hq-section-title hq-section-title-compact">Report reminder settings</h2>
-          </div>
-        </div>
-
-        {canEdit ? (
-          <form action={updateReportNotificationSettingsAction} className="form-stack">
-            <label className="hq-switch">
-              <input
-                type="checkbox"
-                name="report_email_enabled"
-                defaultChecked={reportNotificationSettings?.email_enabled ?? true}
-              />
-              <span className="hq-switch-track" aria-hidden="true" />
-              <span className="hq-switch-copy">
-                <strong>Email team leads</strong>
-                <small>Control whether report due reminders send email in addition to showing up in HQ.</small>
-              </span>
-            </label>
-
-            <div className="hq-inline-grid">
-              <div className="field">
-                <label className="label" htmlFor="report-reminder-one">
-                  Reminder 1
-                </label>
-                <input
-                  className="input"
-                  id="report-reminder-one"
-                  name="report_reminder_day_one"
-                  type="number"
-                  min="1"
-                  max="365"
-                  defaultValue={reportReminderDays[0] || ''}
-                  placeholder="14"
-                />
-              </div>
-
-              <div className="field">
-                <label className="label" htmlFor="report-reminder-two">
-                  Reminder 2
-                </label>
-                <input
-                  className="input"
-                  id="report-reminder-two"
-                  name="report_reminder_day_two"
-                  type="number"
-                  min="1"
-                  max="365"
-                  defaultValue={reportReminderDays[1] || ''}
-                  placeholder="7"
-                />
-              </div>
-            </div>
-
-            <div className="field">
-              <label className="label" htmlFor="report-reminder-three">
-                Reminder 3
-              </label>
-              <input
-                className="input"
-                id="report-reminder-three"
-                name="report_reminder_day_three"
-                type="number"
-                min="1"
-                max="365"
-                defaultValue={reportReminderDays[2] || ''}
-                placeholder="1"
-              />
-              <span className="helper">Set up to three report reminder timings in days before the due date.</span>
-            </div>
-
-            <div className="button-row">
-              <button className="button" type="submit">
-                Save report reminders
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="hq-summary-list">
-            <div className="hq-summary-row">
-              <span>Email reminders</span>
-              <strong>{reportNotificationSettings?.email_enabled ?? true ? 'Enabled' : 'Disabled'}</strong>
-            </div>
-            <div className="hq-summary-row">
-              <span>Reminder cadence</span>
-              <strong>{reportReminderDays.length ? reportReminderDays.map((day) => `${day} days before`).join(', ') : 'No reminders configured'}</strong>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="hq-panel hq-surface-muted">
-        <div className="hq-section-head">
-          <div className="hq-section-head-copy">
-            <p className="hq-eyebrow">Audit</p>
-            <h2 className="hq-section-title hq-section-title-compact">Recent audit log</h2>
-          </div>
-        </div>
-
-        <div className="hq-audit-list">
-          {auditEntries.length > 0 ? (
-            auditEntries.map((entry) => (
-              <div key={entry.id} className="hq-audit-row">
-                <div className="hq-audit-main">
-                  <strong>{entry.summary}</strong>
-                  <span>
-                    {entry.actor_id ? actorNameMap.get(entry.actor_id) || 'Unknown user' : 'System'} · {entry.action} ·{' '}
-                    {entry.target_type}
-                  </span>
+              {canEdit ? (
+                <form action={updateReceiptNotificationSettingsAction} className="form-stack">
+                  <label className="hq-switch">
+                    <input type="checkbox" name="email_enabled" defaultChecked={receiptSettings.emailEnabled} />
+                    <span className="hq-switch-track" aria-hidden="true" />
+                    <span className="hq-switch-copy">
+                      <strong>Email team leads</strong>
+                      <small>Turn receipt reminder emails on or off.</small>
+                    </span>
+                  </label>
+                  <div className="hq-inline-grid">
+                    <div className="field"><label className="label" htmlFor="reminder-day-one">Reminder 1</label><input className="input" id="reminder-day-one" name="reminder_day_one" type="number" min="1" max="365" defaultValue={receiptSettings.reminderDays[0] || ''} /></div>
+                    <div className="field"><label className="label" htmlFor="reminder-day-two">Reminder 2</label><input className="input" id="reminder-day-two" name="reminder_day_two" type="number" min="1" max="365" defaultValue={receiptSettings.reminderDays[1] || ''} /></div>
+                  </div>
+                  <div className="field"><label className="label" htmlFor="reminder-day-three">Reminder 3</label><input className="input" id="reminder-day-three" name="reminder_day_three" type="number" min="1" max="365" defaultValue={receiptSettings.reminderDays[2] || ''} /></div>
+                  <div className="button-row"><button className="button" type="submit">Save receipt settings</button></div>
+                </form>
+              ) : (
+                <div className="hq-summary-list">
+                  <div className="hq-summary-row"><span>Email reminders</span><strong>{receiptSettings.emailEnabled ? 'Enabled' : 'Disabled'}</strong></div>
+                  <div className="hq-summary-row"><span>Reminder cadence</span><strong>{receiptSettings.reminderDays.map((day) => `Day ${day}`).join(', ')}</strong></div>
                 </div>
-                <time dateTime={entry.created_at}>{formatAuditTimestamp(entry.created_at)}</time>
+              )}
+            </section>
+
+            <section className="hq-lead-block">
+              <div className="hq-block-head">
+                <h3>Report reminders</h3>
               </div>
-            ))
-          ) : (
-            <p className="empty-note">Audit events will appear here as teams, finances, reports, and reminders change.</p>
-          )}
-        </div>
+              {canEdit ? (
+                <form action={updateReportNotificationSettingsAction} className="form-stack">
+                  <label className="hq-switch">
+                    <input type="checkbox" name="report_email_enabled" defaultChecked={reportNotificationSettings?.email_enabled ?? true} />
+                    <span className="hq-switch-track" aria-hidden="true" />
+                    <span className="hq-switch-copy">
+                      <strong>Email team leads</strong>
+                      <small>Control report due emails in addition to in-portal reminders.</small>
+                    </span>
+                  </label>
+                  <div className="hq-inline-grid">
+                    <div className="field"><label className="label" htmlFor="report-reminder-one">Reminder 1</label><input className="input" id="report-reminder-one" name="report_reminder_day_one" type="number" min="1" max="365" defaultValue={reportReminderDays[0] || ''} /></div>
+                    <div className="field"><label className="label" htmlFor="report-reminder-two">Reminder 2</label><input className="input" id="report-reminder-two" name="report_reminder_day_two" type="number" min="1" max="365" defaultValue={reportReminderDays[1] || ''} /></div>
+                  </div>
+                  <div className="field"><label className="label" htmlFor="report-reminder-three">Reminder 3</label><input className="input" id="report-reminder-three" name="report_reminder_day_three" type="number" min="1" max="365" defaultValue={reportReminderDays[2] || ''} /></div>
+                  <div className="button-row"><button className="button" type="submit">Save report reminders</button></div>
+                </form>
+              ) : (
+                <div className="hq-summary-list">
+                  <div className="hq-summary-row"><span>Email reminders</span><strong>{reportNotificationSettings?.email_enabled ?? true ? 'Enabled' : 'Disabled'}</strong></div>
+                  <div className="hq-summary-row"><span>Reminder cadence</span><strong>{reportReminderDays.map((day) => `${day} days before`).join(', ')}</strong></div>
+                </div>
+              )}
+            </section>
+          </div>
+        ) : null}
+
+        {tab === 'reporting' ? (
+          <div className="hq-lead-grid">
+            <section className="hq-lead-block">
+              <div className="hq-block-head">
+                <h3>Academic cycle</h3>
+              </div>
+              {canEdit ? (
+                <form action={updateAcademicCalendarSettingsAction} className="form-stack">
+                  <div className="field">
+                    <label className="label" htmlFor="academic-year">Current academic cycle</label>
+                    <input className="input" id="academic-year" name="academic_year" defaultValue={currentAcademicYear} required />
+                  </div>
+                  <div className="hq-inline-grid">
+                    <div className="field"><label className="label" htmlFor="autumn-start">Autumn start</label><input className="input" id="autumn-start" name="autumn_start" type="date" defaultValue={reportingWindows[0]?.start.toISOString().slice(0, 10) || ''} required /></div>
+                    <div className="field"><label className="label" htmlFor="autumn-end">Autumn end</label><input className="input" id="autumn-end" name="autumn_end" type="date" defaultValue={reportingWindows[0]?.end.toISOString().slice(0, 10) || ''} required /></div>
+                    <div className="field"><label className="label" htmlFor="winter-end">Winter end</label><input className="input" id="winter-end" name="winter_end" type="date" defaultValue={reportingWindows[1]?.end.toISOString().slice(0, 10) || ''} required /></div>
+                    <div className="field"><label className="label" htmlFor="spring-end">Spring end</label><input className="input" id="spring-end" name="spring_end" type="date" defaultValue={reportingWindows[2]?.end.toISOString().slice(0, 10) || ''} required /></div>
+                    <div className="field"><label className="label" htmlFor="summer-end">Summer end</label><input className="input" id="summer-end" name="summer_end" type="date" defaultValue={reportingWindows[3]?.end.toISOString().slice(0, 10) || ''} required /></div>
+                  </div>
+                  <span className="helper">Winter, spring, and summer each start the day after the previous quarter ends.</span>
+                  <div className="button-row"><button className="button" type="submit">Save academic calendar</button></div>
+                </form>
+              ) : (
+                <div className="hq-summary-list">
+                  <div className="hq-summary-row"><span>Current cycle</span><strong>{currentAcademicYear}</strong></div>
+                  {reportingWindows.map((window) => (
+                    <div key={window.quarter} className="hq-summary-row">
+                      <span>{window.quarter}</span>
+                      <strong>{window.start.toISOString().slice(0, 10)} to {window.end.toISOString().slice(0, 10)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="hq-lead-block">
+              <div className="hq-block-head">
+                <h3>Quarterly report questions</h3>
+              </div>
+              <ReportQuestionEditor initialQuestions={reportQuestions} readOnly={!canEdit} />
+            </section>
+          </div>
+        ) : null}
+
+        {tab === 'audit' ? (
+          <section className="hq-lead-block">
+            <div className="hq-block-head">
+              <h3>Recent audit log</h3>
+            </div>
+            <div className="hq-audit-list">
+              {auditEntries.length > 0 ? auditEntries.map((entry) => (
+                <div key={entry.id} className="hq-audit-row">
+                  <div className="hq-audit-main">
+                    <strong>{entry.summary}</strong>
+                    <span>{entry.actor_id ? actorNameMap.get(entry.actor_id) || 'Unknown user' : 'System'} · {entry.action} · {entry.target_type}</span>
+                  </div>
+                  <time dateTime={entry.created_at}>{formatAuditTimestamp(entry.created_at)}</time>
+                </div>
+              )) : <p className="empty-note">Audit events will appear here as club data changes.</p>}
+            </div>
+          </section>
+        ) : null}
       </section>
     </div>
   );

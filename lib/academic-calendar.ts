@@ -1,3 +1,5 @@
+import { createAdminClient } from '@/lib/supabase-admin';
+
 export type ReportingWindow = {
   academicYear: string;
   quarter: string;
@@ -19,30 +21,24 @@ export type NextReportState = {
   countdownLabel: string;
 };
 
+type QuarterRow = {
+  academic_year: string;
+  quarter: string;
+  start_date: string;
+  end_date: string;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const makeDate = (value: string) => new Date(`${value}T12:00:00-08:00`);
-
-const quarterBase = [
-  { quarter: 'Autumn Quarter', start: '2025-09-22', end: '2025-12-12' },
-  { quarter: 'Winter Quarter', start: '2026-01-05', end: '2026-03-20' },
-  { quarter: 'Spring Quarter', start: '2026-03-30', end: '2026-06-10' },
-  { quarter: 'Summer Quarter', start: '2026-06-22', end: '2026-08-15' }
+const QUARTER_ORDER = ['Autumn Quarter', 'Winter Quarter', 'Spring Quarter', 'Summer Quarter'] as const;
+const DEFAULT_ACADEMIC_YEAR = '2025-26';
+const DEFAULT_ROWS: QuarterRow[] = [
+  { academic_year: '2025-26', quarter: 'Autumn Quarter', start_date: '2025-09-22', end_date: '2025-12-12' },
+  { academic_year: '2025-26', quarter: 'Winter Quarter', start_date: '2026-01-05', end_date: '2026-03-20' },
+  { academic_year: '2025-26', quarter: 'Spring Quarter', start_date: '2026-03-30', end_date: '2026-06-10' },
+  { academic_year: '2025-26', quarter: 'Summer Quarter', start_date: '2026-06-22', end_date: '2026-08-15' }
 ];
 
-export const REPORTING_WINDOWS: ReportingWindow[] = quarterBase.map((entry) => {
-  const start = makeDate(entry.start);
-  const end = makeDate(entry.end);
-
-  return {
-    academicYear: '2025-26',
-    quarter: entry.quarter,
-    start,
-    end,
-    openAt: new Date(end.getTime() - 21 * DAY_MS),
-    dueAt: new Date(end.getTime() + 7 * DAY_MS)
-  };
-});
+const makeDate = (value: string) => new Date(`${value}T12:00:00-08:00`);
 
 export function formatAcademicYear(date: Date) {
   const year = date.getFullYear();
@@ -63,15 +59,8 @@ export function formatDateLabel(date: Date) {
 export function formatCountdown(target: Date, now: Date) {
   const diff = target.getTime() - now.getTime();
   const days = Math.max(0, Math.ceil(diff / DAY_MS));
-
-  if (days === 0) {
-    return 'today';
-  }
-
-  if (days === 1) {
-    return '1 day';
-  }
-
+  if (days === 0) return 'today';
+  if (days === 1) return '1 day';
   return `${days} days`;
 }
 
@@ -84,15 +73,65 @@ export function formatPacificDateKey(date: Date) {
   }).format(date);
 }
 
-export function getReportingWindow(academicYear: string, quarter: string) {
-  return REPORTING_WINDOWS.find((window) => window.academicYear === academicYear && window.quarter === quarter) ?? null;
+async function getCalendarRows(academicYear?: string) {
+  const admin = createAdminClient();
+  const { data: settings } = await admin
+    .from('academic_calendar_settings')
+    .select('current_academic_year')
+    .eq('id', 1)
+    .maybeSingle();
+
+  const cycle = academicYear || settings?.current_academic_year || DEFAULT_ACADEMIC_YEAR;
+  const { data } = await admin
+    .from('academic_quarter_ranges')
+    .select('academic_year, quarter, start_date, end_date')
+    .eq('academic_year', cycle)
+    .order('sort_order');
+
+  const rows = ((data || []) as QuarterRow[]).length > 0
+    ? (data as QuarterRow[])
+    : DEFAULT_ROWS.filter((row) => row.academic_year === cycle || cycle === DEFAULT_ACADEMIC_YEAR);
+
+  return {
+    academicYear: cycle,
+    rows: rows.sort((a, b) => QUARTER_ORDER.indexOf(a.quarter as (typeof QUARTER_ORDER)[number]) - QUARTER_ORDER.indexOf(b.quarter as (typeof QUARTER_ORDER)[number]))
+  };
 }
 
-export function getNextReportState(now = new Date()): NextReportState {
-  const currentWindow =
-    REPORTING_WINDOWS.find((window) => now >= window.start && now <= window.end) ?? null;
+function toReportingWindow(row: QuarterRow): ReportingWindow {
+  const start = makeDate(row.start_date);
+  const end = makeDate(row.end_date);
+  return {
+    academicYear: row.academic_year,
+    quarter: row.quarter,
+    start,
+    end,
+    openAt: new Date(end.getTime() - 21 * DAY_MS),
+    dueAt: new Date(end.getTime() + 7 * DAY_MS)
+  };
+}
 
-  for (const window of REPORTING_WINDOWS) {
+export async function getCurrentAcademicYear() {
+  const { academicYear } = await getCalendarRows();
+  return academicYear;
+}
+
+export async function getReportingWindows(academicYear?: string) {
+  const { rows } = await getCalendarRows(academicYear);
+  return rows.map(toReportingWindow);
+}
+
+export async function getReportingWindow(academicYear: string, quarter: string) {
+  const windows = await getReportingWindows(academicYear);
+  return windows.find((window) => window.quarter === quarter) ?? null;
+}
+
+export async function getNextReportState(now = new Date()): Promise<NextReportState> {
+  const { academicYear } = await getCalendarRows();
+  const windows = await getReportingWindows(academicYear);
+  const currentWindow = windows.find((window) => now >= window.start && now <= window.end) ?? null;
+
+  for (const window of windows) {
     if (now < window.openAt) {
       return {
         academicYear: window.academicYear,
@@ -122,8 +161,7 @@ export function getNextReportState(now = new Date()): NextReportState {
     }
   }
 
-  const fallback = REPORTING_WINDOWS[REPORTING_WINDOWS.length - 1];
-
+  const fallback = windows[windows.length - 1] || toReportingWindow(DEFAULT_ROWS[DEFAULT_ROWS.length - 1]!);
   return {
     academicYear: fallback.academicYear,
     currentQuarter: 'Between quarters',

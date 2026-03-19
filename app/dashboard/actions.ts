@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { requireAdmin, requireSignedInUser } from '@/lib/auth';
-import { formatAcademicYear, formatPacificDateKey, getReportingWindow } from '@/lib/academic-calendar';
+import { getCurrentAcademicYear, formatAcademicYear, formatPacificDateKey, getReportingWindow } from '@/lib/academic-calendar';
 import { sendInviteEmail, sendPresidentInviteEmail, sendTaskEmails } from '@/lib/notifications';
 import { env } from '@/lib/env';
 import {
@@ -132,7 +132,7 @@ async function getTeamMemberCount(teamId: string) {
 }
 
 async function getQuarterFundsSpent(teamId: string, academicYear: string, quarter: string) {
-  const window = getReportingWindow(academicYear, quarter);
+  const window = await getReportingWindow(academicYear, quarter);
   if (!window) {
     return 0;
   }
@@ -213,7 +213,7 @@ async function saveTeamReport(formData: FormData, status: 'draft' | 'submitted')
   }
 
   if (status === 'submitted') {
-    const { reportState, canSubmit } = getOpenReportContext();
+    const { reportState, canSubmit } = await getOpenReportContext();
     const expected = formatQuarterKey(reportState);
     if (!canSubmit || expected.academicYear !== academicYear || expected.quarter !== quarter) {
       throw new Error('This report is not currently open for submission.');
@@ -375,7 +375,7 @@ export async function logPurchaseAction(formData: FormData) {
   const teamId = String(formData.get('team_id') || '').trim();
   const amount = parsePurchaseAmount(formData.get('amount'));
   const description = String(formData.get('description') || '').trim();
-  const academicYear = String(formData.get('academic_year') || formatAcademicYear(new Date())).trim();
+  const academicYear = String(formData.get('academic_year') || (await getCurrentAcademicYear())).trim();
   const personName = String(formData.get('person_name') || '').trim();
   const purchasedAt = String(formData.get('purchased_at') || '').trim();
   const paymentMethod = normalizePaymentMethod(String(formData.get('payment_method') || 'unknown'));
@@ -481,7 +481,7 @@ export async function importPurchasesAction(
   formData: FormData
 ) {
   const teamId = String(formData.get('team_id') || '').trim();
-  const academicYear = String(formData.get('academic_year') || formatAcademicYear(new Date())).trim();
+  const academicYear = String(formData.get('academic_year') || (await getCurrentAcademicYear())).trim();
   const payloadRaw = String(formData.get('import_payload') || '').trim();
 
   if (!teamId || !payloadRaw) {
@@ -832,6 +832,91 @@ export async function updateReportNotificationSettingsAction(formData: FormData)
   await syncNotificationQueue();
   revalidatePath('/dashboard/settings');
   revalidatePath('/dashboard/reports');
+}
+
+export async function updateAcademicCalendarSettingsAction(formData: FormData) {
+  const { user } = await requireAdmin();
+  const academicYear = String(formData.get('academic_year') || '').trim();
+  const autumnStart = String(formData.get('autumn_start') || '').trim();
+  const autumnEnd = String(formData.get('autumn_end') || '').trim();
+  const winterEnd = String(formData.get('winter_end') || '').trim();
+  const springEnd = String(formData.get('spring_end') || '').trim();
+  const summerEnd = String(formData.get('summer_end') || '').trim();
+
+  if (!academicYear || !autumnStart || !autumnEnd || !winterEnd || !springEnd || !summerEnd) {
+    throw new Error('Academic year and all quarter dates are required.');
+  }
+
+  const quarterRows = [
+    { quarter: 'Autumn Quarter', sort_order: 1, start_date: autumnStart, end_date: autumnEnd },
+    {
+      quarter: 'Winter Quarter',
+      sort_order: 2,
+      start_date: new Date(new Date(`${autumnEnd}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      end_date: winterEnd
+    },
+    {
+      quarter: 'Spring Quarter',
+      sort_order: 3,
+      start_date: new Date(new Date(`${winterEnd}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      end_date: springEnd
+    },
+    {
+      quarter: 'Summer Quarter',
+      sort_order: 4,
+      start_date: new Date(new Date(`${springEnd}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      end_date: summerEnd
+    }
+  ];
+
+  for (const row of quarterRows) {
+    if (new Date(`${row.end_date}T12:00:00Z`).getTime() < new Date(`${row.start_date}T12:00:00Z`).getTime()) {
+      throw new Error(`${row.quarter} cannot end before it starts.`);
+    }
+  }
+
+  const admin = createAdminClient();
+  const { error: settingsError } = await admin.from('academic_calendar_settings').upsert({
+    id: 1,
+    current_academic_year: academicYear,
+    updated_at: new Date().toISOString()
+  });
+  if (settingsError) {
+    throw new Error(settingsError.message);
+  }
+
+  for (const row of quarterRows) {
+    const { error } = await admin.from('academic_quarter_ranges').upsert({
+      academic_year: academicYear,
+      quarter: row.quarter,
+      sort_order: row.sort_order,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'academic_year,quarter' });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'settings.academic_calendar.updated',
+    targetType: 'academic_calendar_settings',
+    targetId: academicYear,
+    summary: `Updated the academic calendar for ${academicYear}.`,
+    details: {
+      academicYear,
+      quarterRows
+    }
+  });
+
+  await syncNotificationQueue();
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/settings');
+  revalidatePath('/dashboard/reports');
+  revalidatePath('/dashboard/tasks');
 }
 
 export async function saveReportQuestionsAction(formData: FormData) {

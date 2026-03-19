@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getNextReportState, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
+import { getNextReportState, getCurrentAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { updateLeadTeamDescriptionAction } from '@/app/dashboard/teams/actions';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { formatQuarterReportTitle } from '@/lib/reports';
@@ -239,8 +239,8 @@ export default async function DashboardPage() {
   const teamMemberships = (teamMembershipsData || []) as Membership[];
   const rosterMembers = (rosterMembersData || []) as RosterMember[];
   const memberCount = teamMemberships.length + rosterMembers.length;
-  const reportState = getNextReportState(new Date());
-  const cycle = formatAcademicYear(new Date());
+  const reportState = await getNextReportState(new Date());
+  const cycle = await getCurrentAcademicYear();
   const { data: teamBudget } = await admin
     .from('team_budgets')
     .select('annual_budget_cents')

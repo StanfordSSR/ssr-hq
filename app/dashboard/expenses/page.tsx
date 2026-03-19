@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
+import { getCurrentAcademicYear, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { ClearExpenseLogForm } from '@/components/clear-expense-log-form';
 import { PurchaseCategoryForm } from '@/components/purchase-category-form';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
@@ -123,7 +123,7 @@ export default async function ExpenseLogPage({
     redirect('/dashboard');
   }
 
-  const currentCycle = formatAcademicYear(new Date());
+  const currentCycle = await getCurrentAcademicYear();
   const rawTeam = readSingle(params.team);
   const defaultTeamSelection = isPrivilegedViewer ? 'all' : teams[0]!.id;
   const selectedTeamId =

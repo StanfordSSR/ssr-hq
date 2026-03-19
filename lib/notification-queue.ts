@@ -220,7 +220,7 @@ async function syncReportQueue() {
     }
     return;
   }
-  const reportState = getNextReportState(new Date());
+  const reportState = await getNextReportState(new Date());
   if (reportState.reportState === 'closed') {
     const queuedIds = existingRows.filter((row) => row.status === 'queued').map((row) => row.id);
     if (queuedIds.length > 0) {
