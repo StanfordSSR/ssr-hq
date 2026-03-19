@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase-browser';
 
 export function LoginForm() {
@@ -8,6 +8,20 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!window.location.hash) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const errorDescription = params.get('error_description');
+
+    if (errorDescription) {
+      setError(errorDescription.replace(/\+/g, ' '));
+      window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    }
+  }, []);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

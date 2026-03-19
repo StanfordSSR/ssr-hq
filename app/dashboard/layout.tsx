@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { signOutAction } from '@/app/dashboard/teams/actions';
+import { DashboardStatusBanner } from '@/components/dashboard-status-banner';
 
 const adminNav = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -110,7 +111,10 @@ export default async function DashboardLayout({
         </div>
       </header>
 
-      <main className="hq-main">{children}</main>
+      <main className="hq-main">
+        <DashboardStatusBanner />
+        {children}
+      </main>
     </div>
   );
 }

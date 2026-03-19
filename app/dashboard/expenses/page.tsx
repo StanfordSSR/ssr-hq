@@ -6,6 +6,7 @@ import { getCurrentAcademicYear, formatAcademicYear, formatDateLabel } from '@/l
 import { ClearExpenseLogForm } from '@/components/clear-expense-log-form';
 import { PurchaseCategoryForm } from '@/components/purchase-category-form';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
+import { PurchaseEntryActions } from '@/components/purchase-entry-actions';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { getReceiptTaskState } from '@/lib/purchases';
 
@@ -499,6 +500,7 @@ export default async function ExpenseLogPage({
                     <th>Category</th>
                     <th>Receipt</th>
                     <th>Team</th>
+                    {!isPresident ? <th>Actions</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -530,6 +532,19 @@ export default async function ExpenseLogPage({
                       )}
                       </td>
                       <td>{teamNameMap.get(purchase.team_id) || 'Unknown team'}</td>
+                      {!isPresident ? (
+                        <td>
+                          <PurchaseEntryActions
+                            purchaseId={purchase.id}
+                            description={purchase.description}
+                            amountCents={purchase.amount_cents}
+                            purchasedAt={purchase.purchased_at}
+                            personName={purchase.person_name}
+                            paymentMethod={purchase.payment_method}
+                            category={purchase.category}
+                          />
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>

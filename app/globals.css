@@ -329,6 +329,77 @@ button {
   color: #6f1010;
 }
 
+.hq-status-banner {
+  margin: 0 auto 20px;
+  max-width: 1320px;
+  border: 1px solid #e3dddd;
+  background: #fbf9f7;
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.hq-status-banner-success {
+  border-color: #d3ded6;
+  background: #f5faf6;
+}
+
+.hq-status-banner-error {
+  border-color: #ead4d4;
+  background: #fff7f7;
+}
+
+.hq-status-banner-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.hq-status-banner-copy strong {
+  font-size: 0.95rem;
+}
+
+.hq-status-banner-copy span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.hq-status-banner-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hq-status-banner-close:hover {
+  color: var(--ink);
+}
+
+.hq-purchase-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.hq-purchase-actions form {
+  margin: 0;
+}
+
+.hq-purchase-edit-form {
+  display: grid;
+  gap: 10px;
+  min-width: 360px;
+}
+
+.hq-purchase-edit-grid {
+  display: grid;
+  gap: 8px;
+}
+
 .layout {
   padding: 28px 0 56px;
   display: grid;
