@@ -226,7 +226,7 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  const { data: teamMembershipsData } = await supabase
+  const { data: teamMembershipsData } = await admin
     .from('team_memberships')
     .select('id, team_id, user_id, team_role, is_active')
     .eq('team_id', primaryTeamId)
