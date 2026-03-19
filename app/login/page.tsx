@@ -11,7 +11,15 @@ export default async function LoginPage() {
   } = await supabase.auth.getUser();
 
   if (user) {
-    redirect('/dashboard');
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('active')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profile?.active) {
+      redirect('/dashboard');
+    }
   }
 
   return (
