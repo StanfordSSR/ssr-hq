@@ -268,6 +268,8 @@ export default async function ExpenseLogPage({
   const receiptLinks = await getReceiptLinks(pagedPurchases.map((purchase) => purchase.receipt_path));
 
   const teamNameMap = new Map(teams.map((team) => [team.id, team.name]));
+  const selectedTeamName =
+    selectedTeamId === 'all' ? 'All accessible teams' : teamNameMap.get(selectedTeamId) || 'Your team';
   const currentParamState = {
     team: selectedTeamId,
     range: rawRange,
@@ -298,6 +300,7 @@ export default async function ExpenseLogPage({
 
           <div className="hq-expense-summary-grid">
             <div className="hq-expense-chart">
+              {!isPrivilegedViewer ? <span className="hq-inline-note">{selectedTeamName}</span> : null}
               <div className="hq-budget-ring hq-budget-ring-large" style={{ background: chartBackground }}>
                 <div className="hq-budget-ring-inner hq-budget-ring-inner-large">
                   <strong>{spentPercent}%</strong>
