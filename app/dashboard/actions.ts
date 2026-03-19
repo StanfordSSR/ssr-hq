@@ -836,79 +836,44 @@ export async function updateReportNotificationSettingsAction(formData: FormData)
 
 export async function updateAcademicCalendarSettingsAction(formData: FormData) {
   const { user } = await requireAdmin();
-  const academicYear = String(formData.get('academic_year') || '').trim();
-  const autumnStart = String(formData.get('autumn_start') || '').trim();
-  const autumnEnd = String(formData.get('autumn_end') || '').trim();
-  const winterEnd = String(formData.get('winter_end') || '').trim();
-  const springEnd = String(formData.get('spring_end') || '').trim();
-  const summerEnd = String(formData.get('summer_end') || '').trim();
+  const autumnStart = String(formData.get('autumn_start_md') || '').trim();
+  const autumnEnd = String(formData.get('autumn_end_md') || '').trim();
+  const winterEnd = String(formData.get('winter_end_md') || '').trim();
+  const springEnd = String(formData.get('spring_end_md') || '').trim();
+  const summerEnd = String(formData.get('summer_end_md') || '').trim();
 
-  if (!academicYear || !autumnStart || !autumnEnd || !winterEnd || !springEnd || !summerEnd) {
-    throw new Error('Academic year and all quarter dates are required.');
-  }
-
-  const quarterRows = [
-    { quarter: 'Autumn Quarter', sort_order: 1, start_date: autumnStart, end_date: autumnEnd },
-    {
-      quarter: 'Winter Quarter',
-      sort_order: 2,
-      start_date: new Date(new Date(`${autumnEnd}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      end_date: winterEnd
-    },
-    {
-      quarter: 'Spring Quarter',
-      sort_order: 3,
-      start_date: new Date(new Date(`${winterEnd}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      end_date: springEnd
-    },
-    {
-      quarter: 'Summer Quarter',
-      sort_order: 4,
-      start_date: new Date(new Date(`${springEnd}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      end_date: summerEnd
-    }
-  ];
-
-  for (const row of quarterRows) {
-    if (new Date(`${row.end_date}T12:00:00Z`).getTime() < new Date(`${row.start_date}T12:00:00Z`).getTime()) {
-      throw new Error(`${row.quarter} cannot end before it starts.`);
-    }
+  const allValues = [autumnStart, autumnEnd, winterEnd, springEnd, summerEnd];
+  if (allValues.some((value) => !/^\d{2}-\d{2}$/.test(value))) {
+    throw new Error('Quarter dates must use MM-DD format.');
   }
 
   const admin = createAdminClient();
-  const { error: settingsError } = await admin.from('academic_calendar_settings').upsert({
-    id: 1,
-    current_academic_year: academicYear,
-    updated_at: new Date().toISOString()
-  });
-  if (settingsError) {
-    throw new Error(settingsError.message);
-  }
-
-  for (const row of quarterRows) {
-    const { error } = await admin.from('academic_quarter_ranges').upsert({
-      academic_year: academicYear,
-      quarter: row.quarter,
-      sort_order: row.sort_order,
-      start_date: row.start_date,
-      end_date: row.end_date,
+  const { error } = await admin.from('academic_calendar_templates').upsert({
+      id: 1,
+      autumn_start_md: autumnStart,
+      autumn_end_md: autumnEnd,
+      winter_end_md: winterEnd,
+      spring_end_md: springEnd,
+      summer_end_md: summerEnd,
       updated_at: new Date().toISOString()
-    }, { onConflict: 'academic_year,quarter' });
+    });
 
-    if (error) {
-      throw new Error(error.message);
-    }
+  if (error) {
+    throw new Error(error.message);
   }
 
   await recordAuditEvent({
     actorId: user.id,
     action: 'settings.academic_calendar.updated',
-    targetType: 'academic_calendar_settings',
-    targetId: academicYear,
-    summary: `Updated the academic calendar for ${academicYear}.`,
+    targetType: 'academic_calendar_templates',
+    targetId: '1',
+    summary: 'Updated the academic calendar template.',
     details: {
-      academicYear,
-      quarterRows
+      autumnStart,
+      autumnEnd,
+      winterEnd,
+      springEnd,
+      summerEnd
     }
   });
 

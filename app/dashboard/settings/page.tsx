@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getCurrentAcademicYear, getReportingWindows } from '@/lib/academic-calendar';
+import { getAcademicCalendarTemplate, getCurrentAcademicYear, getReportingWindows, formatDateLabel } from '@/lib/academic-calendar';
 import {
   assignPresidentRoleAction,
   invitePresidentAction,
@@ -60,6 +60,7 @@ export default async function SettingsPage({
 
   const canEdit = me.role === 'admin';
   const currentAcademicYear = await getCurrentAcademicYear();
+  const calendarTemplate = await getAcademicCalendarTemplate();
   const reportingWindows = await getReportingWindows(currentAcademicYear);
   const receiptSettings = await getReceiptNotificationSettings();
   const { data: reportQuestionsData } = await admin
@@ -131,7 +132,7 @@ export default async function SettingsPage({
         <div className="hq-settings-grid">
           <div className="hq-setting-tile">
             <strong>Current academic cycle</strong>
-            <span>{currentAcademicYear}</span>
+            <span>{currentAcademicYear}<br />Auto-rolls forward after summer quarter ends.</span>
           </div>
           <div className="hq-setting-tile">
             <strong>Queued reminders</strong>
@@ -333,18 +334,22 @@ export default async function SettingsPage({
               </div>
               {canEdit ? (
                 <form action={updateAcademicCalendarSettingsAction} className="form-stack">
-                  <div className="field">
-                    <label className="label" htmlFor="academic-year">Current academic cycle</label>
-                    <input className="input" id="academic-year" name="academic_year" defaultValue={currentAcademicYear} required />
-                  </div>
                   <div className="hq-inline-grid">
-                    <div className="field"><label className="label" htmlFor="autumn-start">Autumn start</label><input className="input" id="autumn-start" name="autumn_start" type="date" defaultValue={reportingWindows[0]?.start.toISOString().slice(0, 10) || ''} required /></div>
-                    <div className="field"><label className="label" htmlFor="autumn-end">Autumn end</label><input className="input" id="autumn-end" name="autumn_end" type="date" defaultValue={reportingWindows[0]?.end.toISOString().slice(0, 10) || ''} required /></div>
-                    <div className="field"><label className="label" htmlFor="winter-end">Winter end</label><input className="input" id="winter-end" name="winter_end" type="date" defaultValue={reportingWindows[1]?.end.toISOString().slice(0, 10) || ''} required /></div>
-                    <div className="field"><label className="label" htmlFor="spring-end">Spring end</label><input className="input" id="spring-end" name="spring_end" type="date" defaultValue={reportingWindows[2]?.end.toISOString().slice(0, 10) || ''} required /></div>
-                    <div className="field"><label className="label" htmlFor="summer-end">Summer end</label><input className="input" id="summer-end" name="summer_end" type="date" defaultValue={reportingWindows[3]?.end.toISOString().slice(0, 10) || ''} required /></div>
+                    <div className="field"><label className="label" htmlFor="autumn-start">Autumn start</label><input className="input" id="autumn-start" name="autumn_start_md" placeholder="09-22" defaultValue={calendarTemplate.autumnStartMonthDay} required /></div>
+                    <div className="field"><label className="label" htmlFor="autumn-end">Autumn end</label><input className="input" id="autumn-end" name="autumn_end_md" placeholder="12-12" defaultValue={calendarTemplate.autumnEndMonthDay} required /></div>
+                    <div className="field"><label className="label" htmlFor="winter-end">Winter end</label><input className="input" id="winter-end" name="winter_end_md" placeholder="03-20" defaultValue={calendarTemplate.winterEndMonthDay} required /></div>
+                    <div className="field"><label className="label" htmlFor="spring-end">Spring end</label><input className="input" id="spring-end" name="spring_end_md" placeholder="06-10" defaultValue={calendarTemplate.springEndMonthDay} required /></div>
+                    <div className="field"><label className="label" htmlFor="summer-end">Summer end</label><input className="input" id="summer-end" name="summer_end_md" placeholder="08-15" defaultValue={calendarTemplate.summerEndMonthDay} required /></div>
                   </div>
-                  <span className="helper">Winter, spring, and summer each start the day after the previous quarter ends.</span>
+                  <span className="helper">Use MM-DD. Winter, spring, and summer each start the day after the previous quarter ends. The academic cycle auto-advances the day after summer quarter ends.</span>
+                  <div className="hq-summary-list">
+                    {reportingWindows.map((window) => (
+                      <div key={window.quarter} className="hq-summary-row">
+                        <span>{window.quarter} preview</span>
+                        <strong>{formatDateLabel(window.start)} to {formatDateLabel(window.end)}</strong>
+                      </div>
+                    ))}
+                  </div>
                   <div className="button-row"><button className="button" type="submit">Save academic calendar</button></div>
                 </form>
               ) : (
@@ -353,7 +358,7 @@ export default async function SettingsPage({
                   {reportingWindows.map((window) => (
                     <div key={window.quarter} className="hq-summary-row">
                       <span>{window.quarter}</span>
-                      <strong>{window.start.toISOString().slice(0, 10)} to {window.end.toISOString().slice(0, 10)}</strong>
+                      <strong>{formatDateLabel(window.start)} to {formatDateLabel(window.end)}</strong>
                     </div>
                   ))}
                 </div>

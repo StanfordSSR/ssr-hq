@@ -21,31 +21,40 @@ export type NextReportState = {
   countdownLabel: string;
 };
 
-type QuarterRow = {
-  academic_year: string;
-  quarter: string;
-  start_date: string;
-  end_date: string;
+export type AcademicCalendarTemplate = {
+  autumnStartMonthDay: string;
+  autumnEndMonthDay: string;
+  winterEndMonthDay: string;
+  springEndMonthDay: string;
+  summerEndMonthDay: string;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const QUARTER_ORDER = ['Autumn Quarter', 'Winter Quarter', 'Spring Quarter', 'Summer Quarter'] as const;
-const DEFAULT_ACADEMIC_YEAR = '2025-26';
-const DEFAULT_ROWS: QuarterRow[] = [
-  { academic_year: '2025-26', quarter: 'Autumn Quarter', start_date: '2025-09-22', end_date: '2025-12-12' },
-  { academic_year: '2025-26', quarter: 'Winter Quarter', start_date: '2026-01-05', end_date: '2026-03-20' },
-  { academic_year: '2025-26', quarter: 'Spring Quarter', start_date: '2026-03-30', end_date: '2026-06-10' },
-  { academic_year: '2025-26', quarter: 'Summer Quarter', start_date: '2026-06-22', end_date: '2026-08-15' }
-];
+const DEFAULT_TEMPLATE: AcademicCalendarTemplate = {
+  autumnStartMonthDay: '09-22',
+  autumnEndMonthDay: '12-12',
+  winterEndMonthDay: '03-20',
+  springEndMonthDay: '06-10',
+  summerEndMonthDay: '08-15'
+};
 
-const makeDate = (value: string) => new Date(`${value}T12:00:00-08:00`);
+function makeLocalDate(year: number, monthDay: string) {
+  return new Date(`${year}-${monthDay}T12:00:00-08:00`);
+}
+
+function dayAfter(date: Date) {
+  return new Date(date.getTime() + DAY_MS);
+}
+
+function formatAcademicYearFromStartYear(startYear: number) {
+  return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
+}
 
 export function formatAcademicYear(date: Date) {
   const year = date.getFullYear();
   const month = date.getMonth();
   const startYear = month >= 8 ? year : year - 1;
-  const endYearShort = String((startYear + 1) % 100).padStart(2, '0');
-  return `${startYear}-${endYearShort}`;
+  return formatAcademicYearFromStartYear(startYear);
 }
 
 export function formatDateLabel(date: Date) {
@@ -73,52 +82,77 @@ export function formatPacificDateKey(date: Date) {
   }).format(date);
 }
 
-async function getCalendarRows(academicYear?: string) {
+function isMonthDay(value: string) {
+  return /^\d{2}-\d{2}$/.test(value);
+}
+
+export async function getAcademicCalendarTemplate(): Promise<AcademicCalendarTemplate> {
   const admin = createAdminClient();
-  const { data: settings } = await admin
-    .from('academic_calendar_settings')
-    .select('current_academic_year')
+  const { data } = await admin
+    .from('academic_calendar_templates')
+    .select('autumn_start_md, autumn_end_md, winter_end_md, spring_end_md, summer_end_md')
     .eq('id', 1)
     .maybeSingle();
 
-  const cycle = academicYear || settings?.current_academic_year || DEFAULT_ACADEMIC_YEAR;
-  const { data } = await admin
-    .from('academic_quarter_ranges')
-    .select('academic_year, quarter, start_date, end_date')
-    .eq('academic_year', cycle)
-    .order('sort_order');
-
-  const rows = ((data || []) as QuarterRow[]).length > 0
-    ? (data as QuarterRow[])
-    : DEFAULT_ROWS.filter((row) => row.academic_year === cycle || cycle === DEFAULT_ACADEMIC_YEAR);
+  if (!data) {
+    return DEFAULT_TEMPLATE;
+  }
 
   return {
-    academicYear: cycle,
-    rows: rows.sort((a, b) => QUARTER_ORDER.indexOf(a.quarter as (typeof QUARTER_ORDER)[number]) - QUARTER_ORDER.indexOf(b.quarter as (typeof QUARTER_ORDER)[number]))
+    autumnStartMonthDay: isMonthDay(data.autumn_start_md) ? data.autumn_start_md : DEFAULT_TEMPLATE.autumnStartMonthDay,
+    autumnEndMonthDay: isMonthDay(data.autumn_end_md) ? data.autumn_end_md : DEFAULT_TEMPLATE.autumnEndMonthDay,
+    winterEndMonthDay: isMonthDay(data.winter_end_md) ? data.winter_end_md : DEFAULT_TEMPLATE.winterEndMonthDay,
+    springEndMonthDay: isMonthDay(data.spring_end_md) ? data.spring_end_md : DEFAULT_TEMPLATE.springEndMonthDay,
+    summerEndMonthDay: isMonthDay(data.summer_end_md) ? data.summer_end_md : DEFAULT_TEMPLATE.summerEndMonthDay
   };
 }
 
-function toReportingWindow(row: QuarterRow): ReportingWindow {
-  const start = makeDate(row.start_date);
-  const end = makeDate(row.end_date);
-  return {
-    academicYear: row.academic_year,
+function getAcademicYearStartYear(now: Date, template: AcademicCalendarTemplate) {
+  const year = now.getFullYear();
+  const thisYearBoundary = dayAfter(makeLocalDate(year, template.summerEndMonthDay));
+  return now >= thisYearBoundary ? year : year - 1;
+}
+
+function buildWindowsForStartYear(startYear: number, template: AcademicCalendarTemplate): ReportingWindow[] {
+  const autumnStart = makeLocalDate(startYear, template.autumnStartMonthDay);
+  const autumnEnd = makeLocalDate(startYear, template.autumnEndMonthDay);
+  const winterEnd = makeLocalDate(startYear + 1, template.winterEndMonthDay);
+  const springEnd = makeLocalDate(startYear + 1, template.springEndMonthDay);
+  const summerEnd = makeLocalDate(startYear + 1, template.summerEndMonthDay);
+  const academicYear = formatAcademicYearFromStartYear(startYear);
+
+  const rows = [
+    { quarter: 'Autumn Quarter', start: autumnStart, end: autumnEnd },
+    { quarter: 'Winter Quarter', start: dayAfter(autumnEnd), end: winterEnd },
+    { quarter: 'Spring Quarter', start: dayAfter(winterEnd), end: springEnd },
+    { quarter: 'Summer Quarter', start: dayAfter(springEnd), end: summerEnd }
+  ];
+
+  return rows.map((row) => ({
+    academicYear,
     quarter: row.quarter,
-    start,
-    end,
-    openAt: new Date(end.getTime() - 21 * DAY_MS),
-    dueAt: new Date(end.getTime() + 7 * DAY_MS)
-  };
+    start: row.start,
+    end: row.end,
+    openAt: new Date(row.end.getTime() - 21 * DAY_MS),
+    dueAt: new Date(row.end.getTime() + 7 * DAY_MS)
+  }));
 }
 
-export async function getCurrentAcademicYear() {
-  const { academicYear } = await getCalendarRows();
-  return academicYear;
+export async function getCurrentAcademicYear(now = new Date()) {
+  const template = await getAcademicCalendarTemplate();
+  return formatAcademicYearFromStartYear(getAcademicYearStartYear(now, template));
 }
 
 export async function getReportingWindows(academicYear?: string) {
-  const { rows } = await getCalendarRows(academicYear);
-  return rows.map(toReportingWindow);
+  const template = await getAcademicCalendarTemplate();
+  let startYear = getAcademicYearStartYear(new Date(), template);
+  if (academicYear) {
+    const parsed = Number(academicYear.slice(0, 4));
+    if (Number.isFinite(parsed)) {
+      startYear = parsed;
+    }
+  }
+  return buildWindowsForStartYear(startYear, template);
 }
 
 export async function getReportingWindow(academicYear: string, quarter: string) {
@@ -127,8 +161,9 @@ export async function getReportingWindow(academicYear: string, quarter: string) 
 }
 
 export async function getNextReportState(now = new Date()): Promise<NextReportState> {
-  const { academicYear } = await getCalendarRows();
-  const windows = await getReportingWindows(academicYear);
+  const template = await getAcademicCalendarTemplate();
+  const startYear = getAcademicYearStartYear(now, template);
+  const windows = buildWindowsForStartYear(startYear, template);
   const currentWindow = windows.find((window) => now >= window.start && now <= window.end) ?? null;
 
   for (const window of windows) {
@@ -161,16 +196,17 @@ export async function getNextReportState(now = new Date()): Promise<NextReportSt
     }
   }
 
-  const fallback = windows[windows.length - 1] || toReportingWindow(DEFAULT_ROWS[DEFAULT_ROWS.length - 1]!);
+  const nextWindows = buildWindowsForStartYear(startYear + 1, template);
+  const upcoming = nextWindows[0]!;
   return {
-    academicYear: fallback.academicYear,
+    academicYear: upcoming.academicYear,
     currentQuarter: 'Between quarters',
     quarterStatus: 'break',
-    reportState: 'closed',
-    targetQuarter: fallback.quarter,
-    openAt: fallback.openAt,
-    dueAt: fallback.dueAt,
-    message: `The ${fallback.quarter} reporting window closed on ${formatDateLabel(fallback.dueAt)}.`,
-    countdownLabel: 'closed'
+    reportState: 'upcoming',
+    targetQuarter: upcoming.quarter,
+    openAt: upcoming.openAt,
+    dueAt: upcoming.dueAt,
+    message: `Reporting opens on ${formatDateLabel(upcoming.openAt)}.`,
+    countdownLabel: formatCountdown(upcoming.openAt, now)
   };
 }
