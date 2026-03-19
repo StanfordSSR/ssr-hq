@@ -40,16 +40,18 @@ export default async function QueuedRemindersPage() {
   const rows = (queueData || []) as QueueRow[];
 
   const teamIds = Array.from(new Set(rows.map((row) => row.team_id)));
-  const [{ data: teamsData }, { data: membershipsData }, { data: authUsers }] = await Promise.all([
+  const [{ data: teamsData }, { data: membershipsData }, { data: leadProfiles }] = await Promise.all([
     teamIds.length ? admin.from('teams').select('id, name').in('id', teamIds) : Promise.resolve({ data: [] }),
     teamIds.length
       ? admin.from('team_memberships').select('team_id, user_id').in('team_id', teamIds).eq('team_role', 'lead').eq('is_active', true)
       : Promise.resolve({ data: [] }),
-    admin.auth.admin.listUsers()
+    teamIds.length
+      ? admin.from('profiles').select('id, email').not('email', 'is', null)
+      : Promise.resolve({ data: [] })
   ]);
 
   const teamNameMap = new Map((teamsData || []).map((team) => [team.id, team.name]));
-  const emailMap = new Map(authUsers.users.map((authUser) => [authUser.id, authUser.email || '']));
+  const emailMap = new Map((leadProfiles || []).map((profile) => [profile.id, profile.email || '']));
   const teamRecipientMap = new Map<string, string[]>();
 
   for (const membership of membershipsData || []) {

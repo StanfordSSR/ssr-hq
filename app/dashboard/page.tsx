@@ -114,25 +114,25 @@ export default async function DashboardPage() {
   const isPresident = currentRole === 'president';
 
   if (isAdmin || isPresident) {
-    const { data: teamsData } = await admin
-      .from('teams')
-      .select('id, name, description, logo_url, is_active, created_at')
-      .eq('is_active', true)
-      .order('name');
-
-    const { data: membershipsData } = await admin
-      .from('team_memberships')
-      .select('id, team_id, user_id, team_role, is_active')
-      .eq('is_active', true);
-
+    const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }] = await Promise.all([
+      admin
+        .from('teams')
+        .select('id, name, description, logo_url, is_active, created_at')
+        .eq('is_active', true)
+        .order('name'),
+      admin
+        .from('team_memberships')
+        .select('id, team_id, user_id, team_role, is_active')
+        .eq('is_active', true),
+      admin
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('active', true),
+      admin.from('team_roster_members').select('id')
+    ]);
     const teams = (teamsData || []) as Team[];
     const memberships = (membershipsData || []) as Membership[];
     const activeLeadMemberships = memberships.filter((membership) => membership.team_role === 'lead');
-    const { count } = await admin
-      .from('profiles')
-      .select('id', { count: 'exact', head: true })
-      .eq('active', true);
-    const { data: rosterMembersData } = await admin.from('team_roster_members').select('id');
     const totalMembers = (count || 0) + (rosterMembersData || []).length;
 
     return (
@@ -200,56 +200,60 @@ export default async function DashboardPage() {
     );
   }
 
-  const { data: team } = await supabase
-    .from('teams')
-    .select('id, name, description, logo_url, is_active, created_at')
-    .eq('id', primaryTeamId)
-    .single<Team>();
+  const [{ data: team }, { data: teamMembershipsData }, { data: rosterMembersData }, reportState, cycle] = await Promise.all([
+    supabase
+      .from('teams')
+      .select('id, name, description, logo_url, is_active, created_at')
+      .eq('id', primaryTeamId)
+      .single<Team>(),
+    admin
+      .from('team_memberships')
+      .select('id, team_id, user_id, team_role, is_active')
+      .eq('team_id', primaryTeamId)
+      .eq('is_active', true),
+    admin
+      .from('team_roster_members')
+      .select('id, team_id')
+      .eq('team_id', primaryTeamId),
+    getNextReportState(new Date()),
+    getCurrentAcademicYear()
+  ]);
 
   if (!team) {
     redirect('/login');
   }
 
-  const { data: teamMembershipsData } = await admin
-    .from('team_memberships')
-    .select('id, team_id, user_id, team_role, is_active')
-    .eq('team_id', primaryTeamId)
-    .eq('is_active', true);
-  const { data: rosterMembersData } = await admin
-    .from('team_roster_members')
-    .select('id, team_id')
-    .eq('team_id', primaryTeamId);
-
   const teamMemberships = (teamMembershipsData || []) as Membership[];
   const rosterMembers = (rosterMembersData || []) as RosterMember[];
   const memberCount = teamMemberships.length + rosterMembers.length;
-  const reportState = await getNextReportState(new Date());
-  const cycle = await getCurrentAcademicYear();
-  const { data: teamBudget } = await admin
-    .from('team_budgets')
-    .select('annual_budget_cents')
-    .eq('team_id', team.id)
-    .eq('academic_year', cycle)
-    .maybeSingle();
-  const { data: purchasesData } = await admin
-    .from('purchase_logs')
-    .select('amount_cents')
-    .eq('team_id', team.id)
-    .eq('academic_year', cycle);
-  const { data: pendingReceiptsData } = await admin
-    .from('purchase_logs')
-    .select('id, description, purchased_at, payment_method, receipt_path, receipt_not_needed')
-    .eq('team_id', team.id)
-    .eq('payment_method', 'credit_card')
-    .eq('receipt_not_needed', false)
-    .is('receipt_path', null)
-    .order('purchased_at', { ascending: true });
-  const { data: tasksData } = await admin
-    .from('tasks')
-    .select('id, title, recipient_scope')
-    .eq('is_active', true)
-    .order('created_at', { ascending: false });
-  const { data: taskRecipients } = await admin.from('task_recipients').select('task_id, team_id').eq('team_id', team.id);
+  const [{ data: teamBudget }, { data: purchasesData }, { data: pendingReceiptsData }, { data: tasksData }, { data: taskRecipients }] =
+    await Promise.all([
+      admin
+        .from('team_budgets')
+        .select('annual_budget_cents')
+        .eq('team_id', team.id)
+        .eq('academic_year', cycle)
+        .maybeSingle(),
+      admin
+        .from('purchase_logs')
+        .select('amount_cents')
+        .eq('team_id', team.id)
+        .eq('academic_year', cycle),
+      admin
+        .from('purchase_logs')
+        .select('id, description, purchased_at, payment_method, receipt_path, receipt_not_needed')
+        .eq('team_id', team.id)
+        .eq('payment_method', 'credit_card')
+        .eq('receipt_not_needed', false)
+        .is('receipt_path', null)
+        .order('purchased_at', { ascending: true }),
+      admin
+        .from('tasks')
+        .select('id, title, recipient_scope')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false }),
+      admin.from('task_recipients').select('task_id, team_id').eq('team_id', team.id)
+    ]);
   const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
   const teamTasks = (tasksData || []).filter(
     (task) => task.recipient_scope === 'all_teams' || recipientTaskIds.has(task.id)

@@ -62,28 +62,25 @@ export default async function DashboardLayout({
     const myTeamIds = (memberships || []).map((membership) => membership.team_id);
 
     if (myTeamIds.length > 0) {
-      const [{ data: pendingReceipts }, { data: teamTasks }, { data: taskRecipients }, reportState] = await Promise.all([
+      const [{ count: pendingReceiptCount }, { count: allTeamsTaskCount }, { data: taskRecipients }, reportState] = await Promise.all([
         admin
           .from('purchase_logs')
-          .select('id')
+          .select('id', { count: 'exact', head: true })
           .in('team_id', myTeamIds)
           .eq('payment_method', 'credit_card')
           .eq('receipt_not_needed', false)
-          .is('receipt_path', null)
-          .limit(1),
+          .is('receipt_path', null),
         admin
           .from('tasks')
-          .select('id, recipient_scope')
-          .eq('is_active', true),
+          .select('id', { count: 'exact', head: true })
+          .eq('is_active', true)
+          .eq('recipient_scope', 'all_teams'),
         admin.from('task_recipients').select('task_id, team_id').in('team_id', myTeamIds),
         getNextReportState(new Date())
       ]);
 
-      const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
-      const hasAssignedTasks = (teamTasks || []).some(
-        (task) => task.recipient_scope === 'all_teams' || recipientTaskIds.has(task.id)
-      );
-      const hasPendingReceipts = (pendingReceipts || []).length > 0;
+      const hasAssignedTasks = (allTeamsTaskCount || 0) > 0 || (taskRecipients || []).length > 0;
+      const hasPendingReceipts = (pendingReceiptCount || 0) > 0;
       let hasPendingReport = false;
 
       if (reportState.reportState === 'open') {

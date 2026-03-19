@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase-server';
@@ -84,7 +85,7 @@ function getDefaultRole(roles: AppRole[]) {
   return 'team_lead';
 }
 
-export async function getViewerContext() {
+export const getViewerContext = cache(async function getViewerContext() {
   const { supabase, user } = await requireSignedInUser();
   const admin = createAdminClient();
   const [{ data: profile }, { count: leadMembershipCount }] = await Promise.all([
@@ -121,7 +122,7 @@ export async function getViewerContext() {
     availableRoles,
     currentRole
   };
-}
+});
 
 export async function requireAdmin() {
   const context = await getViewerContext();
