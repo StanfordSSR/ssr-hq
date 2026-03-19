@@ -451,8 +451,8 @@ export default async function SettingsPage() {
               )
             },
             {
-              id: 'reporting',
-              label: 'Reporting',
+              id: 'continuity',
+              label: 'Continuity',
               content: (
                 <div className="hq-lead-grid">
             <section className="hq-lead-block">
@@ -572,13 +572,21 @@ export default async function SettingsPage() {
               )}
             </section>
 
-            <section className="hq-lead-block">
-              <div className="hq-block-head">
-                <h3>Quarterly report questions</h3>
-              </div>
-              <ReportQuestionEditor initialQuestions={reportQuestions} readOnly={!canEdit} />
-            </section>
           </div>
+              )
+            },
+            {
+              id: 'reporting',
+              label: 'Reporting',
+              content: (
+                <div className="hq-lead-grid">
+                  <section className="hq-lead-block">
+                    <div className="hq-block-head">
+                      <h3>Quarterly report questions</h3>
+                    </div>
+                    <ReportQuestionEditor initialQuestions={reportQuestions} readOnly={!canEdit} />
+                  </section>
+                </div>
               )
             },
             {
