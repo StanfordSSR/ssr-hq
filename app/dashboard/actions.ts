@@ -792,7 +792,6 @@ export async function updateReceiptNotificationSettingsAction(formData: FormData
 
   await syncNotificationQueue();
   revalidatePath('/dashboard/settings');
-  revalidatePath('/dashboard/tasks');
 }
 
 export async function updateReportNotificationSettingsAction(formData: FormData) {
@@ -831,7 +830,6 @@ export async function updateReportNotificationSettingsAction(formData: FormData)
 
   await syncNotificationQueue();
   revalidatePath('/dashboard/settings');
-  revalidatePath('/dashboard/reports');
 }
 
 export async function updateAcademicCalendarSettingsAction(formData: FormData) {

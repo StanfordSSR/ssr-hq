@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getCurrentAcademicYear, formatAcademicYear } from '@/lib/academic-calendar';
+import { getCurrentAcademicYear } from '@/lib/academic-calendar';
 import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/actions';
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
 
@@ -74,17 +74,37 @@ export default async function FinancesPage({
     .select('academic_year, total_budget_cents')
     .eq('academic_year', cycle)
     .maybeSingle();
-  const { data: purchasesData } = await admin
+  const purchaseScopeQuery = admin
+    .from('purchase_logs')
+    .select('team_id, amount_cents, purchased_at, category, academic_year');
+  const filteredPurchaseQuery = admin
     .from('purchase_logs')
     .select('team_id, amount_cents, purchased_at, category, academic_year');
 
   const teams = (teamsData || []) as Team[];
   const validSelectedTeamId = selectedTeamId === 'all' || teams.some((team) => team.id === selectedTeamId) ? selectedTeamId : 'all';
+  if (validSelectedTeamId !== 'all') {
+    purchaseScopeQuery.eq('team_id', validSelectedTeamId);
+    filteredPurchaseQuery.eq('team_id', validSelectedTeamId);
+  }
+
+  if (selectedRange === 'current_cycle') {
+    filteredPurchaseQuery.eq('academic_year', cycle);
+  } else if (selectedRange === 'last_90_days') {
+    filteredPurchaseQuery.gte('purchased_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
+  }
+
+  const [{ data: purchasesData }, { data: filteredPurchasesData }, { data: cyclePurchasesData }] = await Promise.all([
+    purchaseScopeQuery,
+    filteredPurchaseQuery,
+    admin.from('purchase_logs').select('team_id, amount_cents').eq('academic_year', cycle)
+  ]);
   const teamBudgets = new Map(
     ((teamBudgetsData || []) as TeamBudget[]).map((entry) => [entry.team_id, entry.annual_budget_cents])
   );
   const clubBudget = (clubBudgetData || { academic_year: cycle, total_budget_cents: 0 }) as ClubBudget;
   const purchases = (purchasesData || []) as PurchaseLog[];
+  const filteredPurchases = (filteredPurchasesData || []) as PurchaseLog[];
   const { data: rosterMembersData } = validSelectedTeamId !== 'all'
     ? await admin.from('team_roster_members').select('id').eq('team_id', validSelectedTeamId)
     : { data: [] };
@@ -101,24 +121,9 @@ export default async function FinancesPage({
     clubBudget.total_budget_cents > 0 ? Math.min(100, Math.round((allocatedTotal / clubBudget.total_budget_cents) * 100)) : 0;
   const chartColors = ['#8c1515', '#3f6e8f', '#b27a2c', '#5d7c63', '#875e8c', '#bf5f4d', '#3f7c7c'];
   const spentByTeam = new Map<string, number>();
-  for (const purchase of purchases) {
+  for (const purchase of ((cyclePurchasesData || []) as Array<{ team_id: string; amount_cents: number }>)) {
     spentByTeam.set(purchase.team_id, (spentByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
   }
-  const filteredPurchases = purchases.filter((purchase) => {
-    if (validSelectedTeamId !== 'all' && purchase.team_id !== validSelectedTeamId) {
-      return false;
-    }
-
-    if (selectedRange === 'all_time') {
-      return true;
-    }
-
-    if (selectedRange === 'last_90_days') {
-      return new Date(purchase.purchased_at).getTime() >= Date.now() - 90 * 24 * 60 * 60 * 1000;
-    }
-
-    return formatAcademicYear(new Date(purchase.purchased_at)) === cycle;
-  });
   const filteredSpendTotal = filteredPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
   const filteredPurchaseCount = filteredPurchases.length;
   const filteredAverageSpend = filteredPurchaseCount > 0 ? Math.round(filteredSpendTotal / filteredPurchaseCount) : 0;

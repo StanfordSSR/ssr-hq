@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -14,8 +13,7 @@ import {
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { normalizeReminderDays } from '@/lib/purchases';
-
-type SettingsTab = 'board' | 'reminders' | 'reporting' | 'audit';
+import { SettingsTabs } from '@/components/settings-tabs';
 
 function formatAuditTimestamp(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -26,18 +24,7 @@ function formatAuditTimestamp(value: string) {
   }).format(new Date(value));
 }
 
-function readTab(value: string | string[] | undefined): SettingsTab {
-  const raw = Array.isArray(value) ? value[0] || '' : value || '';
-  return raw === 'board' || raw === 'reminders' || raw === 'reporting' || raw === 'audit' ? raw : 'board';
-}
-
-export default async function SettingsPage({
-  searchParams
-}: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const params = (await searchParams) || {};
-  const tab = readTab(params.tab);
+export default async function SettingsPage() {
   const supabase = await createClient();
   const admin = createAdminClient();
   const {
@@ -59,60 +46,51 @@ export default async function SettingsPage({
   }
 
   const canEdit = me.role === 'admin';
-  const currentAcademicYear = await getCurrentAcademicYear();
-  const calendarTemplate = await getAcademicCalendarTemplate();
+  const [
+    currentAcademicYear,
+    calendarTemplate,
+    receiptSettings,
+    reportQuestionsResponse,
+    reportNotificationSettingsResponse,
+    queuedNotificationsResponse,
+    auditEntriesResponse,
+    allProfilesResponse
+  ] =
+    await Promise.all([
+      getCurrentAcademicYear(),
+      getAcademicCalendarTemplate(),
+      getReceiptNotificationSettings(),
+      admin.from('report_questions').select('id, prompt, field_type, word_limit, sort_order').eq('is_active', true).order('sort_order'),
+      admin.from('report_notification_settings').select('email_enabled, reminder_days').eq('id', 1).maybeSingle(),
+      admin.from('notification_queue').select('id, notification_type').eq('status', 'queued'),
+      admin.from('audit_log_entries').select('id, actor_id, action, target_type, target_id, summary, created_at').order('created_at', { ascending: false }).limit(40),
+      admin.from('profiles').select('id, full_name, role, active').eq('active', true).order('full_name')
+    ]);
   const reportingWindows = await getReportingWindows(currentAcademicYear);
-  const receiptSettings = await getReceiptNotificationSettings();
-  const { data: reportQuestionsData } = await admin
-    .from('report_questions')
-    .select('id, prompt, field_type, word_limit, sort_order')
-    .eq('is_active', true)
-    .order('sort_order');
-  const reportQuestions = (reportQuestionsData || []).map((question) => ({
+  const reportQuestionsData = reportQuestionsResponse.data || [];
+  const reportNotificationSettings = reportNotificationSettingsResponse.data;
+  const queuedNotificationsData = queuedNotificationsResponse.data || [];
+  const auditEntriesData = auditEntriesResponse.data || [];
+  const allProfilesData = allProfilesResponse.data || [];
+  const reportQuestions = reportQuestionsData.map((question) => ({
     id: question.id,
     prompt: question.prompt,
     fieldType: question.field_type,
     wordLimit: question.word_limit
   }));
-  const { data: reportNotificationSettings } = await admin
-    .from('report_notification_settings')
-    .select('email_enabled, reminder_days')
-    .eq('id', 1)
-    .maybeSingle();
   const reportReminderDays = normalizeReminderDays(reportNotificationSettings?.reminder_days || [14, 7, 1]);
-  const { data: queuedNotificationsData } = await admin
-    .from('notification_queue')
-    .select('id, notification_type')
-    .eq('status', 'queued');
   const queuedNotifications = queuedNotificationsData || [];
   const receiptQueueCount = queuedNotifications.filter((row) => row.notification_type === 'receipt').length;
   const reportQueueCount = queuedNotifications.filter((row) => row.notification_type === 'report').length;
-  const { data: auditEntriesData } = await admin
-    .from('audit_log_entries')
-    .select('id, actor_id, action, target_type, target_id, summary, created_at')
-    .order('created_at', { ascending: false })
-    .limit(40);
   const auditEntries = auditEntriesData || [];
   const actorIds = Array.from(new Set(auditEntries.map((entry) => entry.actor_id).filter(Boolean))) as string[];
   const { data: actorProfiles } = actorIds.length
     ? await admin.from('profiles').select('id, full_name').in('id', actorIds)
     : { data: [] };
   const actorNameMap = new Map((actorProfiles || []).map((profile) => [profile.id, profile.full_name || 'Unknown user']));
-  const { data: allProfilesData } = await admin
-    .from('profiles')
-    .select('id, full_name, role, active')
-    .eq('active', true)
-    .order('full_name');
   const allProfiles = allProfilesData || [];
   const presidents = allProfiles.filter((profile) => profile.role === 'president');
   const presidentCandidates = allProfiles.filter((profile) => profile.role !== 'admin' && profile.role !== 'president');
-
-  const tabs: Array<{ id: SettingsTab; label: string }> = [
-    { id: 'board', label: 'Board' },
-    { id: 'reminders', label: 'Reminders' },
-    { id: 'reporting', label: 'Reporting' },
-    { id: 'audit', label: 'Audit log' }
-  ];
 
   return (
     <div className="hq-page">
@@ -154,20 +132,14 @@ export default async function SettingsPage({
       </section>
 
       <section className="hq-panel hq-surface-muted">
-        <div className="hq-tab-row">
-          {tabs.map((item) => (
-            <Link
-              key={item.id}
-              href={`/dashboard/settings?tab=${item.id}`}
-              className={`hq-tab-button ${tab === item.id ? 'hq-tab-button-active' : ''}`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </div>
-
-        {tab === 'board' ? (
-          <div className="hq-lead-grid">
+        <SettingsTabs
+          initialTab="board"
+          tabs={[
+            {
+              id: 'board',
+              label: 'Board',
+              content: (
+                <div className="hq-lead-grid">
             <section className="hq-lead-block">
               <div className="hq-block-head">
                 <h3>Current presidents</h3>
@@ -262,10 +234,13 @@ export default async function SettingsPage({
               </>
             ) : null}
           </div>
-        ) : null}
-
-        {tab === 'reminders' ? (
-          <div className="hq-lead-grid">
+              )
+            },
+            {
+              id: 'reminders',
+              label: 'Reminders',
+              content: (
+                <div className="hq-lead-grid">
             <section className="hq-lead-block">
               <div className="hq-block-head">
                 <h3>Receipt reminders</h3>
@@ -324,10 +299,13 @@ export default async function SettingsPage({
               )}
             </section>
           </div>
-        ) : null}
-
-        {tab === 'reporting' ? (
-          <div className="hq-lead-grid">
+              )
+            },
+            {
+              id: 'reporting',
+              label: 'Reporting',
+              content: (
+                <div className="hq-lead-grid">
             <section className="hq-lead-block">
               <div className="hq-block-head">
                 <h3>Academic cycle</h3>
@@ -372,26 +350,32 @@ export default async function SettingsPage({
               <ReportQuestionEditor initialQuestions={reportQuestions} readOnly={!canEdit} />
             </section>
           </div>
-        ) : null}
-
-        {tab === 'audit' ? (
-          <section className="hq-lead-block">
-            <div className="hq-block-head">
-              <h3>Recent audit log</h3>
-            </div>
-            <div className="hq-audit-list">
-              {auditEntries.length > 0 ? auditEntries.map((entry) => (
-                <div key={entry.id} className="hq-audit-row">
-                  <div className="hq-audit-main">
-                    <strong>{entry.summary}</strong>
-                    <span>{entry.actor_id ? actorNameMap.get(entry.actor_id) || 'Unknown user' : 'System'} · {entry.action} · {entry.target_type}</span>
+              )
+            },
+            {
+              id: 'audit',
+              label: 'Audit log',
+              content: (
+                <section className="hq-lead-block">
+                  <div className="hq-block-head">
+                    <h3>Recent audit log</h3>
                   </div>
-                  <time dateTime={entry.created_at}>{formatAuditTimestamp(entry.created_at)}</time>
-                </div>
-              )) : <p className="empty-note">Audit events will appear here as club data changes.</p>}
-            </div>
-          </section>
-        ) : null}
+                  <div className="hq-audit-list">
+                    {auditEntries.length > 0 ? auditEntries.map((entry) => (
+                      <div key={entry.id} className="hq-audit-row">
+                        <div className="hq-audit-main">
+                          <strong>{entry.summary}</strong>
+                          <span>{entry.actor_id ? actorNameMap.get(entry.actor_id) || 'Unknown user' : 'System'} · {entry.action} · {entry.target_type}</span>
+                        </div>
+                        <time dateTime={entry.created_at}>{formatAuditTimestamp(entry.created_at)}</time>
+                      </div>
+                    )) : <p className="empty-note">Audit events will appear here as club data changes.</p>}
+                  </div>
+                </section>
+              )
+            }
+          ]}
+        />
       </section>
     </div>
   );
