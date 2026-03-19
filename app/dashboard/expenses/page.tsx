@@ -282,7 +282,9 @@ export default async function ExpenseLogPage({
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : 'Lead portal'}</p>
-          <h1 className="hq-page-title">Expense log</h1>
+          <h1 className="hq-page-title">
+            {isPrivilegedViewer ? 'Expense log' : `${selectedTeamName} expense log`}
+          </h1>
           <p className="hq-subtitle">
             {isPresident
               ? 'Review every recorded purchase, receipt status, and spending distribution with read-only access.'

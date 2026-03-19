@@ -1703,6 +1703,14 @@ tr:last-child td {
   align-items: center;
 }
 
+.hq-expense-overview {
+  margin-bottom: 34px;
+}
+
+.hq-expense-summary .hq-block-head {
+  margin-bottom: 38px;
+}
+
 .hq-finance-hero {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
@@ -1811,7 +1819,7 @@ tr:last-child td {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 28px;
 }
 
 .hq-expense-chart-label {
