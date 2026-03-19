@@ -9,9 +9,9 @@ const PHRASES = [
   'LIVE OPERATIONAL OVERSIGHT'
 ];
 
-const TYPING_DELAY_MS = 42;
-const BACKSPACE_DELAY_MS = 22;
-const HOLD_DELAY_MS = 950;
+const TYPING_DELAY_MS = 126;
+const BACKSPACE_DELAY_MS = 66;
+const HOLD_DELAY_MS = 1300;
 
 export function HomeTypewriter() {
   const [phraseIndex, setPhraseIndex] = useState(0);
