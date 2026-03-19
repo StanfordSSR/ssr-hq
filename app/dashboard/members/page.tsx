@@ -294,6 +294,13 @@ export default async function ManageMembersPage() {
     .eq('is_active', true);
 
   const leadMemberships = (leadMembershipsData || []) as Membership[];
+  const { data: teamMembershipsData } = await admin
+    .from('team_memberships')
+    .select('id, team_id, user_id, team_role, is_active')
+    .eq('team_id', primaryTeamId)
+    .eq('is_active', true);
+
+  const teamMemberships = (teamMembershipsData || []) as Membership[];
 
   const { data: team } = await admin
     .from('teams')
@@ -337,7 +344,7 @@ export default async function ManageMembersPage() {
       source: 'recorded' as const
     }))
   ];
-  const totalCount = leadMemberships.length + rosterMembers.length;
+  const totalCount = teamMemberships.length + rosterMembers.length;
 
   return (
     <div className="hq-page">
@@ -388,6 +395,7 @@ export default async function ManageMembersPage() {
           teamId={primaryTeamId}
           rosterMembers={workspaceMembers}
           leadCount={leadMemberships.length}
+          totalTrackedCount={totalCount}
           monthOptions={monthOptions}
         />
       </div>

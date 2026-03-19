@@ -20,6 +20,7 @@ type LeadRosterWorkspaceProps = {
   teamId: string;
   rosterMembers: RosterMember[];
   leadCount: number;
+  totalTrackedCount: number;
   monthOptions: string[];
 };
 
@@ -32,6 +33,7 @@ export function LeadRosterWorkspace({
   teamId,
   rosterMembers,
   leadCount,
+  totalTrackedCount,
   monthOptions
 }: LeadRosterWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<'add' | 'recorded'>('add');
@@ -131,7 +133,7 @@ export function LeadRosterWorkspace({
               </div>
               <div className="hq-summary-row">
                 <span>Total tracked</span>
-                <strong>{rosterMembers.length}</strong>
+                <strong>{totalTrackedCount}</strong>
               </div>
             </div>
           ) : (
