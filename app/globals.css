@@ -138,6 +138,40 @@ button {
   max-width: 42rem;
 }
 
+.home-typewriter {
+  margin: 20px 0 0;
+  min-height: 1.75em;
+  color: var(--cardinal);
+  font-family: var(--font-brand), ui-sans-serif, sans-serif;
+  font-size: clamp(1.45rem, 2.8vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.18;
+  text-transform: uppercase;
+}
+
+.home-typewriter-caret {
+  display: inline-block;
+  width: 0.12em;
+  height: 0.95em;
+  margin-left: 0.12em;
+  vertical-align: -0.08em;
+  background: currentColor;
+  animation: home-typewriter-blink 0.85s steps(1) infinite;
+}
+
+@keyframes home-typewriter-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;

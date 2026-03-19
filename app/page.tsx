@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Header } from '@/components/header';
+import { HomeTypewriter } from '@/components/home-typewriter';
 
 export default function HomePage() {
   return (
@@ -10,9 +11,7 @@ export default function HomePage() {
           <div className="home-copy">
             <p className="home-kicker">Internal portal</p>
             <h1 className="home-title">Stanford Student Robotics HQ</h1>
-            <p className="home-subtitle">
-              Team leads and admins use HQ to manage access, track operations, and keep club reporting organized.
-            </p>
+            <HomeTypewriter />
 
             <div className="button-row">
               <Link className="button-primary" href="/login">
