@@ -133,8 +133,14 @@ export default async function FinancesPage({
       ? clubBudget.total_budget_cents
       : teamBudgets.get(validSelectedTeamId) || 0;
   const filteredRemainingTotal = Math.max(0, filteredTotalBudget - filteredSpendTotal);
+  const totalSpendForSelection = purchases
+    .filter((purchase) => (validSelectedTeamId === 'all' ? true : purchase.team_id === validSelectedTeamId))
+    .reduce((sum, purchase) => sum + purchase.amount_cents, 0);
+  const alreadySpentOutsideFilter = Math.max(0, totalSpendForSelection - filteredSpendTotal);
+  const trueRemainingAllocated = Math.max(0, filteredAllocatedBudget - totalSpendForSelection);
+  const trueRemainingTotal = Math.max(0, filteredTotalBudget - totalSpendForSelection);
   const utilizationPercent =
-    filteredAllocatedBudget > 0 ? Math.min(100, Math.round((filteredSpendTotal / filteredAllocatedBudget) * 100)) : 0;
+    filteredAllocatedBudget > 0 ? Math.min(100, Math.round((totalSpendForSelection / filteredAllocatedBudget) * 100)) : 0;
   const selectedTeam = validSelectedTeamId === 'all' ? null : teams.find((team) => team.id === validSelectedTeamId) || null;
   const selectedTeamMemberCount =
     validSelectedTeamId === 'all' ? 0 : (rosterMembersData || []).length + (teamMembershipsData || []).length;
@@ -144,6 +150,7 @@ export default async function FinancesPage({
     equipment: '#8c1515',
     food: '#d17c3f',
     travel: '#3f6e8f',
+    prior: '#8c8585',
     unused: '#dfd7d7'
   } as const;
   const categoryTotals = {
@@ -207,7 +214,16 @@ export default async function FinancesPage({
     }
 
     if (filteredAllocatedBudget > 0 && filteredRemainingAllocated > 0) {
-      slices.push(`${categoryColors.unused} ${cursor}% 100%`);
+      if (alreadySpentOutsideFilter > 0) {
+        const spentStart = cursor;
+        const spentEnd = cursor + (alreadySpentOutsideFilter / filteredAllocatedBudget) * 100;
+        cursor = spentEnd;
+        slices.push(`${categoryColors.prior} ${spentStart}% ${spentEnd}%`);
+      }
+
+      if (trueRemainingAllocated > 0) {
+        slices.push(`${categoryColors.unused} ${cursor}% 100%`);
+      }
     }
   }
 
@@ -277,14 +293,23 @@ export default async function FinancesPage({
               <div className="hq-finance-callout">
                 <span
                   className="hq-finance-callout-line"
-                  style={{ color: validSelectedTeamId === 'all' ? '#8f8888' : categoryColors.unused }}
+                  style={{ color: selectedTeam ? categoryColors.prior : '#8f8888' }}
                   aria-hidden="true"
                 />
                 <div>
-                  <span>{selectedTeam ? 'Remaining' : 'Unallocated'}</span>
-                  <strong>${((selectedTeam ? filteredRemainingAllocated : remainingBudget) / 100).toLocaleString()}</strong>
+                  <span>{selectedTeam ? 'Already spent' : 'Unallocated'}</span>
+                  <strong>${((selectedTeam ? alreadySpentOutsideFilter : remainingBudget) / 100).toLocaleString()}</strong>
                 </div>
               </div>
+              {selectedTeam ? (
+                <div className="hq-finance-callout">
+                  <span className="hq-finance-callout-line" style={{ color: categoryColors.unused }} aria-hidden="true" />
+                  <div>
+                    <span>Remaining</span>
+                    <strong>${(trueRemainingAllocated / 100).toLocaleString()}</strong>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -306,7 +331,7 @@ export default async function FinancesPage({
             </div>
             <div className="hq-finance-metric-card">
               <span>{selectedTeam ? 'Spent' : 'Allocated'}</span>
-              <strong>${((selectedTeam ? filteredSpendTotal : allocatedTotal) / 100).toLocaleString()}</strong>
+              <strong>${((selectedTeam ? totalSpendForSelection : allocatedTotal) / 100).toLocaleString()}</strong>
             </div>
             <div className="hq-finance-metric-card">
               <span>{selectedTeam ? 'Utilization' : 'Unallocated'}</span>
@@ -322,15 +347,15 @@ export default async function FinancesPage({
             </div>
             <div className="hq-finance-metric-card">
               <span>{selectedTeam ? 'Remaining' : 'Utilization'}</span>
-              <strong>{selectedTeam ? `$${(filteredRemainingAllocated / 100).toLocaleString()}` : `${utilizationPercent}%`}</strong>
+              <strong>{selectedTeam ? `$${(trueRemainingAllocated / 100).toLocaleString()}` : `${utilizationPercent}%`}</strong>
             </div>
             <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Purchase count' : 'Remaining from allocated'}</span>
-              <strong>{selectedTeam ? filteredPurchaseCount : `$${(filteredRemainingAllocated / 100).toLocaleString()}`}</strong>
+              <span>{selectedTeam ? 'Spend in selected range' : 'Remaining from allocated'}</span>
+              <strong>{selectedTeam ? `$${(filteredSpendTotal / 100).toLocaleString()}` : `$${(trueRemainingAllocated / 100).toLocaleString()}`}</strong>
             </div>
             <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Range' : 'Remaining from total'}</span>
-              <strong>{selectedTeam ? (selectedRange === 'current_cycle' ? 'Current cycle' : selectedRange === 'last_90_days' ? 'Last 90 days' : 'All time') : `$${(filteredRemainingTotal / 100).toLocaleString()}`}</strong>
+              <span>{selectedTeam ? 'Already spent before range' : 'Remaining from total'}</span>
+              <strong>{selectedTeam ? `$${(alreadySpentOutsideFilter / 100).toLocaleString()}` : `$${(trueRemainingTotal / 100).toLocaleString()}`}</strong>
             </div>
             <div className="hq-finance-metric-card">
               <span>{selectedTeam ? 'Members' : 'Teams with spend'}</span>
