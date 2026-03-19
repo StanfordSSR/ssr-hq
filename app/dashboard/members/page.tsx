@@ -35,6 +35,15 @@ type RosterMember = {
   joined_year: number;
 };
 
+type LeadWorkspaceMember = {
+  id: string;
+  full_name: string;
+  stanford_email: string;
+  joined_month: number | null;
+  joined_year: number | null;
+  source: 'lead' | 'recorded';
+};
+
 type AdminMemberRow = {
   id: string;
   profileId?: string;
@@ -292,6 +301,33 @@ export default async function ManageMembersPage() {
     .order('full_name');
 
   const rosterMembers = (rosterData || []) as RosterMember[];
+  const leadIds = leadMemberships.map((membership) => membership.user_id);
+  const [{ data: leadProfilesData }, { data: leadAuthUsers }] = await Promise.all([
+    leadIds.length
+      ? admin.from('profiles').select('id, full_name').in('id', leadIds)
+      : Promise.resolve({ data: [] }),
+    leadIds.length ? admin.auth.admin.listUsers() : Promise.resolve({ data: { users: [] } })
+  ]);
+  const leadProfileMap = new Map((leadProfilesData || []).map((profile) => [profile.id, profile.full_name || 'Unnamed lead']));
+  const leadEmailMap = new Map((leadAuthUsers?.users || []).map((authUser) => [authUser.id, authUser.email || '']));
+  const workspaceMembers: LeadWorkspaceMember[] = [
+    ...leadMemberships.map((membership) => ({
+      id: `lead-${membership.user_id}`,
+      full_name: leadProfileMap.get(membership.user_id) || 'Unnamed lead',
+      stanford_email: leadEmailMap.get(membership.user_id) || 'No email found',
+      joined_month: null,
+      joined_year: null,
+      source: 'lead' as const
+    })),
+    ...rosterMembers.map((member) => ({
+      id: member.id,
+      full_name: member.full_name,
+      stanford_email: member.stanford_email,
+      joined_month: member.joined_month,
+      joined_year: member.joined_year,
+      source: 'recorded' as const
+    }))
+  ];
   const totalCount = leadMemberships.length + rosterMembers.length;
 
   return (
@@ -341,7 +377,7 @@ export default async function ManageMembersPage() {
 
         <LeadRosterWorkspace
           teamId={primaryTeamId}
-          rosterMembers={rosterMembers}
+          rosterMembers={workspaceMembers}
           leadCount={leadMemberships.length}
           monthOptions={monthOptions}
         />

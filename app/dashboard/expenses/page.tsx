@@ -364,19 +364,21 @@ export default async function ExpenseLogPage({
           </div>
 
           <form className="form-stack" method="get">
-            <div className="field">
-              <label className="label" htmlFor="expense-team">
-                Team
-              </label>
-              <select className="select" id="expense-team" name="team" defaultValue={selectedTeamId}>
-                <option value="all">All accessible teams</option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isPrivilegedViewer ? (
+              <div className="field">
+                <label className="label" htmlFor="expense-team">
+                  Team
+                </label>
+                <select className="select" id="expense-team" name="team" defaultValue={selectedTeamId}>
+                  <option value="all">All accessible teams</option>
+                  {teams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
 
             <div className="field">
               <label className="label" htmlFor="expense-range">

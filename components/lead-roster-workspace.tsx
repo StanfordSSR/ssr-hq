@@ -11,8 +11,9 @@ type RosterMember = {
   id: string;
   full_name: string;
   stanford_email: string;
-  joined_month: number;
-  joined_year: number;
+  joined_month: number | null;
+  joined_year: number | null;
+  source: 'lead' | 'recorded';
 };
 
 type LeadRosterWorkspaceProps = {
@@ -39,6 +40,7 @@ export function LeadRosterWorkspace({
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const nameFormRefs = useRef<Record<string, HTMLFormElement | null>>({});
   const emailFormRefs = useRef<Record<string, HTMLFormElement | null>>({});
+  const recordedMemberCount = rosterMembers.filter((member) => member.source === 'recorded').length;
 
   return (
     <section className="hq-panel hq-lead-main hq-surface-muted">
@@ -125,11 +127,11 @@ export function LeadRosterWorkspace({
               </div>
               <div className="hq-summary-row">
                 <span>Recorded members</span>
-                <strong>{rosterMembers.length}</strong>
+                <strong>{recordedMemberCount}</strong>
               </div>
               <div className="hq-summary-row">
                 <span>Total tracked</span>
-                <strong>{leadCount + rosterMembers.length}</strong>
+                <strong>{rosterMembers.length}</strong>
               </div>
             </div>
           ) : (
@@ -149,26 +151,31 @@ export function LeadRosterWorkspace({
             {rosterMembers.map((member) => {
               const editingName = editing?.memberId === member.id && editing.field === 'full_name';
               const editingEmail = editing?.memberId === member.id && editing.field === 'stanford_email';
+              const isLeadAccount = member.source === 'lead';
 
               return (
                 <div key={member.id} className="hq-roster-row">
                   <div className="hq-roster-row-top">
                     <div className="hq-roster-joined">
-                      {monthOptions[member.joined_month - 1]} {member.joined_year}
+                      {isLeadAccount
+                        ? 'Lead account'
+                        : `${monthOptions[(member.joined_month || 1) - 1]} ${member.joined_year}`}
                     </div>
 
-                    <button
-                      className="hq-roster-delete-button"
-                      type="button"
-                      aria-label={`Delete ${member.full_name}`}
-                      title="Delete recorded member"
-                      onClick={() => {
-                        setPendingDeleteId((current) => (current === member.id ? null : member.id));
-                        setDeleteConfirmation('');
-                      }}
-                    >
-                      x
-                    </button>
+                    {!isLeadAccount ? (
+                      <button
+                        className="hq-roster-delete-button"
+                        type="button"
+                        aria-label={`Delete ${member.full_name}`}
+                        title="Delete recorded member"
+                        onClick={() => {
+                          setPendingDeleteId((current) => (current === member.id ? null : member.id));
+                          setDeleteConfirmation('');
+                        }}
+                      >
+                        x
+                      </button>
+                    ) : null}
                   </div>
 
                   <div className="hq-roster-fields">
@@ -179,9 +186,9 @@ export function LeadRosterWorkspace({
                         nameFormRefs.current[member.id] = node;
                       }}
                     >
-                      <input type="hidden" name="member_id" value={member.id} />
+                      <input type="hidden" name="member_id" value={isLeadAccount ? '' : member.id} />
                       <input type="hidden" name="stanford_email" value={member.stanford_email} />
-                      {editingName ? (
+                      {editingName && !isLeadAccount ? (
                         <input
                           className="input hq-roster-inline-input"
                           name="full_name"
@@ -210,8 +217,12 @@ export function LeadRosterWorkspace({
                           <button
                             className="hq-roster-inline-text"
                             type="button"
-                            onDoubleClick={() => setEditing({ memberId: member.id, field: 'full_name' })}
-                            title="Double-click to edit"
+                            onDoubleClick={() => {
+                              if (!isLeadAccount) {
+                                setEditing({ memberId: member.id, field: 'full_name' });
+                              }
+                            }}
+                            title={isLeadAccount ? 'Lead accounts are managed through portal invites' : 'Double-click to edit'}
                           >
                             {member.full_name}
                           </button>
@@ -226,9 +237,9 @@ export function LeadRosterWorkspace({
                         emailFormRefs.current[member.id] = node;
                       }}
                     >
-                      <input type="hidden" name="member_id" value={member.id} />
+                      <input type="hidden" name="member_id" value={isLeadAccount ? '' : member.id} />
                       <input type="hidden" name="full_name" value={member.full_name} />
-                      {editingEmail ? (
+                      {editingEmail && !isLeadAccount ? (
                         <input
                           className="input hq-roster-inline-input"
                           name="stanford_email"
@@ -259,8 +270,12 @@ export function LeadRosterWorkspace({
                           <button
                             className="hq-roster-inline-text hq-roster-inline-text-muted"
                             type="button"
-                            onDoubleClick={() => setEditing({ memberId: member.id, field: 'stanford_email' })}
-                            title="Double-click to edit"
+                            onDoubleClick={() => {
+                              if (!isLeadAccount) {
+                                setEditing({ memberId: member.id, field: 'stanford_email' });
+                              }
+                            }}
+                            title={isLeadAccount ? 'Lead accounts are managed through portal invites' : 'Double-click to edit'}
                           >
                             {member.stanford_email}
                           </button>
@@ -268,7 +283,7 @@ export function LeadRosterWorkspace({
                       )}
                     </form>
 
-                    {pendingDeleteId === member.id ? (
+                    {pendingDeleteId === member.id && !isLeadAccount ? (
                       <form action={deleteTeamRosterMemberAction} className="hq-roster-delete-form">
                         <input type="hidden" name="member_id" value={member.id} />
                         <input type="hidden" name="confirmation_name" value={deleteConfirmation} />
