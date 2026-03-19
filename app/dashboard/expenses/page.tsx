@@ -300,7 +300,7 @@ export default async function ExpenseLogPage({
 
           <div className="hq-expense-summary-grid">
             <div className="hq-expense-chart">
-              {!isPrivilegedViewer ? <span className="hq-inline-note">{selectedTeamName}</span> : null}
+              {!isPrivilegedViewer ? <div className="hq-expense-chart-label">{selectedTeamName}</div> : null}
               <div className="hq-budget-ring hq-budget-ring-large" style={{ background: chartBackground }}>
                 <div className="hq-budget-ring-inner hq-budget-ring-inner-large">
                   <strong>{spentPercent}%</strong>
