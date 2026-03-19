@@ -14,7 +14,13 @@ import {
   requireSignedInUser,
   type AppRole
 } from '@/lib/auth';
-import { getCurrentAcademicYear, formatAcademicYear, formatPacificDateKey, getReportingWindow } from '@/lib/academic-calendar';
+import {
+  getCurrentAcademicYear,
+  formatAcademicYear,
+  formatPacificDateKey,
+  getPreviousAcademicYear,
+  getReportingWindow
+} from '@/lib/academic-calendar';
 import { sendFinancialOfficerInviteEmail, sendInviteEmail, sendPresidentInviteEmail, sendTaskEmails } from '@/lib/notifications';
 import { env } from '@/lib/env';
 import {
@@ -549,6 +555,111 @@ export async function updateTeamBudgetAction(formData: FormData) {
       });
 
       revalidatePaths(REVALIDATE_PATHS.finances);
+    }
+  });
+}
+
+export async function initializeAcademicYearBudgetsAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Initialized the new academic year budget cycle.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const confirmPhrase = String(formData.get('confirm_initialize') || '').trim();
+      const confirmYear = String(formData.get('confirm_academic_year') || '').trim();
+      const currentAcademicYear = await getCurrentAcademicYear();
+      const previousAcademicYear = getPreviousAcademicYear(currentAcademicYear);
+
+      if (confirmPhrase !== 'INITIALIZE') {
+        throw new Error('Type INITIALIZE to confirm the year transition.');
+      }
+
+      if (confirmYear !== currentAcademicYear) {
+        throw new Error(`Type ${currentAcademicYear} exactly to confirm the new cycle.`);
+      }
+
+      const admin = createAdminClient();
+      const [
+        { data: teamsData },
+        { data: currentClubBudget },
+        { data: currentTeamBudgets },
+        { data: previousClubBudget },
+        { data: previousTeamBudgets },
+        { data: previousPurchases }
+      ] = await Promise.all([
+        admin.from('teams').select('id').eq('is_active', true),
+        admin.from('club_budgets').select('academic_year, total_budget_cents').eq('academic_year', currentAcademicYear).maybeSingle(),
+        admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', currentAcademicYear),
+        admin.from('club_budgets').select('total_budget_cents').eq('academic_year', previousAcademicYear).maybeSingle(),
+        admin.from('team_budgets').select('annual_budget_cents').eq('academic_year', previousAcademicYear),
+        admin.from('purchase_logs').select('amount_cents').eq('academic_year', previousAcademicYear)
+      ]);
+
+      if (currentClubBudget || (currentTeamBudgets || []).length > 0) {
+        throw new Error(
+          `${currentAcademicYear} budget setup already exists. Edit the totals from Manage Finances instead of re-initializing it.`
+        );
+      }
+
+      const activeTeams = teamsData || [];
+      const previousAllocatedCents = (previousTeamBudgets || []).reduce(
+        (sum, budget) => sum + budget.annual_budget_cents,
+        0
+      );
+      const previousSpentCents = (previousPurchases || []).reduce(
+        (sum, purchase) => sum + purchase.amount_cents,
+        0
+      );
+      const returnedToGeneralFundCents = Math.max(0, previousAllocatedCents - previousSpentCents);
+      const previousGeneralFundBalanceCents = Math.max(
+        0,
+        (previousClubBudget?.total_budget_cents || 0) - previousAllocatedCents
+      );
+
+      const { error: clubBudgetError } = await admin.from('club_budgets').upsert({
+        academic_year: currentAcademicYear,
+        total_budget_cents: 0
+      });
+
+      if (clubBudgetError) {
+        throw new Error(clubBudgetError.message);
+      }
+
+      if (activeTeams.length > 0) {
+        const { error: teamBudgetError } = await admin.from('team_budgets').upsert(
+          activeTeams.map((team) => ({
+            team_id: team.id,
+            academic_year: currentAcademicYear,
+            annual_budget_cents: 0
+          })),
+          { onConflict: 'team_id,academic_year' }
+        );
+
+        if (teamBudgetError) {
+          throw new Error(teamBudgetError.message);
+        }
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'budget.cycle.initialized',
+        targetType: 'academic_year',
+        targetId: currentAcademicYear,
+        summary: `Initialized budget setup for ${currentAcademicYear}.`,
+        details: {
+          currentAcademicYear,
+          previousAcademicYear,
+          activeTeamCount: activeTeams.length,
+          currentClubBudgetCents: 0,
+          previousClubBudgetCents: previousClubBudget?.total_budget_cents || 0,
+          previousAllocatedCents,
+          previousSpentCents,
+          returnedToGeneralFundCents,
+          previousGeneralFundBalanceCents
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.finances.concat(REVALIDATE_PATHS.settings));
     }
   });
 }

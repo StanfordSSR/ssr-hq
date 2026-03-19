@@ -2,7 +2,13 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import Link from 'next/link';
-import { getAcademicCalendarTemplate, getCurrentAcademicYear, getReportingWindows, formatDateLabel } from '@/lib/academic-calendar';
+import {
+  getAcademicCalendarTemplate,
+  getCurrentAcademicYear,
+  getPreviousAcademicYear,
+  getReportingWindows,
+  formatDateLabel
+} from '@/lib/academic-calendar';
 import {
   assignFinancialOfficerRoleAction,
   assignPresidentRoleAction,
@@ -14,6 +20,7 @@ import {
   updateReceiptNotificationSettingsAction,
   updateReportNotificationSettingsAction
 } from '@/app/dashboard/actions';
+import { AcademicYearInitializerForm } from '@/components/academic-year-initializer-form';
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { normalizeReminderDays } from '@/lib/purchases';
@@ -52,7 +59,12 @@ export default async function SettingsPage() {
     reportNotificationSettingsResponse,
     queuedNotificationsResponse,
     auditEntriesResponse,
-    allProfilesResponse
+    allProfilesResponse,
+    currentClubBudgetResponse,
+    currentTeamBudgetsResponse,
+    previousClubBudgetResponse,
+    previousTeamBudgetsResponse,
+    previousPurchasesResponse
   ] =
     await Promise.all([
       getCurrentAcademicYear(),
@@ -66,9 +78,15 @@ export default async function SettingsPage() {
         .from('profiles')
         .select('id, full_name, role, is_admin, is_president, is_financial_officer, active')
         .eq('active', true)
-        .order('full_name')
+        .order('full_name'),
+      admin.from('club_budgets').select('total_budget_cents').eq('academic_year', await getCurrentAcademicYear()).maybeSingle(),
+      admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', await getCurrentAcademicYear()),
+      admin.from('club_budgets').select('total_budget_cents').eq('academic_year', getPreviousAcademicYear(await getCurrentAcademicYear())).maybeSingle(),
+      admin.from('team_budgets').select('annual_budget_cents').eq('academic_year', getPreviousAcademicYear(await getCurrentAcademicYear())),
+      admin.from('purchase_logs').select('amount_cents').eq('academic_year', getPreviousAcademicYear(await getCurrentAcademicYear()))
     ]);
   const reportingWindows = await getReportingWindows(currentAcademicYear);
+  const previousAcademicYear = getPreviousAcademicYear(currentAcademicYear);
   const reportQuestionsData = reportQuestionsResponse.data || [];
   const reportNotificationSettings = reportNotificationSettingsResponse.data;
   const queuedNotificationsData = queuedNotificationsResponse.data || [];
@@ -101,6 +119,17 @@ export default async function SettingsPage() {
   const presidentCandidates = allProfiles.filter((profile) => !profileHasPresidentRole(profile));
   const financialOfficers = allProfiles.filter((profile) => profileHasFinancialOfficerRole(profile));
   const financialOfficerCandidates = allProfiles.filter((profile) => !profileHasFinancialOfficerRole(profile));
+  const currentBudgetInitialized = Boolean(currentClubBudgetResponse.data) || (currentTeamBudgetsResponse.data || []).length > 0;
+  const previousAllocatedCents = (previousTeamBudgetsResponse.data || []).reduce(
+    (sum, budget) => sum + budget.annual_budget_cents,
+    0
+  );
+  const previousSpentCents = (previousPurchasesResponse.data || []).reduce(
+    (sum, purchase) => sum + purchase.amount_cents,
+    0
+  );
+  const previousReturnedCents = Math.max(0, previousAllocatedCents - previousSpentCents);
+  const previousClubBudgetCents = previousClubBudgetResponse.data?.total_budget_cents || 0;
 
   return (
     <div className="hq-page">
@@ -419,28 +448,68 @@ export default async function SettingsPage() {
                 <h3>Academic cycle</h3>
               </div>
               {canEdit ? (
-                <form action={updateAcademicCalendarSettingsAction} className="form-stack">
-                  <div className="hq-inline-grid">
-                    <div className="field"><label className="label" htmlFor="autumn-start">Autumn start</label><input className="input" id="autumn-start" name="autumn_start_md" placeholder="09-22" defaultValue={calendarTemplate.autumnStartMonthDay} required /></div>
-                    <div className="field"><label className="label" htmlFor="autumn-end">Autumn end</label><input className="input" id="autumn-end" name="autumn_end_md" placeholder="12-12" defaultValue={calendarTemplate.autumnEndMonthDay} required /></div>
-                    <div className="field"><label className="label" htmlFor="winter-end">Winter end</label><input className="input" id="winter-end" name="winter_end_md" placeholder="03-20" defaultValue={calendarTemplate.winterEndMonthDay} required /></div>
-                    <div className="field"><label className="label" htmlFor="spring-end">Spring end</label><input className="input" id="spring-end" name="spring_end_md" placeholder="06-10" defaultValue={calendarTemplate.springEndMonthDay} required /></div>
-                    <div className="field"><label className="label" htmlFor="summer-end">Summer end</label><input className="input" id="summer-end" name="summer_end_md" placeholder="08-15" defaultValue={calendarTemplate.summerEndMonthDay} required /></div>
-                  </div>
-                  <span className="helper">Use MM-DD. Winter, spring, and summer each start the day after the previous quarter ends. The academic cycle auto-advances the day after summer quarter ends.</span>
-                  <div className="hq-summary-list">
-                    {reportingWindows.map((window) => (
-                      <div key={window.quarter} className="hq-summary-row">
-                        <span>{window.quarter} preview</span>
-                        <strong>{formatDateLabel(window.start)} to {formatDateLabel(window.end)}</strong>
+                <div className="form-stack">
+                  <form action={updateAcademicCalendarSettingsAction} className="form-stack">
+                    <div className="hq-inline-grid">
+                      <div className="field"><label className="label" htmlFor="autumn-start">Autumn start</label><input className="input" id="autumn-start" name="autumn_start_md" placeholder="09-22" defaultValue={calendarTemplate.autumnStartMonthDay} required /></div>
+                      <div className="field"><label className="label" htmlFor="autumn-end">Autumn end</label><input className="input" id="autumn-end" name="autumn_end_md" placeholder="12-12" defaultValue={calendarTemplate.autumnEndMonthDay} required /></div>
+                      <div className="field"><label className="label" htmlFor="winter-end">Winter end</label><input className="input" id="winter-end" name="winter_end_md" placeholder="03-20" defaultValue={calendarTemplate.winterEndMonthDay} required /></div>
+                      <div className="field"><label className="label" htmlFor="spring-end">Spring end</label><input className="input" id="spring-end" name="spring_end_md" placeholder="06-10" defaultValue={calendarTemplate.springEndMonthDay} required /></div>
+                      <div className="field"><label className="label" htmlFor="summer-end">Summer end</label><input className="input" id="summer-end" name="summer_end_md" placeholder="08-15" defaultValue={calendarTemplate.summerEndMonthDay} required /></div>
+                    </div>
+                    <span className="helper">Use MM-DD. Winter, spring, and summer each start the day after the previous quarter ends. The academic cycle auto-advances the day after summer quarter ends.</span>
+                    <div className="hq-summary-list">
+                      {reportingWindows.map((window) => (
+                        <div key={window.quarter} className="hq-summary-row">
+                          <span>{window.quarter} preview</span>
+                          <strong>{formatDateLabel(window.start)} to {formatDateLabel(window.end)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="button-row"><button className="button" type="submit">Save academic calendar</button></div>
+                  </form>
+
+                  <div className="hq-danger-zone">
+                    <div className="hq-block-head">
+                      <h3>Budget year transition</h3>
+                    </div>
+                    <div className="hq-summary-list">
+                      <div className="hq-summary-row">
+                        <span>Current cycle</span>
+                        <strong>{currentAcademicYear}</strong>
                       </div>
-                    ))}
+                      <div className="hq-summary-row">
+                        <span>Budget setup status</span>
+                        <strong>{currentBudgetInitialized ? 'Already initialized' : 'Ready to initialize'}</strong>
+                      </div>
+                      <div className="hq-summary-row">
+                        <span>{previousAcademicYear} unused team funds</span>
+                        <strong>${(previousReturnedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                      </div>
+                      <div className="hq-summary-row">
+                        <span>{previousAcademicYear} total club budget</span>
+                        <strong>${(previousClubBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                      </div>
+                    </div>
+                    <p className="helper">
+                      This is the protected once-per-cycle step that creates a fresh {currentAcademicYear} club budget at
+                      $0 and resets every active team budget for the new cycle to $0. Prior-year leftover funds are
+                      treated as closeout only and do not carry into the new cycle.
+                    </p>
+                    {currentBudgetInitialized ? (
+                      <p className="empty-note">
+                        {currentAcademicYear} budget setup already exists. Edit the total and team budgets from Manage
+                        Finances.
+                      </p>
+                    ) : (
+                      <AcademicYearInitializerForm academicYear={currentAcademicYear} />
+                    )}
                   </div>
-                  <div className="button-row"><button className="button" type="submit">Save academic calendar</button></div>
-                </form>
+                </div>
               ) : (
                 <div className="hq-summary-list">
                   <div className="hq-summary-row"><span>Current cycle</span><strong>{currentAcademicYear}</strong></div>
+                  <div className="hq-summary-row"><span>Budget setup</span><strong>{currentBudgetInitialized ? 'Initialized' : 'Awaiting admin setup'}</strong></div>
                   {reportingWindows.map((window) => (
                     <div key={window.quarter} className="hq-summary-row">
                       <span>{window.quarter}</span>

@@ -50,11 +50,34 @@ function formatAcademicYearFromStartYear(startYear: number) {
   return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
 }
 
+function parseAcademicYearStartYear(academicYear: string) {
+  const parsed = Number(academicYear.slice(0, 4));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function formatAcademicYear(date: Date) {
   const year = date.getFullYear();
   const month = date.getMonth();
   const startYear = month >= 8 ? year : year - 1;
   return formatAcademicYearFromStartYear(startYear);
+}
+
+export function getNextAcademicYear(academicYear: string) {
+  const startYear = parseAcademicYearStartYear(academicYear);
+  if (startYear === null) {
+    return academicYear;
+  }
+
+  return formatAcademicYearFromStartYear(startYear + 1);
+}
+
+export function getPreviousAcademicYear(academicYear: string) {
+  const startYear = parseAcademicYearStartYear(academicYear);
+  if (startYear === null) {
+    return academicYear;
+  }
+
+  return formatAcademicYearFromStartYear(startYear - 1);
 }
 
 export function formatDateLabel(date: Date) {
