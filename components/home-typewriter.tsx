@@ -48,7 +48,6 @@ export function HomeTypewriter() {
   return (
     <p className="home-typewriter" aria-label={PHRASES[phraseIndex]}>
       <span>{visibleText}</span>
-      <span className="home-typewriter-caret" aria-hidden="true" />
     </p>
   );
 }
