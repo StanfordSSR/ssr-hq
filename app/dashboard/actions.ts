@@ -28,6 +28,34 @@ import {
 import { recordAuditEvent } from '@/lib/audit';
 import { syncNotificationQueue } from '@/lib/notification-queue';
 
+const REVALIDATE_PATHS = {
+  dashboard: ['/dashboard'],
+  finances: ['/dashboard', '/dashboard/finances'],
+  purchases: ['/dashboard', '/dashboard/expenses', '/dashboard/purchases', '/dashboard/finances', '/dashboard/tasks'],
+  purchaseReceipt: ['/dashboard', '/dashboard/expenses', '/dashboard/purchases', '/dashboard/tasks'],
+  reports: ['/dashboard', '/dashboard/reports', '/dashboard/settings'],
+  settings: ['/dashboard/settings'],
+  settingsAndReports: ['/dashboard/settings', '/dashboard/reports'],
+  settingsDashboardReportsTasks: ['/dashboard', '/dashboard/settings', '/dashboard/reports', '/dashboard/tasks'],
+  tasks: ['/dashboard', '/dashboard/tasks'],
+  teamsAndMembers: ['/dashboard', '/dashboard/teams', '/dashboard/members'],
+  members: ['/dashboard', '/dashboard/members'],
+  profile: ['/dashboard', '/dashboard/profile', '/dashboard/members'],
+  deleteLead: ['/dashboard', '/dashboard/members', '/dashboard/teams', '/dashboard/tasks', '/dashboard/reports'],
+  presidentRole: ['/dashboard', '/dashboard/settings', '/dashboard/members']
+} satisfies Record<string, string[]>;
+
+function revalidatePaths(paths: string[]) {
+  for (const path of new Set(paths)) {
+    revalidatePath(path);
+  }
+}
+
+async function syncQueueAndRevalidate(paths: string[]) {
+  await syncNotificationQueue();
+  revalidatePaths(paths);
+}
+
 async function requireActiveProfile() {
   const { supabase, user } = await requireSignedInUser();
   const { data: profile } = await supabase
@@ -183,6 +211,50 @@ function buildInviteConfirmLink(properties: {
   return confirmUrl.toString();
 }
 
+async function createPortalInviteProfile({
+  email,
+  fullName,
+  role
+}: {
+  email: string;
+  fullName: string;
+  role: 'team_lead' | 'president';
+}) {
+  const admin = createAdminClient();
+  const { data: generated, error: generateError } = await admin.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: {
+      redirectTo: `${env.siteUrl}/auth/callback`,
+      data: {
+        full_name: fullName,
+        role
+      }
+    }
+  });
+
+  if (generateError || !generated?.properties?.action_link || !generated.user?.id) {
+    throw new Error(generateError?.message || 'Failed to generate invite link.');
+  }
+
+  const { error: profileError } = await admin.from('profiles').upsert({
+    id: generated.user.id,
+    full_name: fullName || null,
+    role,
+    active: true
+  });
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  return {
+    admin,
+    generated,
+    actionLink: buildInviteConfirmLink(generated.properties)
+  };
+}
+
 async function saveTeamReport(formData: FormData, status: 'draft' | 'submitted') {
   const teamId = String(formData.get('team_id') || '').trim();
   const academicYear = String(formData.get('academic_year') || '').trim();
@@ -290,10 +362,7 @@ async function saveTeamReport(formData: FormData, status: 'draft' | 'submitted')
     }
   });
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/reports');
-  revalidatePath('/dashboard/settings');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.reports);
 }
 
 export async function updateClubBudgetAction(formData: FormData) {
@@ -328,8 +397,7 @@ export async function updateClubBudgetAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard/finances');
-  revalidatePath('/dashboard');
+  revalidatePaths(REVALIDATE_PATHS.finances);
 }
 
 export async function updateTeamBudgetAction(formData: FormData) {
@@ -367,8 +435,7 @@ export async function updateTeamBudgetAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard/finances');
-  revalidatePath('/dashboard');
+  revalidatePaths(REVALIDATE_PATHS.finances);
 }
 
 export async function logPurchaseAction(formData: FormData) {
@@ -464,12 +531,7 @@ export async function logPurchaseAction(formData: FormData) {
     });
   }
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/expenses');
-  revalidatePath('/dashboard/purchases');
-  revalidatePath('/dashboard/finances');
-  revalidatePath('/dashboard/tasks');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.purchases);
 }
 
 export async function importPurchasesAction(
@@ -571,12 +633,7 @@ export async function importPurchasesAction(
     }
   });
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/expenses');
-  revalidatePath('/dashboard/purchases');
-  revalidatePath('/dashboard/finances');
-  revalidatePath('/dashboard/tasks');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.purchases);
 
   return {
     message: `Imported ${validPurchases.length} purchases.`,
@@ -624,10 +681,7 @@ export async function updatePurchaseCategoryAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/expenses');
-  revalidatePath('/dashboard/purchases');
-  revalidatePath('/dashboard/finances');
+  revalidatePaths(REVALIDATE_PATHS.finances.concat(['/dashboard/expenses', '/dashboard/purchases']));
 }
 
 export async function clearTeamExpenseLogAction(formData: FormData) {
@@ -684,12 +738,7 @@ export async function clearTeamExpenseLogAction(formData: FormData) {
     }
   });
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/expenses');
-  revalidatePath('/dashboard/purchases');
-  revalidatePath('/dashboard/tasks');
-  revalidatePath('/dashboard/finances');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.purchases);
 }
 
 export async function uploadPurchaseReceiptAction(formData: FormData) {
@@ -749,11 +798,7 @@ export async function uploadPurchaseReceiptAction(formData: FormData) {
     }
   });
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/expenses');
-  revalidatePath('/dashboard/purchases');
-  revalidatePath('/dashboard/tasks');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.purchaseReceipt);
 }
 
 export async function updateReceiptNotificationSettingsAction(formData: FormData) {
@@ -790,8 +835,7 @@ export async function updateReceiptNotificationSettingsAction(formData: FormData
     }
   });
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard/settings');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.settings);
 }
 
 export async function updateReportNotificationSettingsAction(formData: FormData) {
@@ -828,8 +872,7 @@ export async function updateReportNotificationSettingsAction(formData: FormData)
     }
   });
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard/settings');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.settings);
 }
 
 export async function updateAcademicCalendarSettingsAction(formData: FormData) {
@@ -875,11 +918,7 @@ export async function updateAcademicCalendarSettingsAction(formData: FormData) {
     }
   });
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/settings');
-  revalidatePath('/dashboard/reports');
-  revalidatePath('/dashboard/tasks');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.settingsDashboardReportsTasks);
 }
 
 export async function saveReportQuestionsAction(formData: FormData) {
@@ -960,8 +999,7 @@ export async function saveReportQuestionsAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard/settings');
-  revalidatePath('/dashboard/reports');
+  revalidatePaths(REVALIDATE_PATHS.settingsAndReports);
 }
 
 export async function saveTeamReportDraftAction(formData: FormData) {
@@ -1092,8 +1130,7 @@ export async function createTaskAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/tasks');
+  revalidatePaths(REVALIDATE_PATHS.tasks);
 }
 
 export async function deleteTaskAction(formData: FormData) {
@@ -1141,8 +1178,7 @@ export async function deleteTaskAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/tasks');
+  revalidatePaths(REVALIDATE_PATHS.tasks);
 }
 
 export async function invitePortalMemberAction(formData: FormData) {
@@ -1156,33 +1192,11 @@ export async function invitePortalMemberAction(formData: FormData) {
     throw new Error('Email is required.');
   }
 
-  const admin = createAdminClient();
-  const { data: generated, error: generateError } = await admin.auth.admin.generateLink({
-    type: 'invite',
+  const { admin, generated, actionLink } = await createPortalInviteProfile({
     email,
-    options: {
-      redirectTo: `${env.siteUrl}/auth/callback`,
-      data: {
-        full_name: fullName,
-        role: 'team_lead'
-      }
-    }
+    fullName,
+    role: 'team_lead'
   });
-
-  if (generateError || !generated?.properties?.action_link || !generated.user?.id) {
-    throw new Error(generateError?.message || 'Failed to generate invite link.');
-  }
-
-  const { error: profileError } = await admin.from('profiles').upsert({
-    id: generated.user.id,
-    full_name: fullName || null,
-    role: 'team_lead',
-    active: true
-  });
-
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
 
   let teamName: string | null = null;
   if (teamId) {
@@ -1243,7 +1257,7 @@ export async function invitePortalMemberAction(formData: FormData) {
     to: email,
     fullName,
     teamName,
-    actionLink: buildInviteConfirmLink(generated.properties)
+    actionLink
   });
 
   await recordAuditEvent({
@@ -1272,10 +1286,7 @@ export async function invitePortalMemberAction(formData: FormData) {
     }
   });
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/teams');
-  revalidatePath('/dashboard/members');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.teamsAndMembers);
 }
 
 export async function addTeamRosterMemberAction(formData: FormData) {
@@ -1330,8 +1341,7 @@ export async function addTeamRosterMemberAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/members');
+  revalidatePaths(REVALIDATE_PATHS.members);
 }
 
 export async function updateTeamRosterMemberAction(formData: FormData) {
@@ -1384,8 +1394,7 @@ export async function updateTeamRosterMemberAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/members');
+  revalidatePaths(REVALIDATE_PATHS.members);
 }
 
 export async function deleteTeamRosterMemberAction(formData: FormData) {
@@ -1430,8 +1439,7 @@ export async function deleteTeamRosterMemberAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/members');
+  revalidatePaths(REVALIDATE_PATHS.members);
 }
 
 export async function updateOwnDisplayNameAction(formData: FormData) {
@@ -1469,9 +1477,7 @@ export async function updateOwnDisplayNameAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/profile');
-  revalidatePath('/dashboard/members');
+  revalidatePaths(REVALIDATE_PATHS.profile);
 }
 
 export async function deletePortalLeadAction(formData: FormData) {
@@ -1531,12 +1537,7 @@ export async function deletePortalLeadAction(formData: FormData) {
     throw new Error(deleteError.message);
   }
 
-  await syncNotificationQueue();
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/members');
-  revalidatePath('/dashboard/teams');
-  revalidatePath('/dashboard/tasks');
-  revalidatePath('/dashboard/reports');
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.deleteLead);
 }
 
 export async function assignPresidentRoleAction(formData: FormData) {
@@ -1582,9 +1583,7 @@ export async function assignPresidentRoleAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/settings');
-  revalidatePath('/dashboard/members');
+  revalidatePaths(REVALIDATE_PATHS.presidentRole);
 }
 
 export async function removePresidentRoleAction(formData: FormData) {
@@ -1626,9 +1625,7 @@ export async function removePresidentRoleAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/settings');
-  revalidatePath('/dashboard/members');
+  revalidatePaths(REVALIDATE_PATHS.presidentRole);
 }
 
 export async function invitePresidentAction(formData: FormData) {
@@ -1641,38 +1638,16 @@ export async function invitePresidentAction(formData: FormData) {
     throw new Error('Email is required.');
   }
 
-  const admin = createAdminClient();
-  const { data: generated, error: generateError } = await admin.auth.admin.generateLink({
-    type: 'invite',
+  const { generated, actionLink } = await createPortalInviteProfile({
     email,
-    options: {
-      redirectTo: `${env.siteUrl}/auth/callback`,
-      data: {
-        full_name: fullName,
-        role: 'president'
-      }
-    }
+    fullName,
+    role: 'president'
   });
-
-  if (generateError || !generated?.properties?.action_link || !generated.user?.id) {
-    throw new Error(generateError?.message || 'Failed to generate president invite link.');
-  }
-
-  const { error: profileError } = await admin.from('profiles').upsert({
-    id: generated.user.id,
-    full_name: fullName || null,
-    role: 'president',
-    active: true
-  });
-
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
 
   await sendPresidentInviteEmail({
     to: email,
     fullName,
-    actionLink: buildInviteConfirmLink(generated.properties)
+    actionLink
   });
 
   await recordAuditEvent({
@@ -1699,7 +1674,5 @@ export async function invitePresidentAction(formData: FormData) {
     }
   });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/settings');
-  revalidatePath('/dashboard/members');
+  revalidatePaths(REVALIDATE_PATHS.presidentRole);
 }
