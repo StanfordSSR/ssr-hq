@@ -30,6 +30,7 @@ type Membership = {
 type Profile = {
   id: string;
   full_name: string | null;
+  email?: string | null;
   role: 'admin' | 'president' | 'team_lead';
   is_admin?: boolean | null;
   is_president?: boolean | null;
@@ -62,7 +63,7 @@ export default async function ManageTeamsPage() {
 
   const { data: profilesData } = await admin
     .from('profiles')
-    .select('id, full_name, role, is_admin, is_president, active')
+    .select('id, full_name, email, role, is_admin, is_president, active')
     .order('full_name');
 
   const profiles = (profilesData || []) as Profile[];
@@ -72,13 +73,6 @@ export default async function ManageTeamsPage() {
   );
   const assignedLeadIds = new Set(activeLeadMemberships.map((membership) => membership.user_id));
   const unassignedLeadProfiles = leadProfiles.filter((profile) => !assignedLeadIds.has(profile.id));
-
-  const { data: authUsers } = await admin.auth.admin.listUsers();
-  const emailMap = new Map<string, string>();
-
-  for (const authUser of authUsers.users) {
-    emailMap.set(authUser.id, authUser.email || '');
-  }
 
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
   const captchaLeft = Math.floor(Math.random() * 5) + 4;
@@ -106,7 +100,7 @@ export default async function ManageTeamsPage() {
       membershipId: membership.id,
       userId: membership.user_id,
       fullName: profile.full_name,
-      email: emailMap.get(membership.user_id) || ''
+      email: profile.email || ''
     });
   }
 
@@ -218,8 +212,8 @@ export default async function ManageTeamsPage() {
                           </option>
                           {assignableLeads.map((profile) => (
                             <option key={profile.id} value={profile.id}>
-                              {profile.full_name || emailMap.get(profile.id) || profile.id.slice(0, 8)}
-                              {emailMap.get(profile.id) ? ` · ${emailMap.get(profile.id)}` : ''}
+                              {profile.full_name || profile.email || profile.id.slice(0, 8)}
+                              {profile.email ? ` · ${profile.email}` : ''}
                             </option>
                           ))}
                         </select>
@@ -319,8 +313,8 @@ export default async function ManageTeamsPage() {
                 <option value="">No initial lead</option>
                 {leadProfiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
-                    {profile.full_name || emailMap.get(profile.id) || profile.id.slice(0, 8)}
-                    {emailMap.get(profile.id) ? ` · ${emailMap.get(profile.id)}` : ''}
+                    {profile.full_name || profile.email || profile.id.slice(0, 8)}
+                    {profile.email ? ` · ${profile.email}` : ''}
                   </option>
                 ))}
               </select>
@@ -334,8 +328,8 @@ export default async function ManageTeamsPage() {
                 <option value="">No second lead</option>
                 {leadProfiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
-                    {profile.full_name || emailMap.get(profile.id) || profile.id.slice(0, 8)}
-                    {emailMap.get(profile.id) ? ` · ${emailMap.get(profile.id)}` : ''}
+                    {profile.full_name || profile.email || profile.id.slice(0, 8)}
+                    {profile.email ? ` · ${profile.email}` : ''}
                   </option>
                 ))}
               </select>

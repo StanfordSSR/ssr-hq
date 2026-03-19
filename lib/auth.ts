@@ -9,6 +9,7 @@ export const ACTIVE_ROLE_COOKIE = 'hq_active_role';
 export type Profile = {
   id: string;
   full_name: string | null;
+  email?: string | null;
   role: AppRole;
   is_admin?: boolean | null;
   is_president?: boolean | null;
@@ -87,7 +88,7 @@ export async function getViewerContext() {
   const { supabase, user } = await requireSignedInUser();
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, full_name, role, is_admin, is_president, active, created_at')
+    .select('id, full_name, email, role, is_admin, is_president, active, created_at')
     .eq('id', user.id)
     .single<Profile>();
 

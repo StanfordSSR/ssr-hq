@@ -9,6 +9,7 @@ import { getRoleLabel, getViewerContext, profileHasAdminRole, profileHasLeadRole
 type Profile = {
   id: string;
   full_name: string | null;
+  email?: string | null;
   role: 'admin' | 'president' | 'team_lead';
   is_admin?: boolean | null;
   is_president?: boolean | null;
@@ -98,7 +99,7 @@ export default async function ManageMembersPage() {
   if (isAdmin || isPresident) {
     const { data: profilesData } = await admin
       .from('profiles')
-      .select('id, full_name, role, is_admin, is_president, active')
+      .select('id, full_name, email, role, is_admin, is_president, active')
       .order('role')
       .order('full_name');
 
@@ -136,10 +137,8 @@ export default async function ManageMembersPage() {
     }
 
     const { data: authUsers } = await admin.auth.admin.listUsers();
-    const emailMap = new Map<string, string>();
     const loginMap = new Map<string, string | null>();
     for (const authUser of authUsers.users) {
-      emailMap.set(authUser.id, authUser.email || '');
       loginMap.set(authUser.id, authUser.last_sign_in_at || null);
     }
 
@@ -159,7 +158,7 @@ export default async function ManageMembersPage() {
       id: `profile-${profile.id}`,
       profileId: profile.id,
       name: profile.full_name || 'Unnamed user',
-      email: emailMap.get(profile.id) || 'No email found',
+      email: profile.email || 'No email found',
       role: roleLabels.join(', ') || 'Lead',
       permissions: permissionLabels.join(' · ') || 'Lead workspace, purchases, tasks',
       teams: (teamNamesByUser.get(profile.id) || []).join(', ') || 'None',

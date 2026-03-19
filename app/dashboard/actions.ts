@@ -317,6 +317,7 @@ async function createPortalInviteProfile({
   const { error: profileError } = await admin.from('profiles').upsert({
     id: generated.user.id,
     full_name: fullName || null,
+    email,
     role,
     is_admin: role === 'president' ? false : undefined,
     is_president: role === 'president',
