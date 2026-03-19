@@ -6,6 +6,7 @@ import { getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
 import { createTaskAction, deleteTaskAction } from '@/app/dashboard/actions';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { getReceiptTaskState } from '@/lib/purchases';
+import { getViewerContext } from '@/lib/auth';
 
 type Team = {
   id: string;
@@ -40,26 +41,9 @@ type ReceiptPurchase = {
 export default async function TasksPage() {
   const supabase = await createClient();
   const admin = createAdminClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!me?.active) {
-    redirect('/login');
-  }
-
-  const isAdmin = me.role === 'admin';
-  const isPresident = me.role === 'president';
+  const { user, currentRole } = await getViewerContext();
+  const isAdmin = currentRole === 'admin';
+  const isPresident = currentRole === 'president';
   const isPrivilegedViewer = isAdmin || isPresident;
   const reportState = await getNextReportState(new Date());
 

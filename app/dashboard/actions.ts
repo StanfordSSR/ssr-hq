@@ -2,9 +2,10 @@
 
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { requireAdmin, requireSignedInUser } from '@/lib/auth';
+import { ACTIVE_ROLE_COOKIE, getViewerContext, profileHasAdminRole, profileHasPresidentRole, requireAdmin, requireSignedInUser, type AppRole } from '@/lib/auth';
 import { getCurrentAcademicYear, formatAcademicYear, formatPacificDateKey, getReportingWindow } from '@/lib/academic-calendar';
 import { sendInviteEmail, sendPresidentInviteEmail, sendTaskEmails } from '@/lib/notifications';
 import { env } from '@/lib/env';
@@ -123,24 +124,18 @@ async function runRedirectingAction(options: {
 }
 
 async function requireActiveProfile() {
-  const { supabase, user } = await requireSignedInUser();
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile?.active) {
-    redirect('/login');
-  }
-
-  return { user, profile };
+  const { user, profile, currentRole, availableRoles } = await getViewerContext();
+  return { user, profile, currentRole, availableRoles };
 }
 
 async function requireLeadTeam(teamId: string) {
-  const { user, profile } = await requireActiveProfile();
-  if (profile.role === 'admin') {
-    return { user, profile };
+  const { user, profile, currentRole } = await requireActiveProfile();
+  if (currentRole === 'admin') {
+    return { user, profile, currentRole };
+  }
+
+  if (currentRole !== 'team_lead') {
+    redirect('/dashboard');
   }
 
   const admin = createAdminClient();
@@ -157,7 +152,7 @@ async function requireLeadTeam(teamId: string) {
     redirect('/dashboard');
   }
 
-  return { user, profile };
+  return { user, profile, currentRole };
 }
 
 async function uploadReceiptToStorage({
@@ -323,6 +318,8 @@ async function createPortalInviteProfile({
     id: generated.user.id,
     full_name: fullName || null,
     role,
+    is_admin: role === 'president' ? false : undefined,
+    is_president: role === 'president',
     active: true
   });
 
@@ -1348,7 +1345,7 @@ export async function createTaskAction(formData: FormData) {
     fallbackPath: '/dashboard/tasks',
     successMessage: 'Assigned the task.',
     action: async () => {
-      const { user, profile } = await requireActiveProfile();
+      const { user, currentRole } = await requireActiveProfile();
       const title = String(formData.get('title') || '').trim();
       const details = String(formData.get('details') || '').trim();
       const recipientScope = String(formData.get('recipient_scope') || 'specific_teams').trim();
@@ -1365,7 +1362,7 @@ export async function createTaskAction(formData: FormData) {
       const admin = createAdminClient();
       let allowedTeamIds = teamIds;
 
-      if (profile.role !== 'admin') {
+      if (currentRole !== 'admin') {
         const { data: memberships } = await admin
           .from('team_memberships')
           .select('team_id')
@@ -1852,6 +1849,23 @@ export async function updateOwnDisplayNameAction(formData: FormData) {
   });
 }
 
+export async function switchActiveRoleAction(formData: FormData) {
+  const { availableRoles } = await getViewerContext();
+  const nextRole = String(formData.get('next_role') || '').trim() as AppRole;
+
+  if (!availableRoles.includes(nextRole)) {
+    throw new Error('That profile mode is not available for your account.');
+  }
+
+  (await cookies()).set(ACTIVE_ROLE_COOKIE, nextRole, {
+    path: '/',
+    sameSite: 'lax',
+    httpOnly: true
+  });
+
+  redirect('/dashboard');
+}
+
 export async function deletePortalLeadAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/members',
@@ -1873,7 +1887,7 @@ export async function deletePortalLeadAction(formData: FormData) {
       const admin = createAdminClient();
       const { data: profile } = await admin
         .from('profiles')
-        .select('id, full_name, role')
+        .select('id, full_name, role, is_admin, is_president')
         .eq('id', leadId)
         .maybeSingle();
 
@@ -1881,7 +1895,18 @@ export async function deletePortalLeadAction(formData: FormData) {
         throw new Error('Portal user not found.');
       }
 
-      if (profile.role !== 'team_lead') {
+      const { count: leadMembershipCount } = await admin
+        .from('team_memberships')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', leadId)
+        .eq('team_role', 'lead')
+        .eq('is_active', true);
+
+      if (profileHasAdminRole(profile) || profileHasPresidentRole(profile)) {
+        throw new Error('Users with admin or president access cannot be deleted from the lead removal flow.');
+      }
+
+      if (!leadMembershipCount && profile.role !== 'team_lead') {
         throw new Error('Only team leads can be removed from the portal here.');
       }
 
@@ -1931,7 +1956,7 @@ export async function assignPresidentRoleAction(formData: FormData) {
       const admin = createAdminClient();
       const { data: profile } = await admin
         .from('profiles')
-        .select('id, full_name, role, active')
+        .select('id, full_name, role, is_president, active')
         .eq('id', profileId)
         .maybeSingle();
 
@@ -1939,13 +1964,13 @@ export async function assignPresidentRoleAction(formData: FormData) {
         throw new Error('Selected user was not found.');
       }
 
-      if (profile.role === 'admin') {
-        throw new Error('Admins cannot be reassigned as presidents here.');
+      if (profileHasPresidentRole(profile)) {
+        throw new Error('That user already has President access.');
       }
 
       const { error } = await admin
         .from('profiles')
-        .update({ role: 'president' })
+        .update({ is_president: true })
         .eq('id', profileId);
 
       if (error) {
@@ -1982,17 +2007,17 @@ export async function removePresidentRoleAction(formData: FormData) {
       const admin = createAdminClient();
       const { data: profile } = await admin
         .from('profiles')
-        .select('id, full_name, role')
+        .select('id, full_name, role, is_president')
         .eq('id', profileId)
         .maybeSingle();
 
-      if (!profile || profile.role !== 'president') {
+      if (!profile || !profileHasPresidentRole(profile)) {
         throw new Error('President not found.');
       }
 
       const { error } = await admin
         .from('profiles')
-        .update({ role: 'team_lead' })
+        .update({ is_president: false })
         .eq('id', profileId);
 
       if (error) {

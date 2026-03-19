@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { signOutAction } from '@/app/dashboard/teams/actions';
+import { switchActiveRoleAction } from '@/app/dashboard/actions';
 import { DashboardStatusBanner } from '@/components/dashboard-status-banner';
 import { getNextReportState } from '@/lib/academic-calendar';
+import { getRoleLabel, getViewerContext } from '@/lib/auth';
 
 const adminNav = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -40,30 +41,17 @@ export default async function DashboardLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const { user, profile, currentRole, availableRoles } = await getViewerContext();
 
-  if (!user) {
+  if (!profile.active) {
     redirect('/login');
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile?.active) {
-    redirect('/login');
-  }
-
-  const nav = profile.role === 'admin' ? adminNav : profile.role === 'president' ? presidentNav : leadNav;
+  const nav = currentRole === 'admin' ? adminNav : currentRole === 'president' ? presidentNav : leadNav;
   const admin = createAdminClient();
   let hasPendingLeadTasks = false;
 
-  if (profile.role === 'team_lead') {
+  if (currentRole === 'team_lead') {
     const { data: memberships } = await admin
       .from('team_memberships')
       .select('team_id')
@@ -156,6 +144,26 @@ export default async function DashboardLayout({
               </summary>
 
               <div className="hq-user-dropdown">
+                {availableRoles.length > 1 ? (
+                  <div className="hq-user-dropdown-group">
+                    <span className="hq-user-dropdown-label">Switch profile</span>
+                    <div className="hq-user-role-list">
+                      {availableRoles.map((role) => (
+                        <form key={role} action={switchActiveRoleAction}>
+                          <input type="hidden" name="next_role" value={role} />
+                          <button
+                            className={`hq-user-dropdown-button${role === currentRole ? ' is-active' : ''}`}
+                            type="submit"
+                            disabled={role === currentRole}
+                          >
+                            {getRoleLabel(role)}
+                          </button>
+                        </form>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <Link href="/dashboard/profile" className="hq-user-dropdown-link">
                   Personal settings
                 </Link>

@@ -10,6 +10,7 @@ import {
 } from '@/lib/academic-calendar';
 import { formatQuarterKey, formatQuarterReportTitle, getOpenReportContext } from '@/lib/reports';
 import { TeamReportEditor } from '@/components/team-report-editor';
+import { getViewerContext } from '@/lib/auth';
 
 type Team = {
   id: string;
@@ -62,28 +63,10 @@ export default async function ReportsPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = (await searchParams) || {};
-  const supabase = await createClient();
   const admin = createAdminClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!me?.active) {
-    redirect('/login');
-  }
-
-  const isAdmin = me.role === 'admin';
-  const isPresident = me.role === 'president';
+  const { user, profile: me, currentRole } = await getViewerContext();
+  const isAdmin = currentRole === 'admin';
+  const isPresident = currentRole === 'president';
 
   if (isAdmin || isPresident) {
     const reportState = await getNextReportState(new Date());

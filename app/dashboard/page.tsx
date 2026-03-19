@@ -7,6 +7,7 @@ import { getNextReportState, getCurrentAcademicYear, formatDateLabel } from '@/l
 import { updateLeadTeamDescriptionAction } from '@/app/dashboard/teams/actions';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { formatQuarterReportTitle } from '@/lib/reports';
+import { getViewerContext } from '@/lib/auth';
 
 type Team = {
   id: string;
@@ -108,26 +109,9 @@ const presidentCards = [
 export default async function DashboardPage() {
   const supabase = await createClient();
   const admin = createAdminClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!me?.active) {
-    redirect('/login');
-  }
-
-  const isAdmin = me.role === 'admin';
-  const isPresident = me.role === 'president';
+  const { user, profile: me, currentRole } = await getViewerContext();
+  const isAdmin = currentRole === 'admin';
+  const isPresident = currentRole === 'president';
 
   if (isAdmin || isPresident) {
     const { data: teamsData } = await admin

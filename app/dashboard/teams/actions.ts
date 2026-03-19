@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
 import { syncNotificationQueue } from '@/lib/notification-queue';
 import { env } from '@/lib/env';
+import { getViewerContext } from '@/lib/auth';
 
 const slugify = (value: string) =>
   value
@@ -83,26 +84,13 @@ async function runRedirectingAction(options: {
 }
 
 async function requireAdminProfile() {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const context = await getViewerContext();
 
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile || profile.role !== 'admin' || !profile.active) {
+  if (context.currentRole !== 'admin') {
     redirect('/dashboard');
   }
 
-  return { user, profile };
+  return context;
 }
 
 export async function signOutAction() {
@@ -210,14 +198,7 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
     fallbackPath: '/dashboard/teams',
     successMessage: 'Updated the team details.',
     action: async () => {
-      const supabase = await createClient();
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        redirect('/login');
-      }
+      const { user, currentRole } = await getViewerContext();
 
       const teamId = String(formData.get('team_id') || '').trim();
       const description = String(formData.get('description') || '').trim();
@@ -241,13 +222,7 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
         .eq('is_active', true)
         .maybeSingle();
 
-      const { data: profile } = await admin
-        .from('profiles')
-        .select('role, active')
-        .eq('id', user.id)
-        .single();
-
-      const isAdmin = profile?.role === 'admin' && profile.active;
+      const isAdmin = currentRole === 'admin';
       if (!isAdmin && !membership) {
         throw new Error('You are not allowed to edit this team.');
       }
@@ -307,10 +282,6 @@ export async function assignExistingLeadAction(formData: FormData) {
 
       if (profileError || !targetProfile) {
         throw new Error('Could not find that user.');
-      }
-
-      if (targetProfile.role !== 'team_lead') {
-        throw new Error('Only users with portal role "team_lead" can be assigned as team leads.');
       }
 
       if (!targetProfile.active) {

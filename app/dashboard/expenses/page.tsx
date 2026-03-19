@@ -9,6 +9,7 @@ import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { PurchaseEntryActions } from '@/components/purchase-entry-actions';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { getReceiptTaskState } from '@/lib/purchases';
+import { getViewerContext } from '@/lib/auth';
 
 type Team = {
   id: string;
@@ -82,28 +83,10 @@ export default async function ExpenseLogPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = (await searchParams) || {};
-  const supabase = await createClient();
   const admin = createAdminClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!me?.active) {
-    redirect('/login');
-  }
-
-  const isAdmin = me.role === 'admin';
-  const isPresident = me.role === 'president';
+  const { user, profile: me, currentRole } = await getViewerContext();
+  const isAdmin = currentRole === 'admin';
+  const isPresident = currentRole === 'president';
   const isPrivilegedViewer = isAdmin || isPresident;
   const { data: memberships } = isPrivilegedViewer
     ? { data: [] }

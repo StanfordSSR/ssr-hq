@@ -1,12 +1,17 @@
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 export type AppRole = 'admin' | 'president' | 'team_lead';
+export const ACTIVE_ROLE_COOKIE = 'hq_active_role';
 
 export type Profile = {
   id: string;
   full_name: string | null;
   role: AppRole;
+  is_admin?: boolean | null;
+  is_president?: boolean | null;
   active: boolean;
   created_at: string;
 };
@@ -42,34 +47,102 @@ export async function requireSignedInUser() {
   return { supabase, user };
 }
 
-export async function requireAdmin() {
-  const { supabase, user } = await requireSignedInUser();
+export function profileHasAdminRole(profile: Pick<Profile, 'role' | 'is_admin'>) {
+  return profile.role === 'admin' || Boolean(profile.is_admin);
+}
 
+export function profileHasPresidentRole(profile: Pick<Profile, 'role' | 'is_president'>) {
+  return profile.role === 'president' || Boolean(profile.is_president);
+}
+
+export function profileHasLeadRole(profile: Pick<Profile, 'role'>, hasLeadRole: boolean) {
+  return hasLeadRole || profile.role === 'team_lead';
+}
+
+export function getAvailableRoles(profile: Pick<Profile, 'role' | 'is_admin' | 'is_president'>, hasLeadRole: boolean) {
+  const roles: AppRole[] = [];
+
+  if (profileHasAdminRole(profile)) {
+    roles.push('admin');
+  }
+
+  if (profileHasPresidentRole(profile)) {
+    roles.push('president');
+  }
+
+  if (profileHasLeadRole(profile, hasLeadRole)) {
+    roles.push('team_lead');
+  }
+
+  return roles;
+}
+
+function getDefaultRole(roles: AppRole[]) {
+  if (roles.includes('admin')) return 'admin';
+  if (roles.includes('president')) return 'president';
+  return 'team_lead';
+}
+
+export async function getViewerContext() {
+  const { supabase, user } = await requireSignedInUser();
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, full_name, role, active, created_at')
+    .select('id, full_name, role, is_admin, is_president, active, created_at')
     .eq('id', user.id)
     .single<Profile>();
 
-  if (!profile || profile.role !== 'admin' || !profile.active) {
+  if (!profile?.active) {
+    redirect('/login');
+  }
+
+  const admin = createAdminClient();
+  const { count: leadMembershipCount } = await admin
+    .from('team_memberships')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .eq('team_role', 'lead')
+    .eq('is_active', true);
+
+  const availableRoles = getAvailableRoles(profile, (leadMembershipCount || 0) > 0);
+  if (availableRoles.length === 0) {
+    availableRoles.push('team_lead');
+  }
+
+  const selectedRole = (await cookies()).get(ACTIVE_ROLE_COOKIE)?.value as AppRole | undefined;
+  const currentRole = selectedRole && availableRoles.includes(selectedRole) ? selectedRole : getDefaultRole(availableRoles);
+
+  return {
+    supabase,
+    admin,
+    user,
+    profile,
+    availableRoles,
+    currentRole
+  };
+}
+
+export async function requireAdmin() {
+  const context = await getViewerContext();
+
+  if (context.currentRole !== 'admin') {
     redirect('/dashboard');
   }
 
-  return { supabase, user, profile };
+  return context;
 }
 
 export async function requireAdminOrPresident() {
-  const { supabase, user } = await requireSignedInUser();
+  const context = await getViewerContext();
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, active, created_at')
-    .eq('id', user.id)
-    .single<Profile>();
-
-  if (!profile || (profile.role !== 'admin' && profile.role !== 'president') || !profile.active) {
+  if (context.currentRole !== 'admin' && context.currentRole !== 'president') {
     redirect('/dashboard');
   }
 
-  return { supabase, user, profile };
+  return context;
+}
+
+export function getRoleLabel(role: AppRole) {
+  if (role === 'admin') return 'Admin';
+  if (role === 'president') return 'President';
+  return 'Team lead';
 }

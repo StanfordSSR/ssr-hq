@@ -15,6 +15,7 @@ import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { SettingsTabs } from '@/components/settings-tabs';
+import { getRoleLabel, getViewerContext, profileHasAdminRole, profileHasLeadRole, profileHasPresidentRole } from '@/lib/auth';
 
 function formatAuditTimestamp(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -26,27 +27,13 @@ function formatAuditTimestamp(value: string) {
 }
 
 export default async function SettingsPage() {
-  const supabase = await createClient();
   const admin = createAdminClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!me?.active || (me.role !== 'admin' && me.role !== 'president')) {
+  const { currentRole } = await getViewerContext();
+  if (currentRole !== 'admin' && currentRole !== 'president') {
     redirect('/dashboard');
   }
 
-  const canEdit = me.role === 'admin';
+  const canEdit = currentRole === 'admin';
   const [
     currentAcademicYear,
     calendarTemplate,
@@ -65,7 +52,7 @@ export default async function SettingsPage() {
       admin.from('report_notification_settings').select('email_enabled, reminder_days').eq('id', 1).maybeSingle(),
       admin.from('notification_queue').select('id, notification_type').eq('status', 'queued'),
       admin.from('audit_log_entries').select('id, actor_id, action, target_type, target_id, summary, created_at').order('created_at', { ascending: false }).limit(40),
-      admin.from('profiles').select('id, full_name, role, active').eq('active', true).order('full_name')
+      admin.from('profiles').select('id, full_name, role, is_admin, is_president, active').eq('active', true).order('full_name')
     ]);
   const reportingWindows = await getReportingWindows(currentAcademicYear);
   const reportQuestionsData = reportQuestionsResponse.data || [];
@@ -90,8 +77,14 @@ export default async function SettingsPage() {
     : { data: [] };
   const actorNameMap = new Map((actorProfiles || []).map((profile) => [profile.id, profile.full_name || 'Unknown user']));
   const allProfiles = allProfilesData || [];
-  const presidents = allProfiles.filter((profile) => profile.role === 'president');
-  const presidentCandidates = allProfiles.filter((profile) => profile.role !== 'admin' && profile.role !== 'president');
+  const { data: leadMemberships } = await admin
+    .from('team_memberships')
+    .select('user_id')
+    .eq('team_role', 'lead')
+    .eq('is_active', true);
+  const leadUserIds = new Set((leadMemberships || []).map((membership) => membership.user_id));
+  const presidents = allProfiles.filter((profile) => profileHasPresidentRole(profile));
+  const presidentCandidates = allProfiles.filter((profile) => !profileHasPresidentRole(profile));
 
   return (
     <div className="hq-page">
@@ -188,7 +181,10 @@ export default async function SettingsPage() {
                         </option>
                         {presidentCandidates.map((profile) => (
                           <option key={profile.id} value={profile.id}>
-                            {profile.full_name || profile.id.slice(0, 8)} · {profile.role === 'team_lead' ? 'Lead' : profile.role}
+                            {profile.full_name || profile.id.slice(0, 8)} · {[
+                              profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
+                              profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
+                            ].filter(Boolean).join(', ') || 'Portal user'}
                           </option>
                         ))}
                       </select>

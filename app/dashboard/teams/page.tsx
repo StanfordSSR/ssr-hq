@@ -8,6 +8,7 @@ import {
   updateLeadTeamDescriptionAction
 } from '@/app/dashboard/teams/actions';
 import { invitePortalMemberAction } from '@/app/dashboard/actions';
+import { getViewerContext } from '@/lib/auth';
 
 type Team = {
   id: string;
@@ -30,31 +31,19 @@ type Profile = {
   id: string;
   full_name: string | null;
   role: 'admin' | 'president' | 'team_lead';
+  is_admin?: boolean | null;
+  is_president?: boolean | null;
   active: boolean;
 };
 
 export default async function ManageTeamsPage() {
-  const supabase = await createClient();
   const admin = createAdminClient();
+  const { currentRole } = await getViewerContext();
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, active')
-    .eq('id', user.id)
-    .single<Profile>();
-
-  if (!me || (me.role !== 'admin' && me.role !== 'president') || !me.active) {
+  if (currentRole !== 'admin' && currentRole !== 'president') {
     redirect('/dashboard');
   }
-  const canEdit = me.role === 'admin';
+  const canEdit = currentRole === 'admin';
 
   const { data: teamsData } = await admin
     .from('teams')
@@ -73,11 +62,11 @@ export default async function ManageTeamsPage() {
 
   const { data: profilesData } = await admin
     .from('profiles')
-    .select('id, full_name, role, active')
+    .select('id, full_name, role, is_admin, is_president, active')
     .order('full_name');
 
   const profiles = (profilesData || []) as Profile[];
-  const leadProfiles = profiles.filter((profile) => profile.role === 'team_lead' && profile.active);
+  const leadProfiles = profiles.filter((profile) => profile.active);
   const activeLeadMemberships = memberships.filter(
     (membership) => membership.team_role === 'lead' && membership.is_active
   );

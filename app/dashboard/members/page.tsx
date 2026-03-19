@@ -4,11 +4,14 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { invitePortalMemberAction } from '@/app/dashboard/actions';
 import { AdminMemberDirectory } from '@/components/admin-member-directory';
 import { LeadRosterWorkspace } from '@/components/lead-roster-workspace';
+import { getRoleLabel, getViewerContext, profileHasAdminRole, profileHasLeadRole, profileHasPresidentRole } from '@/lib/auth';
 
 type Profile = {
   id: string;
   full_name: string | null;
   role: 'admin' | 'president' | 'team_lead';
+  is_admin?: boolean | null;
+  is_president?: boolean | null;
   active: boolean;
 };
 
@@ -87,49 +90,33 @@ const monthOptions = [
 ];
 
 export default async function ManageMembersPage() {
-  const supabase = await createClient();
   const admin = createAdminClient();
-
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, active')
-    .eq('id', user.id)
-    .single<Profile>();
-
-  if (!me?.active) {
-    redirect('/login');
-  }
-
-  const isAdmin = me.role === 'admin';
-  const isPresident = me.role === 'president';
+  const { user, currentRole } = await getViewerContext();
+  const isAdmin = currentRole === 'admin';
+  const isPresident = currentRole === 'president';
 
   if (isAdmin || isPresident) {
-    const { data: profilesData } = await supabase
+    const { data: profilesData } = await admin
       .from('profiles')
-      .select('id, full_name, role, active')
+      .select('id, full_name, role, is_admin, is_president, active')
       .order('role')
       .order('full_name');
 
     const profiles = (profilesData || []) as Profile[];
 
-    const { data: teamsData } = await supabase.from('teams').select('id, name').order('name');
+    const { data: teamsData } = await admin.from('teams').select('id, name').order('name');
     const teams = (teamsData || []) as Team[];
     const teamMap = new Map(teams.map((team) => [team.id, team.name]));
 
-    const { data: membershipsData } = await supabase
+    const { data: membershipsData } = await admin
       .from('team_memberships')
       .select('id, team_id, user_id, team_role, is_active')
       .eq('is_active', true);
 
     const memberships = (membershipsData || []) as Membership[];
+    const leadMembershipUserIds = new Set(
+      memberships.filter((membership) => membership.team_role === 'lead').map((membership) => membership.user_id)
+    );
     const { data: rosterData } = await admin
       .from('team_roster_members')
       .select('id, team_id, full_name, stanford_email, joined_month, joined_year')
@@ -156,26 +143,38 @@ export default async function ManageMembersPage() {
       loginMap.set(authUser.id, authUser.last_sign_in_at || null);
     }
 
-    const adminRows: AdminMemberRow[] = profiles.map((profile) => ({
+    const adminRows: AdminMemberRow[] = profiles.map((profile) => {
+      const roleLabels = [
+        profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
+        profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+        profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
+      ].filter(Boolean) as string[];
+      const permissionLabels = [
+        profileHasAdminRole(profile) ? 'Full portal access' : null,
+        profileHasPresidentRole(profile) ? 'Read-only club-wide access' : null,
+        profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)) ? 'Lead workspace, purchases, tasks' : null
+      ].filter(Boolean) as string[];
+
+      return {
       id: `profile-${profile.id}`,
       profileId: profile.id,
       name: profile.full_name || 'Unnamed user',
       email: emailMap.get(profile.id) || 'No email found',
-      role: profile.role === 'admin' ? 'Admin' : profile.role === 'president' ? 'President' : 'Lead',
-      permissions:
-        profile.role === 'admin'
-          ? 'Full portal access'
-          : profile.role === 'president'
-            ? 'Read-only club-wide access'
-            : 'Lead workspace, purchases, tasks',
+      role: roleLabels.join(', ') || 'Lead',
+      permissions: permissionLabels.join(' · ') || 'Lead workspace, purchases, tasks',
       teams: (teamNamesByUser.get(profile.id) || []).join(', ') || 'None',
       accessLabel: loginMap.get(profile.id) ? 'Active' : 'Inactive',
       accessDetail: loginMap.get(profile.id) ? `Last login ${formatLastSeen(loginMap.get(profile.id)!)}` : 'Invite not accepted yet',
-      canDeletePortal: isAdmin && profile.role === 'team_lead',
-      sortGroup: profile.role === 'admin' ? 0 : profile.role === 'president' ? 1 : 2,
+      canDeletePortal:
+        isAdmin &&
+        !profileHasAdminRole(profile) &&
+        !profileHasPresidentRole(profile) &&
+        profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)),
+      sortGroup: profileHasAdminRole(profile) ? 0 : profileHasPresidentRole(profile) ? 1 : 2,
       sortName: profile.full_name || '',
       sortJoined: 0
-    }));
+      };
+    });
 
     const rosterRows: AdminMemberRow[] = rosterMembers.map((member) => ({
       id: `roster-${member.id}`,

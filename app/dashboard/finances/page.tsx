@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear } from '@/lib/academic-calendar';
 import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/actions';
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
+import { getViewerContext } from '@/lib/auth';
 
 type Team = {
   id: string;
@@ -40,26 +41,12 @@ export default async function FinancesPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = (await searchParams) || {};
-  const supabase = await createClient();
   const admin = createAdminClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!me?.active || (me.role !== 'admin' && me.role !== 'president')) {
+  const { currentRole } = await getViewerContext();
+  if (currentRole !== 'admin' && currentRole !== 'president') {
     redirect('/dashboard');
   }
-  const canEdit = me.role === 'admin';
+  const canEdit = currentRole === 'admin';
 
   const cycle = await getCurrentAcademicYear();
   const selectedTeamId = readSingle(params.team) || 'all';

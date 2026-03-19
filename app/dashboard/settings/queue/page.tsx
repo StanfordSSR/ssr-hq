@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { getViewerContext } from '@/lib/auth';
 
 type QueueRow = {
   id: string;
@@ -25,23 +25,10 @@ function formatScheduledAt(value: string) {
 }
 
 export default async function QueuedRemindersPage() {
-  const supabase = await createClient();
   const admin = createAdminClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const { currentRole } = await getViewerContext();
 
-  if (!user) {
-    redirect('/login');
-  }
-
-  const { data: me } = await supabase
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', user.id)
-    .single();
-
-  if (!me?.active || (me.role !== 'admin' && me.role !== 'president')) {
+  if (currentRole !== 'admin' && currentRole !== 'president') {
     redirect('/dashboard');
   }
 
@@ -79,7 +66,7 @@ export default async function QueuedRemindersPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{me.role === 'admin' ? 'Admin' : 'President'}</p>
+          <p className="hq-eyebrow">{currentRole === 'admin' ? 'Admin' : 'President'}</p>
           <h1 className="hq-page-title">Queued reminders</h1>
           <p className="hq-subtitle">Every queued receipt and report reminder, with its next send time and resolved recipient emails.</p>
         </div>
