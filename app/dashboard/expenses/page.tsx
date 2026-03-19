@@ -200,6 +200,7 @@ export default async function ExpenseLogPage({
   });
 
   const chartBudgetYear = rawRange === 'academic_year' ? selectedAcademicYear : currentCycle;
+  const budgetYearPurchases = purchases.filter((purchase) => purchase.academic_year === chartBudgetYear);
   const { data: teamBudgetsData } = await admin
     .from('team_budgets')
     .select('team_id, academic_year, annual_budget_cents')
@@ -217,7 +218,9 @@ export default async function ExpenseLogPage({
     isPrivilegedViewer && selectedTeamId === 'all' ? clubBudgetTotalCents : allocatedBudgetCents;
 
   const summaryPurchases = filteredPurchases;
-  const totalSpentCents = summaryPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
+  const totalSpentCents = budgetYearPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
+  const spendInRangeCents = summaryPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
+  const alreadySpentBeforeRangeCents = Math.max(0, totalSpentCents - spendInRangeCents);
   const remainingBudgetCents = Math.max(0, budgetTotalCents - totalSpentCents);
   const remainingAllocatedCents = Math.max(0, allocatedBudgetCents - totalSpentCents);
   const spentPercent = budgetTotalCents > 0 ? Math.min(100, Math.round((totalSpentCents / budgetTotalCents) * 100)) : 0;
@@ -243,6 +246,12 @@ export default async function ExpenseLogPage({
 
     const next = cursor + (amount / budgetTotalCents) * 100;
     pieSlices.push(`${categoryColors[key]} ${cursor}% ${next}%`);
+    cursor = next;
+  }
+
+  if (budgetTotalCents > 0 && alreadySpentBeforeRangeCents > 0) {
+    const next = cursor + (alreadySpentBeforeRangeCents / budgetTotalCents) * 100;
+    pieSlices.push(`#b7aaaa ${cursor}% ${next}%`);
     cursor = next;
   }
 
@@ -323,6 +332,12 @@ export default async function ExpenseLogPage({
                   <span style={{ color: categoryColors.travel }}>Travel</span>
                   <strong>${(categoryTotals.travel / 100).toLocaleString()}</strong>
                 </div>
+                {alreadySpentBeforeRangeCents > 0 ? (
+                  <div>
+                    <span style={{ color: '#8f8181' }}>Already spent</span>
+                    <strong>${(alreadySpentBeforeRangeCents / 100).toLocaleString()}</strong>
+                  </div>
+                ) : null}
                 <div>
                   <span style={{ color: categoryColors.unused }}>Unused</span>
                   <strong>${(remainingBudgetCents / 100).toLocaleString()}</strong>
@@ -340,8 +355,8 @@ export default async function ExpenseLogPage({
                 <strong>${(allocatedBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
-                <span>Spent</span>
-                <strong>${(totalSpentCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                <span>{rawRange === 'last_90_days' ? 'Spent in range' : 'Spent'}</span>
+                <strong>${(spendInRangeCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
                 <span>Remaining from total</span>
@@ -350,6 +365,10 @@ export default async function ExpenseLogPage({
               <div className="hq-purchase-stat">
                 <span>Remaining from allocated</span>
                 <strong>${(remainingAllocatedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+              </div>
+              <div className="hq-purchase-stat">
+                <span>{rawRange === 'last_90_days' ? 'Already spent before range' : 'Spent to date'}</span>
+                <strong>${(alreadySpentBeforeRangeCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
                 <span>Pending receipts</span>
