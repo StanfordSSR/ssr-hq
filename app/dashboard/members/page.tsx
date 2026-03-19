@@ -272,19 +272,28 @@ export default async function ManageMembersPage() {
     );
   }
 
-  const { data: leadMembershipsData } = await admin
+  const { data: myLeadMembershipsData } = await admin
     .from('team_memberships')
     .select('id, team_id, user_id, team_role, is_active')
     .eq('user_id', user.id)
     .eq('team_role', 'lead')
     .eq('is_active', true);
 
-  const leadMemberships = (leadMembershipsData || []) as Membership[];
-  const primaryTeamId = leadMemberships[0]?.team_id;
+  const myLeadMemberships = (myLeadMembershipsData || []) as Membership[];
+  const primaryTeamId = myLeadMemberships[0]?.team_id;
 
   if (!primaryTeamId) {
     redirect('/dashboard');
   }
+
+  const { data: leadMembershipsData } = await admin
+    .from('team_memberships')
+    .select('id, team_id, user_id, team_role, is_active')
+    .eq('team_id', primaryTeamId)
+    .eq('team_role', 'lead')
+    .eq('is_active', true);
+
+  const leadMemberships = (leadMembershipsData || []) as Membership[];
 
   const { data: team } = await admin
     .from('teams')
