@@ -426,6 +426,14 @@ export default async function DashboardPage() {
                 </Link>
               </div>
               <div className="hq-report-card">
+                {reportState.reportState === 'open' && reportRecord?.status !== 'submitted' ? (
+                  <div className="hq-summary-row">
+                    <span style={{ color: '#8c1515' }}>Report due</span>
+                    <strong>{formatQuarterReportTitle(reportState.targetQuarter)}</strong>
+                    <strong>{reportState.countdownLabel} remaining</strong>
+                  </div>
+                ) : null}
+
                 {teamTasks.length > 0 ? (
                   <div className="hq-summary-list">
                     {pendingReceipts.slice(0, 2).map((purchase) => {
