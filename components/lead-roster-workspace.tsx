@@ -1,10 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useTransition } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  addTeamRosterMemberAction,
-  deleteTeamRosterMemberAction,
-  updateTeamRosterMemberAction
+  addTeamRosterMemberInlineAction,
+  deleteTeamRosterMemberInlineAction,
+  updateTeamRosterMemberInlineAction
 } from '@/app/dashboard/actions';
 
 type RosterMember = {
@@ -36,13 +37,76 @@ export function LeadRosterWorkspace({
   totalTrackedCount,
   monthOptions
 }: LeadRosterWorkspaceProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'add' | 'recorded'>('add');
   const [editing, setEditing] = useState<EditingState>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [members, setMembers] = useState(rosterMembers);
+  const [isPending, startTransition] = useTransition();
+  const addFormRef = useRef<HTMLFormElement | null>(null);
   const nameFormRefs = useRef<Record<string, HTMLFormElement | null>>({});
   const emailFormRefs = useRef<Record<string, HTMLFormElement | null>>({});
-  const recordedMemberCount = rosterMembers.filter((member) => member.source === 'recorded').length;
+
+  const recordedMemberCount = members.filter((member) => member.source === 'recorded').length;
+  const visibleLeadCount = members.filter((member) => member.source === 'lead').length;
+  const visibleTotalTrackedCount = members.length;
+
+  const showStatus = (status: 'success' | 'error', message: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('status', status);
+    params.set('message', message);
+    const next = params.toString();
+    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+  };
+
+  const handleAddSubmit = (formData: FormData) => {
+    startTransition(async () => {
+      const result = await addTeamRosterMemberInlineAction(formData);
+      if (!result.ok || !result.data) {
+        showStatus('error', result.message);
+        return;
+      }
+
+      setMembers((current) => [...current, result.data!]);
+      addFormRef.current?.reset();
+      setActiveTab('recorded');
+      showStatus('success', result.message);
+    });
+  };
+
+  const handleUpdateSubmit = (formData: FormData) => {
+    startTransition(async () => {
+      const result = await updateTeamRosterMemberInlineAction(formData);
+      if (!result.ok || !result.data) {
+        showStatus('error', result.message);
+        return;
+      }
+
+      setMembers((current) =>
+        current.map((member) => (member.id === result.data!.id ? { ...member, ...result.data! } : member))
+      );
+      setEditing(null);
+      showStatus('success', result.message);
+    });
+  };
+
+  const handleDeleteSubmit = (formData: FormData) => {
+    startTransition(async () => {
+      const result = await deleteTeamRosterMemberInlineAction(formData);
+      if (!result.ok || !result.data) {
+        showStatus('error', result.message);
+        return;
+      }
+
+      setMembers((current) => current.filter((member) => member.id !== result.data!.memberId));
+      setPendingDeleteId(null);
+      setDeleteConfirmation('');
+      showStatus('success', result.message);
+    });
+  };
 
   return (
     <section className="hq-panel hq-lead-main hq-surface-muted">
@@ -52,7 +116,13 @@ export function LeadRosterWorkspace({
             <h3>Add member</h3>
           </div>
 
-          <form action={addTeamRosterMemberAction} className="form-stack">
+          <form
+            action={handleAddSubmit}
+            className="form-stack"
+            ref={(node) => {
+              addFormRef.current = node;
+            }}
+          >
             <input type="hidden" name="team_id" value={teamId} />
 
             <div className="hq-inline-grid hq-inline-grid-roster">
@@ -92,8 +162,8 @@ export function LeadRosterWorkspace({
             </div>
 
             <div className="button-row">
-              <button className="button" type="submit">
-                Add member
+              <button className="button" type="submit" disabled={isPending}>
+                {isPending ? 'Saving...' : 'Add member'}
               </button>
             </div>
           </form>
@@ -125,7 +195,7 @@ export function LeadRosterWorkspace({
             <div className="hq-summary-list">
               <div className="hq-summary-row">
                 <span>Lead accounts</span>
-                <strong>{leadCount}</strong>
+                <strong>{visibleLeadCount || leadCount}</strong>
               </div>
               <div className="hq-summary-row">
                 <span>Recorded members</span>
@@ -133,7 +203,7 @@ export function LeadRosterWorkspace({
               </div>
               <div className="hq-summary-row">
                 <span>Total tracked</span>
-                <strong>{totalTrackedCount}</strong>
+                <strong>{visibleTotalTrackedCount || totalTrackedCount}</strong>
               </div>
             </div>
           ) : (
@@ -148,9 +218,9 @@ export function LeadRosterWorkspace({
           <span className="hq-inline-note">Double-click name or email to edit</span>
         </div>
 
-        {rosterMembers.length > 0 ? (
+        {members.length > 0 ? (
           <div className="hq-roster-grid">
-            {rosterMembers.map((member) => {
+            {members.map((member) => {
               const editingName = editing?.memberId === member.id && editing.field === 'full_name';
               const editingEmail = editing?.memberId === member.id && editing.field === 'stanford_email';
               const isLeadAccount = member.source === 'lead';
@@ -182,7 +252,7 @@ export function LeadRosterWorkspace({
 
                   <div className="hq-roster-fields">
                     <form
-                      action={updateTeamRosterMemberAction}
+                      action={handleUpdateSubmit}
                       className="hq-roster-inline-form"
                       ref={(node) => {
                         nameFormRefs.current[member.id] = node;
@@ -233,7 +303,7 @@ export function LeadRosterWorkspace({
                     </form>
 
                     <form
-                      action={updateTeamRosterMemberAction}
+                      action={handleUpdateSubmit}
                       className="hq-roster-inline-form"
                       ref={(node) => {
                         emailFormRefs.current[member.id] = node;
@@ -286,7 +356,7 @@ export function LeadRosterWorkspace({
                     </form>
 
                     {pendingDeleteId === member.id && !isLeadAccount ? (
-                      <form action={deleteTeamRosterMemberAction} className="hq-roster-delete-form">
+                      <form action={handleDeleteSubmit} className="hq-roster-delete-form">
                         <input type="hidden" name="member_id" value={member.id} />
                         <input type="hidden" name="confirmation_name" value={deleteConfirmation} />
                         <p className="hq-roster-delete-copy">Type <strong>{member.full_name}</strong> to delete this record.</p>
@@ -298,8 +368,8 @@ export function LeadRosterWorkspace({
                             placeholder={member.full_name}
                             autoFocus
                           />
-                          <button className="button-secondary" type="submit" disabled={deleteConfirmation !== member.full_name}>
-                            Delete
+                          <button className="button-secondary" type="submit" disabled={deleteConfirmation !== member.full_name || isPending}>
+                            {isPending ? 'Deleting...' : 'Delete'}
                           </button>
                         </div>
                       </form>

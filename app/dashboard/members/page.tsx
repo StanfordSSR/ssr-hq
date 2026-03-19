@@ -97,33 +97,34 @@ export default async function ManageMembersPage() {
   const isPresident = currentRole === 'president';
 
   if (isAdmin || isPresident) {
-    const { data: profilesData } = await admin
-      .from('profiles')
-      .select('id, full_name, email, role, is_admin, is_president, active')
-      .order('role')
-      .order('full_name');
+    const [{ data: profilesData }, { data: teamsData }, { data: membershipsData }, { data: rosterData }, { data: authUsers }] =
+      await Promise.all([
+        admin
+          .from('profiles')
+          .select('id, full_name, email, role, is_admin, is_president, active')
+          .order('role')
+          .order('full_name'),
+        admin.from('teams').select('id, name').order('name'),
+        admin
+          .from('team_memberships')
+          .select('id, team_id, user_id, team_role, is_active')
+          .eq('is_active', true),
+        admin
+          .from('team_roster_members')
+          .select('id, team_id, full_name, stanford_email, joined_month, joined_year')
+          .order('joined_year')
+          .order('joined_month')
+          .order('full_name'),
+        admin.auth.admin.listUsers()
+      ]);
 
     const profiles = (profilesData || []) as Profile[];
-
-    const { data: teamsData } = await admin.from('teams').select('id, name').order('name');
     const teams = (teamsData || []) as Team[];
     const teamMap = new Map(teams.map((team) => [team.id, team.name]));
-
-    const { data: membershipsData } = await admin
-      .from('team_memberships')
-      .select('id, team_id, user_id, team_role, is_active')
-      .eq('is_active', true);
-
     const memberships = (membershipsData || []) as Membership[];
     const leadMembershipUserIds = new Set(
       memberships.filter((membership) => membership.team_role === 'lead').map((membership) => membership.user_id)
     );
-    const { data: rosterData } = await admin
-      .from('team_roster_members')
-      .select('id, team_id, full_name, stanford_email, joined_month, joined_year')
-      .order('joined_year')
-      .order('joined_month')
-      .order('full_name');
     const rosterMembers = (rosterData || []) as RosterMember[];
 
     const teamNamesByUser = new Map<string, string[]>();
@@ -136,9 +137,8 @@ export default async function ManageMembersPage() {
       teamNamesByUser.get(membership.user_id)!.push(teamName);
     }
 
-    const { data: authUsers } = await admin.auth.admin.listUsers();
     const loginMap = new Map<string, string | null>();
-    for (const authUser of authUsers.users) {
+    for (const authUser of authUsers?.users || []) {
       loginMap.set(authUser.id, authUser.last_sign_in_at || null);
     }
 

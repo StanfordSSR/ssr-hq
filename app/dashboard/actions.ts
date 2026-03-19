@@ -155,6 +155,19 @@ async function requireLeadTeam(teamId: string) {
   return { user, profile, currentRole };
 }
 
+type ActionResult<T = void> =
+  | { ok: true; message: string; data?: T }
+  | { ok: false; message: string };
+
+async function runInlineAction<T>(action: () => Promise<T>, successMessage: string): Promise<ActionResult<T>> {
+  try {
+    const data = await action();
+    return { ok: true, message: successMessage, data };
+  } catch (error) {
+    return { ok: false, message: getActionErrorMessage(error) };
+  }
+}
+
 async function uploadReceiptToStorage({
   purchaseId,
   teamId,
@@ -1635,65 +1648,155 @@ export async function invitePortalMemberAction(formData: FormData) {
   });
 }
 
+async function addTeamRosterMemberCore(formData: FormData) {
+  const teamId = String(formData.get('team_id') || '').trim();
+  const fullName = String(formData.get('full_name') || '').trim();
+  const stanfordEmail = String(formData.get('stanford_email') || '').trim().toLowerCase();
+  const joinedMonth = Number(formData.get('joined_month') || 0);
+  const joinedYear = Number(formData.get('joined_year') || 0);
+
+  if (!teamId || !fullName || !stanfordEmail) {
+    throw new Error('Team, full name, and Stanford email are required.');
+  }
+
+  if (!stanfordEmail.endsWith('@stanford.edu')) {
+    throw new Error('Member email must be a Stanford email.');
+  }
+
+  if (!Number.isInteger(joinedMonth) || joinedMonth < 1 || joinedMonth > 12) {
+    throw new Error('Joined month must be between 1 and 12.');
+  }
+
+  if (!Number.isInteger(joinedYear) || joinedYear < 2000 || joinedYear > 2100) {
+    throw new Error('Joined year is invalid.');
+  }
+
+  const { user } = await requireLeadTeam(teamId);
+  const admin = createAdminClient();
+  const { data: member, error } = await admin
+    .from('team_roster_members')
+    .insert({
+      team_id: teamId,
+      full_name: fullName,
+      stanford_email: stanfordEmail,
+      joined_month: joinedMonth,
+      joined_year: joinedYear,
+      created_by: user.id
+    })
+    .select('id, full_name, stanford_email, joined_month, joined_year')
+    .single();
+
+  if (error || !member) {
+    throw new Error(error?.message || 'Failed to add the recorded member.');
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.recorded',
+    targetType: 'team_roster_member',
+    targetId: member.id,
+    summary: `Added ${fullName} to the team roster.`,
+    details: {
+      teamId,
+      fullName,
+      stanfordEmail,
+      joinedMonth,
+      joinedYear
+    }
+  });
+
+  revalidatePaths(REVALIDATE_PATHS.members);
+
+  return {
+    id: member.id,
+    full_name: member.full_name,
+    stanford_email: member.stanford_email,
+    joined_month: member.joined_month,
+    joined_year: member.joined_year,
+    source: 'recorded' as const
+  };
+}
+
+export async function addTeamRosterMemberInlineAction(formData: FormData) {
+  return runInlineAction(() => addTeamRosterMemberCore(formData), 'Added the recorded member.');
+}
+
 export async function addTeamRosterMemberAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/members',
     successMessage: 'Added the recorded member.',
     action: async () => {
-      const teamId = String(formData.get('team_id') || '').trim();
-      const fullName = String(formData.get('full_name') || '').trim();
-      const stanfordEmail = String(formData.get('stanford_email') || '').trim().toLowerCase();
-      const joinedMonth = Number(formData.get('joined_month') || 0);
-      const joinedYear = Number(formData.get('joined_year') || 0);
-
-      if (!teamId || !fullName || !stanfordEmail) {
-        throw new Error('Team, full name, and Stanford email are required.');
-      }
-
-      if (!stanfordEmail.endsWith('@stanford.edu')) {
-        throw new Error('Member email must be a Stanford email.');
-      }
-
-      if (!Number.isInteger(joinedMonth) || joinedMonth < 1 || joinedMonth > 12) {
-        throw new Error('Joined month must be between 1 and 12.');
-      }
-
-      if (!Number.isInteger(joinedYear) || joinedYear < 2000 || joinedYear > 2100) {
-        throw new Error('Joined year is invalid.');
-      }
-
-      const { user } = await requireLeadTeam(teamId);
-      const admin = createAdminClient();
-      const { error } = await admin.from('team_roster_members').insert({
-        team_id: teamId,
-        full_name: fullName,
-        stanford_email: stanfordEmail,
-        joined_month: joinedMonth,
-        joined_year: joinedYear,
-        created_by: user.id
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'member.recorded',
-        targetType: 'team_roster_member',
-        summary: `Added ${fullName} to the team roster.`,
-        details: {
-          teamId,
-          fullName,
-          stanfordEmail,
-          joinedMonth,
-          joinedYear
-        }
-      });
-
-      revalidatePaths(REVALIDATE_PATHS.members);
+      await addTeamRosterMemberCore(formData);
     }
   });
+}
+
+async function updateTeamRosterMemberCore(formData: FormData) {
+  const memberId = String(formData.get('member_id') || '').trim();
+  const fullName = String(formData.get('full_name') || '').trim();
+  const stanfordEmail = String(formData.get('stanford_email') || '').trim().toLowerCase();
+
+  if (!memberId || !fullName || !stanfordEmail) {
+    throw new Error('Member id, full name, and Stanford email are required.');
+  }
+
+  if (!stanfordEmail.endsWith('@stanford.edu')) {
+    throw new Error('Member email must be a Stanford email.');
+  }
+
+  const admin = createAdminClient();
+  const { data: rosterMember } = await admin
+    .from('team_roster_members')
+    .select('id, team_id')
+    .eq('id', memberId)
+    .maybeSingle();
+
+  if (!rosterMember) {
+    throw new Error('Recorded member not found.');
+  }
+
+  const { user } = await requireLeadTeam(rosterMember.team_id);
+  const { data: updatedMember, error } = await admin
+    .from('team_roster_members')
+    .update({
+      full_name: fullName,
+      stanford_email: stanfordEmail
+    })
+    .eq('id', memberId)
+    .select('id, full_name, stanford_email, joined_month, joined_year')
+    .single();
+
+  if (error || !updatedMember) {
+    throw new Error(error?.message || 'Failed to update the recorded member.');
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.record.updated',
+    targetType: 'team_roster_member',
+    targetId: memberId,
+    summary: `Updated recorded member ${fullName}.`,
+    details: {
+      teamId: rosterMember.team_id,
+      fullName,
+      stanfordEmail
+    }
+  });
+
+  revalidatePaths(REVALIDATE_PATHS.members);
+
+  return {
+    id: updatedMember.id,
+    full_name: updatedMember.full_name,
+    stanford_email: updatedMember.stanford_email,
+    joined_month: updatedMember.joined_month,
+    joined_year: updatedMember.joined_year,
+    source: 'recorded' as const
+  };
+}
+
+export async function updateTeamRosterMemberInlineAction(formData: FormData) {
+  return runInlineAction(() => updateTeamRosterMemberCore(formData), 'Updated the recorded member.');
 }
 
 export async function updateTeamRosterMemberAction(formData: FormData) {
@@ -1701,58 +1804,60 @@ export async function updateTeamRosterMemberAction(formData: FormData) {
     fallbackPath: '/dashboard/members',
     successMessage: 'Updated the recorded member.',
     action: async () => {
-      const memberId = String(formData.get('member_id') || '').trim();
-      const fullName = String(formData.get('full_name') || '').trim();
-      const stanfordEmail = String(formData.get('stanford_email') || '').trim().toLowerCase();
-
-      if (!memberId || !fullName || !stanfordEmail) {
-        throw new Error('Member id, full name, and Stanford email are required.');
-      }
-
-      if (!stanfordEmail.endsWith('@stanford.edu')) {
-        throw new Error('Member email must be a Stanford email.');
-      }
-
-      const admin = createAdminClient();
-      const { data: rosterMember } = await admin
-        .from('team_roster_members')
-        .select('id, team_id')
-        .eq('id', memberId)
-        .maybeSingle();
-
-      if (!rosterMember) {
-        throw new Error('Recorded member not found.');
-      }
-
-      const { user } = await requireLeadTeam(rosterMember.team_id);
-      const { error } = await admin
-        .from('team_roster_members')
-        .update({
-          full_name: fullName,
-          stanford_email: stanfordEmail
-        })
-        .eq('id', memberId);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'member.record.updated',
-        targetType: 'team_roster_member',
-        targetId: memberId,
-        summary: `Updated recorded member ${fullName}.`,
-        details: {
-          teamId: rosterMember.team_id,
-          fullName,
-          stanfordEmail
-        }
-      });
-
-      revalidatePaths(REVALIDATE_PATHS.members);
+      await updateTeamRosterMemberCore(formData);
     }
   });
+}
+
+async function deleteTeamRosterMemberCore(formData: FormData) {
+  const memberId = String(formData.get('member_id') || '').trim();
+  const confirmationName = String(formData.get('confirmation_name') || '').trim();
+
+  if (!memberId) {
+    throw new Error('Missing member id.');
+  }
+
+  const admin = createAdminClient();
+  const { data: rosterMember } = await admin
+    .from('team_roster_members')
+    .select('id, team_id, full_name')
+    .eq('id', memberId)
+    .maybeSingle();
+
+  if (!rosterMember) {
+    throw new Error('Recorded member not found.');
+  }
+
+  if (confirmationName !== rosterMember.full_name) {
+    throw new Error('Confirmation name did not match.');
+  }
+
+  const { user } = await requireLeadTeam(rosterMember.team_id);
+  const { error } = await admin.from('team_roster_members').delete().eq('id', memberId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.record.deleted',
+    targetType: 'team_roster_member',
+    targetId: memberId,
+    summary: `Deleted recorded member ${rosterMember.full_name}.`,
+    details: {
+      teamId: rosterMember.team_id,
+      fullName: rosterMember.full_name
+    }
+  });
+
+  revalidatePaths(REVALIDATE_PATHS.members);
+
+  return { memberId };
+}
+
+export async function deleteTeamRosterMemberInlineAction(formData: FormData) {
+  return runInlineAction(() => deleteTeamRosterMemberCore(formData), 'Deleted the recorded member.');
 }
 
 export async function deleteTeamRosterMemberAction(formData: FormData) {
@@ -1760,48 +1865,7 @@ export async function deleteTeamRosterMemberAction(formData: FormData) {
     fallbackPath: '/dashboard/members',
     successMessage: 'Deleted the recorded member.',
     action: async () => {
-      const memberId = String(formData.get('member_id') || '').trim();
-      const confirmationName = String(formData.get('confirmation_name') || '').trim();
-
-      if (!memberId) {
-        throw new Error('Missing member id.');
-      }
-
-      const admin = createAdminClient();
-      const { data: rosterMember } = await admin
-        .from('team_roster_members')
-        .select('id, team_id, full_name')
-        .eq('id', memberId)
-        .maybeSingle();
-
-      if (!rosterMember) {
-        throw new Error('Recorded member not found.');
-      }
-
-      if (confirmationName !== rosterMember.full_name) {
-        throw new Error('Confirmation name did not match.');
-      }
-
-      const { user } = await requireLeadTeam(rosterMember.team_id);
-      const { error } = await admin.from('team_roster_members').delete().eq('id', memberId);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'member.record.deleted',
-        targetType: 'team_roster_member',
-        targetId: memberId,
-        summary: `Deleted recorded member ${rosterMember.full_name}.`,
-        details: {
-          teamId: rosterMember.team_id,
-          fullName: rosterMember.full_name
-        }
-      });
-
-      revalidatePaths(REVALIDATE_PATHS.members);
+      await deleteTeamRosterMemberCore(formData);
     }
   });
 }
@@ -1867,78 +1931,88 @@ export async function switchActiveRoleAction(formData: FormData) {
   redirect('/dashboard');
 }
 
+async function deletePortalLeadCore(formData: FormData) {
+  const { user } = await requireAdmin();
+  const leadId = String(formData.get('lead_id') || '').trim();
+  const confirmationPhrase = String(formData.get('confirmation_phrase') || '').trim();
+  const confirmationName = String(formData.get('confirmation_name') || '').trim();
+
+  if (!leadId) {
+    throw new Error('Missing lead id.');
+  }
+
+  if (leadId === user.id) {
+    throw new Error('You cannot delete your own admin account from here.');
+  }
+
+  const admin = createAdminClient();
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id, full_name, role, is_admin, is_president')
+    .eq('id', leadId)
+    .maybeSingle();
+
+  if (!profile) {
+    throw new Error('Portal user not found.');
+  }
+
+  const { count: leadMembershipCount } = await admin
+    .from('team_memberships')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', leadId)
+    .eq('team_role', 'lead')
+    .eq('is_active', true);
+
+  if (profileHasAdminRole(profile) || profileHasPresidentRole(profile)) {
+    throw new Error('Users with admin or president access cannot be deleted from the lead removal flow.');
+  }
+
+  if (!leadMembershipCount && profile.role !== 'team_lead') {
+    throw new Error('Only team leads can be removed from the portal here.');
+  }
+
+  const expectedName = profile.full_name || '';
+  if (confirmationPhrase !== 'DELETE') {
+    throw new Error('First confirmation must be DELETE.');
+  }
+
+  if (confirmationName !== expectedName) {
+    throw new Error('Second confirmation must match the lead name exactly.');
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.portal_deleted',
+    targetType: 'profile',
+    targetId: leadId,
+    summary: `Deleted portal access for ${expectedName || 'team lead'}.`,
+    details: {
+      leadId,
+      fullName: expectedName
+    }
+  });
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(leadId);
+
+  if (deleteError) {
+    throw new Error(deleteError.message);
+  }
+
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.deleteLead);
+
+  return { leadId };
+}
+
+export async function deletePortalLeadInlineAction(formData: FormData) {
+  return runInlineAction(() => deletePortalLeadCore(formData), 'Removed the lead from the portal.');
+}
+
 export async function deletePortalLeadAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/members',
     successMessage: 'Removed the lead from the portal.',
     action: async () => {
-      const { user } = await requireAdmin();
-      const leadId = String(formData.get('lead_id') || '').trim();
-      const confirmationPhrase = String(formData.get('confirmation_phrase') || '').trim();
-      const confirmationName = String(formData.get('confirmation_name') || '').trim();
-
-      if (!leadId) {
-        throw new Error('Missing lead id.');
-      }
-
-      if (leadId === user.id) {
-        throw new Error('You cannot delete your own admin account from here.');
-      }
-
-      const admin = createAdminClient();
-      const { data: profile } = await admin
-        .from('profiles')
-        .select('id, full_name, role, is_admin, is_president')
-        .eq('id', leadId)
-        .maybeSingle();
-
-      if (!profile) {
-        throw new Error('Portal user not found.');
-      }
-
-      const { count: leadMembershipCount } = await admin
-        .from('team_memberships')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', leadId)
-        .eq('team_role', 'lead')
-        .eq('is_active', true);
-
-      if (profileHasAdminRole(profile) || profileHasPresidentRole(profile)) {
-        throw new Error('Users with admin or president access cannot be deleted from the lead removal flow.');
-      }
-
-      if (!leadMembershipCount && profile.role !== 'team_lead') {
-        throw new Error('Only team leads can be removed from the portal here.');
-      }
-
-      const expectedName = profile.full_name || '';
-      if (confirmationPhrase !== 'DELETE') {
-        throw new Error('First confirmation must be DELETE.');
-      }
-
-      if (confirmationName !== expectedName) {
-        throw new Error('Second confirmation must match the lead name exactly.');
-      }
-
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'member.portal_deleted',
-        targetType: 'profile',
-        targetId: leadId,
-        summary: `Deleted portal access for ${expectedName || 'team lead'}.`,
-        details: {
-          leadId,
-          fullName: expectedName
-        }
-      });
-
-      const { error: deleteError } = await admin.auth.admin.deleteUser(leadId);
-
-      if (deleteError) {
-        throw new Error(deleteError.message);
-      }
-
-      await syncQueueAndRevalidate(REVALIDATE_PATHS.deleteLead);
+      await deletePortalLeadCore(formData);
     }
   });
 }

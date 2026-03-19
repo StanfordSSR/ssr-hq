@@ -46,26 +46,24 @@ export default async function ManageTeamsPage() {
   }
   const canEdit = currentRole === 'admin';
 
-  const { data: teamsData } = await admin
-    .from('teams')
-    .select('id, name, slug, description, logo_url, is_active')
-    .order('name');
+  const [{ data: teamsData }, { data: membershipsData }, { data: profilesData }] = await Promise.all([
+    admin
+      .from('teams')
+      .select('id, name, slug, description, logo_url, is_active')
+      .order('name'),
+    admin
+      .from('team_memberships')
+      .select('id, team_id, user_id, team_role, is_active')
+      .eq('is_active', true)
+      .order('created_at'),
+    admin
+      .from('profiles')
+      .select('id, full_name, email, role, is_admin, is_president, active')
+      .order('full_name')
+  ]);
 
   const teams = (teamsData || []) as Team[];
-
-  const { data: membershipsData } = await admin
-    .from('team_memberships')
-    .select('id, team_id, user_id, team_role, is_active')
-    .eq('is_active', true)
-    .order('created_at');
-
   const memberships = (membershipsData || []) as Membership[];
-
-  const { data: profilesData } = await admin
-    .from('profiles')
-    .select('id, full_name, email, role, is_admin, is_president, active')
-    .order('full_name');
-
   const profiles = (profilesData || []) as Profile[];
   const leadProfiles = profiles.filter((profile) => profile.active);
   const activeLeadMemberships = memberships.filter(

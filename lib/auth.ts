@@ -86,23 +86,24 @@ function getDefaultRole(roles: AppRole[]) {
 
 export async function getViewerContext() {
   const { supabase, user } = await requireSignedInUser();
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, full_name, email, role, is_admin, is_president, active, created_at')
-    .eq('id', user.id)
-    .single<Profile>();
+  const admin = createAdminClient();
+  const [{ data: profile }, { count: leadMembershipCount }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, full_name, email, role, is_admin, is_president, active, created_at')
+      .eq('id', user.id)
+      .single<Profile>(),
+    admin
+      .from('team_memberships')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('team_role', 'lead')
+      .eq('is_active', true)
+  ]);
 
   if (!profile?.active) {
     redirect('/login');
   }
-
-  const admin = createAdminClient();
-  const { count: leadMembershipCount } = await admin
-    .from('team_memberships')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .eq('team_role', 'lead')
-    .eq('is_active', true);
 
   const availableRoles = getAvailableRoles(profile, (leadMembershipCount || 0) > 0);
   if (availableRoles.length === 0) {

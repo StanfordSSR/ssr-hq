@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { deletePortalLeadAction } from '@/app/dashboard/actions';
+import { useState, useTransition } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { deletePortalLeadInlineAction } from '@/app/dashboard/actions';
 
 type AdminMemberRow = {
   id: string;
@@ -21,9 +22,38 @@ type AdminMemberDirectoryProps = {
 };
 
 export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [tableRows, setTableRows] = useState(rows);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmationPhrase, setConfirmationPhrase] = useState('');
   const [confirmationName, setConfirmationName] = useState('');
+  const [isPending, startTransition] = useTransition();
+
+  const showStatus = (status: 'success' | 'error', message: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('status', status);
+    params.set('message', message);
+    const next = params.toString();
+    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+  };
+
+  const handleDelete = (formData: FormData) => {
+    startTransition(async () => {
+      const result = await deletePortalLeadInlineAction(formData);
+      if (!result.ok || !result.data) {
+        showStatus('error', result.message);
+        return;
+      }
+
+      setTableRows((current) => current.filter((row) => row.profileId !== result.data!.leadId));
+      setExpandedId(null);
+      setConfirmationPhrase('');
+      setConfirmationName('');
+      showStatus('success', result.message);
+    });
+  };
 
   return (
     <div className="table-wrap">
@@ -40,7 +70,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {tableRows.map((row) => {
             const expanded = expandedId === row.id;
 
             return (
@@ -85,7 +115,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                 {expanded && row.canDeletePortal && row.profileId ? (
                   <tr key={`${row.id}-confirm`}>
                     <td colSpan={7}>
-                      <form action={deletePortalLeadAction} className="hq-admin-delete-form">
+                      <form action={handleDelete} className="hq-admin-delete-form">
                         <input type="hidden" name="lead_id" value={row.profileId} />
                         <input type="hidden" name="confirmation_phrase" value={confirmationPhrase} />
                         <input type="hidden" name="confirmation_name" value={confirmationName} />
@@ -108,9 +138,9 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                           <button
                             className="button-secondary"
                             type="submit"
-                            disabled={confirmationPhrase !== 'DELETE' || confirmationName !== row.name}
+                            disabled={isPending || confirmationPhrase !== 'DELETE' || confirmationName !== row.name}
                           >
-                            Confirm removal
+                            {isPending ? 'Removing...' : 'Confirm removal'}
                           </button>
                         </div>
                       </form>
