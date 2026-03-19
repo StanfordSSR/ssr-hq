@@ -307,6 +307,25 @@ export default async function ExpenseLogPage({
                   <span>used</span>
                 </div>
               </div>
+
+              <div className="hq-expense-legend">
+                <div>
+                  <span style={{ color: categoryColors.equipment }}>Equipment</span>
+                  <strong>${(categoryTotals.equipment / 100).toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span style={{ color: categoryColors.food }}>Food</span>
+                  <strong>${(categoryTotals.food / 100).toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span style={{ color: categoryColors.travel }}>Travel</span>
+                  <strong>${(categoryTotals.travel / 100).toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span style={{ color: categoryColors.unused }}>Unused</span>
+                  <strong>${(remainingBudgetCents / 100).toLocaleString()}</strong>
+                </div>
+              </div>
             </div>
 
             <div className="hq-expense-metrics">
@@ -337,25 +356,6 @@ export default async function ExpenseLogPage({
 
               <div className="hq-budget-progress">
                 <div className="hq-budget-progress-fill" style={{ width: `${spentPercent}%` }} />
-              </div>
-
-              <div className="hq-expense-legend">
-                <div>
-                  <span style={{ color: categoryColors.equipment }}>Equipment</span>
-                  <strong>${(categoryTotals.equipment / 100).toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span style={{ color: categoryColors.food }}>Food</span>
-                  <strong>${(categoryTotals.food / 100).toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span style={{ color: categoryColors.travel }}>Travel</span>
-                  <strong>${(categoryTotals.travel / 100).toLocaleString()}</strong>
-                </div>
-                <div>
-                  <span style={{ color: categoryColors.unused }}>Unused</span>
-                  <strong>${(remainingBudgetCents / 100).toLocaleString()}</strong>
-                </div>
               </div>
             </div>
           </div>
