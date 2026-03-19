@@ -16,9 +16,9 @@ export const metadata: Metadata = {
   title: 'Stanford Student Robotics HQ',
   description: 'Internal operations portal for Stanford Student Robotics',
   icons: {
-    icon: '/icon.svg',
-    shortcut: '/icon.svg',
-    apple: '/icon.svg'
+    icon: '/icon.png',
+    shortcut: '/icon.png',
+    apple: '/icon.png'
   }
 };
 
