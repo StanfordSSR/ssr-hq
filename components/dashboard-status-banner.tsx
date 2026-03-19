@@ -22,10 +22,6 @@ export function DashboardStatusBanner() {
     };
   }, [message, status]);
 
-  if (!banner) {
-    return null;
-  }
-
   const dismiss = () => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete('status');
@@ -35,12 +31,20 @@ export function DashboardStatusBanner() {
   };
 
   useEffect(() => {
+    if (!banner) {
+      return;
+    }
+
     const timeout = window.setTimeout(() => {
       dismiss();
     }, 3600);
 
     return () => window.clearTimeout(timeout);
-  }, [pathname, router, searchParams, status, message]);
+  }, [banner, pathname, router, searchParams, status, message]);
+
+  if (!banner) {
+    return null;
+  }
 
   return (
     <section className={`hq-status-banner hq-status-banner-${banner.status}`} role="status" aria-live="polite">
