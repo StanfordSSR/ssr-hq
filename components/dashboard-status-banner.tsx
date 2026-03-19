@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 export function DashboardStatusBanner() {
@@ -33,6 +33,14 @@ export function DashboardStatusBanner() {
     const next = params.toString();
     router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
   };
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      dismiss();
+    }, 3600);
+
+    return () => window.clearTimeout(timeout);
+  }, [pathname, router, searchParams, status, message]);
 
   return (
     <section className={`hq-status-banner hq-status-banner-${banner.status}`} role="status" aria-live="polite">
