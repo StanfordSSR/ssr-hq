@@ -11,7 +11,7 @@ const PHRASES = [
 
 const TYPING_DELAY_MS = 126;
 const BACKSPACE_DELAY_MS = 66;
-const HOLD_DELAY_MS = 1300;
+const HOLD_DELAY_MS = 3000;
 
 export function HomeTypewriter() {
   const [phraseIndex, setPhraseIndex] = useState(0);
