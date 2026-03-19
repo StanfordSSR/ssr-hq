@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
+import Link from 'next/link';
 import { getAcademicCalendarTemplate, getCurrentAcademicYear, getReportingWindows, formatDateLabel } from '@/lib/academic-calendar';
 import {
   assignPresidentRoleAction,
@@ -115,7 +116,9 @@ export default async function SettingsPage() {
           <div className="hq-setting-tile">
             <strong>Queued reminders</strong>
             <span>
-              {queuedNotifications.length} queued total
+              <Link href="/dashboard/settings/queue" className="hq-inline-link">
+                {queuedNotifications.length} queued total
+              </Link>
               <br />
               {receiptQueueCount} receipt, {reportQueueCount} report
             </span>
