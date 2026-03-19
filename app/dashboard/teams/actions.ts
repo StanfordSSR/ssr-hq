@@ -252,10 +252,8 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
       });
 
       revalidatePath('/dashboard');
-      revalidatePath('/dashboard/members');
-      revalidatePath('/dashboard/purchases');
-      revalidatePath('/dashboard/tasks');
       revalidatePath('/dashboard/teams');
+      revalidatePath('/dashboard/finances');
     }
   });
 }
