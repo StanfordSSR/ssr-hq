@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter, Jura } from 'next/font/google';
+import { SiteFooter } from '@/components/site-footer';
 import './globals.css';
 
 const inter = Inter({
@@ -25,7 +26,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${jura.variable}`}>{children}</body>
+      <body className={`${inter.variable} ${jura.variable}`}>
+        {children}
+        <SiteFooter />
+      </body>
     </html>
   );
 }
