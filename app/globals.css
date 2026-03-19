@@ -678,6 +678,20 @@ tr:last-child td {
   border-radius: 999px;
   background: #b42318;
   box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.16);
+  animation: hq-nav-dot-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes hq-nav-dot-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.16);
+  }
+
+  50% {
+    transform: scale(1.28);
+    box-shadow: 0 0 0 5px rgba(180, 35, 24, 0.08);
+  }
 }
 
 .hq-user {
