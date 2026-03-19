@@ -17,17 +17,24 @@ export function HomeTypewriter() {
   const [phraseIndex, setPhraseIndex] = useState(0);
   const [visibleText, setVisibleText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
 
   useEffect(() => {
     const currentPhrase = PHRASES[phraseIndex] || '';
 
     const timeout = window.setTimeout(() => {
+      if (isHolding) {
+        setIsHolding(false);
+        setIsDeleting(true);
+        return;
+      }
+
       if (!isDeleting) {
         const nextText = currentPhrase.slice(0, visibleText.length + 1);
         setVisibleText(nextText);
 
         if (nextText === currentPhrase) {
-          setIsDeleting(true);
+          setIsHolding(true);
         }
 
         return;
@@ -40,10 +47,10 @@ export function HomeTypewriter() {
         setIsDeleting(false);
         setPhraseIndex((current) => (current + 1) % PHRASES.length);
       }
-    }, visibleText === currentPhrase && !isDeleting ? HOLD_DELAY_MS : isDeleting ? BACKSPACE_DELAY_MS : TYPING_DELAY_MS);
+    }, isHolding ? HOLD_DELAY_MS : isDeleting ? BACKSPACE_DELAY_MS : TYPING_DELAY_MS);
 
     return () => window.clearTimeout(timeout);
-  }, [isDeleting, phraseIndex, visibleText]);
+  }, [isDeleting, isHolding, phraseIndex, visibleText]);
 
   return (
     <p className="home-typewriter" aria-label={PHRASES[phraseIndex]}>
