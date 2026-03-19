@@ -143,7 +143,7 @@ export default async function DashboardPage() {
             <h1 className="hq-title">Welcome back, {me.full_name || 'operator'}.</h1>
             <p className="hq-subtitle">
               {isAdmin
-                ? 'Use HQ to manage teams, leads, members, and the club&apos;s operating structure.'
+                ? "Use HQ to manage teams, leads, members, and the club's operating structure."
                 : 'Use HQ to review teams, reports, finances, and member activity with read-only access.'}
             </p>
           </div>
