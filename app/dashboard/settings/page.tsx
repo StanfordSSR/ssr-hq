@@ -67,7 +67,7 @@ export default async function SettingsPage() {
       getReceiptNotificationSettings(),
       admin.from('report_questions').select('id, prompt, field_type, word_limit, sort_order').eq('is_active', true).order('sort_order'),
       admin.from('report_notification_settings').select('email_enabled, reminder_days').eq('id', 1).maybeSingle(),
-      admin.from('notification_queue').select('id, notification_type').eq('status', 'queued'),
+      admin.from('notification_queue').select('id, notification_type').eq('status', 'queued').gte('scheduled_for', new Date().toISOString()),
       admin.from('audit_log_entries').select('id, actor_id, action, target_type, target_id, summary, created_at').order('created_at', { ascending: false }).limit(40),
       admin
         .from('profiles')
