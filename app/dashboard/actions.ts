@@ -17,13 +17,21 @@ import {
 import {
   getAcademicCalendarSettings,
   getCurrentAcademicYear,
+  formatDateLabel,
   formatAcademicYear,
   formatPacificDateKey,
   getNextAcademicYear,
   getPreviousAcademicYear,
   getReportingWindow
 } from '@/lib/academic-calendar';
-import { sendFinancialOfficerInviteEmail, sendInviteEmail, sendPresidentInviteEmail, sendTaskEmails } from '@/lib/notifications';
+import {
+  sendFinancialOfficerInviteEmail,
+  sendInviteEmail,
+  sendPresidentInviteEmail,
+  sendReceiptDigestEmail,
+  sendReportReminderEmail,
+  sendTaskEmails
+} from '@/lib/notifications';
 import { env } from '@/lib/env';
 import {
   detectPurchaseCategory,
@@ -1713,6 +1721,94 @@ export async function deleteTaskAction(formData: FormData) {
       });
 
       revalidatePaths(REVALIDATE_PATHS.tasks);
+    }
+  });
+}
+
+export async function sendQueuedReminderPreviewAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings/queue',
+    successMessage: 'Sent the test reminder email.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const queueId = String(formData.get('queue_id') || '').trim();
+
+      if (!queueId) {
+        throw new Error('Missing queued reminder id.');
+      }
+
+      const admin = createAdminClient();
+      const [{ data: queueRow }, { data: actorProfile }] = await Promise.all([
+        admin
+          .from('notification_queue')
+          .select('id, notification_type, team_id, payload, scheduled_for, status')
+          .eq('id', queueId)
+          .eq('status', 'queued')
+          .maybeSingle(),
+        admin.from('profiles').select('email').eq('id', user.id).maybeSingle()
+      ]);
+
+      if (!queueRow) {
+        throw new Error('Queued reminder not found.');
+      }
+
+      if (!actorProfile?.email) {
+        throw new Error('Your admin profile does not have an email address saved.');
+      }
+
+      const { data: team } = await admin.from('teams').select('name').eq('id', queueRow.team_id).maybeSingle();
+      const teamName = team?.name || 'Unknown team';
+
+      if (queueRow.notification_type === 'receipt') {
+        const itemName = String(queueRow.payload?.itemName || 'Receipt item');
+        const purchasedAt = String(queueRow.payload?.purchasedAt || new Date().toISOString());
+        const purchasedDate = new Date(purchasedAt);
+        const deadline = new Date(purchasedDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+        const daysOpen = Math.max(0, Math.ceil((Date.now() - purchasedDate.getTime()) / (24 * 60 * 60 * 1000)));
+        const timeLeftDays = Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+
+        await sendReceiptDigestEmail({
+          to: [actorProfile.email],
+          teamName,
+          items: [
+            {
+              itemName,
+              purchasedAt: formatDateLabel(purchasedDate),
+              reminderDay: Number(queueRow.payload?.reminderDay || 0),
+              deadlineLabel: formatDateLabel(deadline),
+              timeLeftLabel: timeLeftDays <= 0 ? 'due now' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left`,
+              daysOpen
+            }
+          ],
+          uploadLink: `${env.siteUrl}/dashboard/expenses`
+        });
+      } else {
+        const quarter = String(queueRow.payload?.quarter || 'Quarter report');
+        const dueAt = new Date(String(queueRow.payload?.dueAt || queueRow.scheduled_for));
+        const timeLeftDays = Math.max(0, Math.ceil((dueAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+
+        await sendReportReminderEmail({
+          to: [actorProfile.email],
+          teamName,
+          reportTitle: formatQuarterReportTitle(quarter),
+          dueDateLabel: formatDateLabel(dueAt),
+          timeLeftLabel: timeLeftDays <= 0 ? 'due now' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left`,
+          reportLink: `${env.siteUrl}/dashboard/reports`
+        });
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'email.sent',
+        targetType: 'notification_queue',
+        targetId: queueId,
+        summary: `Sent queued ${queueRow.notification_type} reminder preview to ${actorProfile.email}.`,
+        details: {
+          queueId,
+          notificationType: queueRow.notification_type,
+          previewRecipient: actorProfile.email
+        }
+      });
     }
   });
 }

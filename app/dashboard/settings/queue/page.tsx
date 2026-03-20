@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { sendQueuedReminderPreviewAction } from '@/app/dashboard/actions';
 import { getViewerContext } from '@/lib/auth';
 
 type QueueRow = {
@@ -27,6 +28,7 @@ function formatScheduledAt(value: string) {
 export default async function QueuedRemindersPage() {
   const admin = createAdminClient();
   const { currentRole } = await getViewerContext();
+  const canTest = currentRole === 'admin';
 
   if (currentRole !== 'admin' && currentRole !== 'president') {
     redirect('/dashboard');
@@ -36,6 +38,7 @@ export default async function QueuedRemindersPage() {
     .from('notification_queue')
     .select('id, notification_type, team_id, source_key, scheduled_for, payload')
     .eq('status', 'queued')
+    .gte('scheduled_for', new Date().toISOString())
     .order('scheduled_for', { ascending: true });
   const rows = (queueData || []) as QueueRow[];
 
@@ -105,7 +108,17 @@ export default async function QueuedRemindersPage() {
                       {recipients.length > 0 ? recipients.join(', ') : 'No recipient email resolved'}
                     </span>
                   </div>
-                  <time dateTime={row.scheduled_for}>{formatScheduledAt(row.scheduled_for)}</time>
+                  <div className="hq-inline-editor-actions">
+                    <time dateTime={row.scheduled_for}>{formatScheduledAt(row.scheduled_for)}</time>
+                    {canTest ? (
+                      <form action={sendQueuedReminderPreviewAction}>
+                        <input type="hidden" name="queue_id" value={row.id} />
+                        <button className="button-ghost" type="submit">
+                          Send test
+                        </button>
+                      </form>
+                    ) : null}
+                  </div>
                 </div>
               );
             })

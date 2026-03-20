@@ -22,6 +22,8 @@ type QueueRow = {
   payload: Record<string, unknown>;
 };
 
+const STALE_QUEUE_MS = 12 * 60 * 60 * 1000;
+
 function parseOffset(value: string) {
   const match = value.match(/GMT([+-]\d{1,2})(?::?(\d{2}))?/);
   if (!match) {
@@ -188,8 +190,12 @@ async function syncReceiptQueue() {
   const invalidQueuedIds = existingRows
     .filter((row) => row.status === 'queued' && !validKeys.has(row.source_key))
     .map((row) => row.id);
-  if (invalidQueuedIds.length > 0) {
-    await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', invalidQueuedIds);
+  const staleQueuedIds = existingRows
+    .filter((row) => row.status === 'queued' && new Date(row.scheduled_for).getTime() < Date.now() - STALE_QUEUE_MS)
+    .map((row) => row.id);
+  const cancelIds = Array.from(new Set([...invalidQueuedIds, ...staleQueuedIds]));
+  if (cancelIds.length > 0) {
+    await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', cancelIds);
   }
 }
 
@@ -290,8 +296,12 @@ async function syncReportQueue() {
   const invalidQueuedIds = existingRows
     .filter((row) => row.status === 'queued' && !validKeys.has(row.source_key))
     .map((row) => row.id);
-  if (invalidQueuedIds.length > 0) {
-    await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', invalidQueuedIds);
+  const staleQueuedIds = existingRows
+    .filter((row) => row.status === 'queued' && new Date(row.scheduled_for).getTime() < Date.now() - STALE_QUEUE_MS)
+    .map((row) => row.id);
+  const cancelIds = Array.from(new Set([...invalidQueuedIds, ...staleQueuedIds]));
+  if (cancelIds.length > 0) {
+    await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', cancelIds);
   }
 }
 
