@@ -107,6 +107,7 @@ export default async function SettingsPage() {
   const queuedNotifications = queuedNotificationsData || [];
   const receiptQueueCount = queuedNotifications.filter((row) => row.notification_type === 'receipt').length;
   const reportQueueCount = queuedNotifications.filter((row) => row.notification_type === 'report').length;
+  const inviteQueueCount = queuedNotifications.filter((row) => row.notification_type === 'invite').length;
   const auditEntries = auditEntriesData || [];
   const actorIds = Array.from(new Set(auditEntries.map((entry) => entry.actor_id).filter(Boolean))) as string[];
   const { data: actorProfiles } = actorIds.length
@@ -170,7 +171,7 @@ export default async function SettingsPage() {
                 {queuedNotifications.length} queued total
               </Link>
               <br />
-              {receiptQueueCount} receipt, {reportQueueCount} report
+              {receiptQueueCount} receipt, {reportQueueCount} report, {inviteQueueCount} invite
             </span>
           </div>
           <div className="hq-setting-tile">

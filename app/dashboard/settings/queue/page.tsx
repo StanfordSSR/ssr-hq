@@ -6,7 +6,7 @@ import { getViewerContext } from '@/lib/auth';
 
 type QueueRow = {
   id: string;
-  notification_type: 'receipt' | 'report';
+  notification_type: 'receipt' | 'report' | 'invite';
   team_id: string;
   source_key: string;
   scheduled_for: string;
@@ -93,11 +93,16 @@ export default async function QueuedRemindersPage() {
         <div className="hq-audit-list">
           {rows.length > 0 ? (
             rows.map((row) => {
-              const recipients = Array.from(new Set(teamRecipientMap.get(row.team_id) || []));
+              const recipients =
+                row.notification_type === 'invite'
+                  ? [String(row.payload?.email || '')].filter(Boolean)
+                  : Array.from(new Set(teamRecipientMap.get(row.team_id) || []));
               const summary =
                 row.notification_type === 'receipt'
                   ? `Receipt reminder${row.payload?.itemName ? ` for ${String(row.payload.itemName)}` : ''}`
-                  : `Report reminder${row.payload?.quarter ? ` for ${String(row.payload.quarter)}` : ''}`;
+                  : row.notification_type === 'report'
+                    ? `Report reminder${row.payload?.quarter ? ` for ${String(row.payload.quarter)}` : ''}`
+                    : `Invite reminder${row.payload?.email ? ` for ${String(row.payload.email)}` : ''}`;
 
               return (
                 <div key={row.id} className="hq-audit-row">

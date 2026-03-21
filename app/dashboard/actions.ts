@@ -27,12 +27,14 @@ import {
 import {
   sendFinancialOfficerInviteEmail,
   sendInviteEmail,
+  sendInviteReminderEmail,
   sendPresidentInviteEmail,
   sendReceiptDigestEmail,
   sendReportReminderEmail,
   sendTaskEmails
 } from '@/lib/notifications';
 import { env } from '@/lib/env';
+import { buildInviteConfirmLink } from '@/lib/invite-links';
 import {
   detectPurchaseCategory,
   normalizeReminderDays,
@@ -306,24 +308,6 @@ function buildPurchaseDedupKey(input: {
     (input.personName || '').trim().toLowerCase(),
     input.paymentMethod
   ].join('::');
-}
-
-function buildInviteConfirmLink(properties: {
-  hashed_token?: string | null;
-  verification_type?: string | null;
-}) {
-  const tokenHash = properties.hashed_token;
-  const type = properties.verification_type;
-
-  if (!tokenHash || !type) {
-    throw new Error('Invite link is missing verification details.');
-  }
-
-  const confirmUrl = new URL('/auth/confirm', env.siteUrl);
-  confirmUrl.searchParams.set('token_hash', tokenHash);
-  confirmUrl.searchParams.set('type', type);
-  confirmUrl.searchParams.set('next', '/dashboard');
-  return confirmUrl.toString();
 }
 
 async function createPortalInviteProfile({
@@ -1782,7 +1766,7 @@ export async function sendQueuedReminderPreviewAction(formData: FormData) {
           ],
           uploadLink: `${env.siteUrl}/dashboard/expenses`
         });
-      } else {
+      } else if (queueRow.notification_type === 'report') {
         const quarter = String(queueRow.payload?.quarter || 'Quarter report');
         const dueAt = new Date(String(queueRow.payload?.dueAt || queueRow.scheduled_for));
         const timeLeftDays = Math.max(0, Math.ceil((dueAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
@@ -1794,6 +1778,32 @@ export async function sendQueuedReminderPreviewAction(formData: FormData) {
           dueDateLabel: formatDateLabel(dueAt),
           timeLeftLabel: timeLeftDays <= 0 ? 'due now' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left`,
           reportLink: `${env.siteUrl}/dashboard/reports`
+        });
+      } else {
+        const email = String(queueRow.payload?.email || actorProfile.email);
+        const fullName = String(queueRow.payload?.fullName || '');
+        const role = String(queueRow.payload?.role || 'team_lead');
+        const generated = await admin.auth.admin.generateLink({
+          type: 'invite',
+          email,
+          options: {
+            redirectTo: `${env.siteUrl}/auth/callback`,
+            data: {
+              full_name: fullName,
+              role
+            }
+          }
+        });
+
+        if (generated.error || !generated.data?.properties) {
+          throw new Error(generated.error?.message || 'Failed to generate a fresh invite link.');
+        }
+
+        await sendInviteReminderEmail({
+          to: actorProfile.email,
+          fullName,
+          teamName,
+          actionLink: buildInviteConfirmLink(generated.data.properties)
         });
       }
 

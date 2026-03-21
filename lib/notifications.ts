@@ -133,6 +133,34 @@ export async function sendInviteEmail({
   await sendEmail({ to: [to], subject, text, html });
 }
 
+export async function sendInviteReminderEmail({
+  to,
+  fullName,
+  teamName,
+  actionLink
+}: {
+  to: string;
+  fullName: string;
+  teamName?: string | null;
+  actionLink: string;
+}) {
+  const assignmentLine = teamName
+    ? `You were added as a lead to ${teamName}, but your SSR HQ account still needs to be confirmed.`
+    : `Your SSR HQ portal invite is still waiting to be confirmed.`;
+  const subject = teamName ? `Reminder: confirm your SSR HQ lead account for ${teamName}` : 'Reminder: confirm your SSR HQ account';
+  const text = `Hi ${fullName || 'there'},\n\n${assignmentLine}\n\nPlease use this fresh confirmation link:\n${actionLink}\n\nOnce you have an account, you'll request a secure link every time you want to log in.\n\nSSR HQ`;
+  const html = renderEmailFrame({
+    eyebrow: 'SSR HQ invite reminder',
+    heading: `Your SSR HQ invite is still waiting${fullName ? `, ${fullName}` : ''}`,
+    body: `<p style="margin:0 0 14px;">${assignmentLine}</p><p style="margin:0;">Use the fresh confirmation link below to finish setting up your account. Once it is active, you’ll request a secure login link each time you sign in.</p>`,
+    footer: 'If you already completed setup very recently, you can ignore this reminder.',
+    ctaLabel: 'Confirm account',
+    ctaUrl: actionLink
+  });
+
+  await sendEmail({ to: [to], subject, text, html });
+}
+
 export async function sendPresidentInviteEmail({
   to,
   fullName,

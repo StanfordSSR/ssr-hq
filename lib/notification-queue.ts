@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase-admin';
+import { buildInviteConfirmLink } from '@/lib/invite-links';
 import {
   formatDateLabel,
   formatCountdown,
@@ -7,14 +8,14 @@ import {
 } from '@/lib/academic-calendar';
 import { recordAuditEvent } from '@/lib/audit';
 import { env } from '@/lib/env';
-import { sendReceiptDigestEmail, sendReportReminderEmail } from '@/lib/notifications';
+import { sendInviteReminderEmail, sendReceiptDigestEmail, sendReportReminderEmail } from '@/lib/notifications';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { formatQuarterKey, formatQuarterReportTitle } from '@/lib/reports';
 
 type QueueRow = {
   id: string;
-  notification_type: 'receipt' | 'report';
+  notification_type: 'receipt' | 'report' | 'invite';
   team_id: string;
   source_key: string;
   scheduled_for: string;
@@ -305,9 +306,117 @@ async function syncReportQueue() {
   }
 }
 
+async function syncInviteQueue() {
+  const admin = createAdminClient();
+  const { data: existingRowsData } = await admin
+    .from('notification_queue')
+    .select('id, notification_type, team_id, source_key, scheduled_for, status, payload')
+    .eq('notification_type', 'invite');
+  const existingRows = (existingRowsData || []) as QueueRow[];
+  const { data: leadMemberships } = await admin
+    .from('team_memberships')
+    .select('team_id, user_id')
+    .eq('team_role', 'lead')
+    .eq('is_active', true);
+  const leadTeamMap = new Map<string, string>();
+
+  for (const membership of leadMemberships || []) {
+    if (!leadTeamMap.has(membership.user_id)) {
+      leadTeamMap.set(membership.user_id, membership.team_id);
+    }
+  }
+
+  const pendingLeadIds = Array.from(leadTeamMap.keys());
+  if (pendingLeadIds.length === 0) {
+    const queuedIds = existingRows.filter((row) => row.status === 'queued').map((row) => row.id);
+    if (queuedIds.length > 0) {
+      await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', queuedIds);
+    }
+    return;
+  }
+
+  const [{ data: profilesData }, { data: authUsers }] = await Promise.all([
+    admin
+      .from('profiles')
+      .select('id, full_name, email, role, active')
+      .in('id', pendingLeadIds)
+      .eq('active', true),
+    admin.auth.admin.listUsers()
+  ]);
+  const authUserMap = new Map(authUsers.users.map((authUser) => [authUser.id, authUser]));
+
+  const validRows = (profilesData || []).flatMap((profile) => {
+    const authUser = authUserMap.get(profile.id);
+    const teamId = leadTeamMap.get(profile.id);
+
+    if (!teamId || !authUser?.email || authUser.last_sign_in_at) {
+      return [];
+    }
+
+    const createdAt = new Date(authUser.created_at || Date.now());
+    const daysSinceInvite = Math.max(0, Math.floor((Date.now() - createdAt.getTime()) / (24 * 60 * 60 * 1000)));
+    const nextReminderDay = Math.max(3, (Math.floor(daysSinceInvite / 3) + 1) * 3);
+    const scheduledFor = atPacificTime(
+      new Date(createdAt.getTime() + nextReminderDay * 24 * 60 * 60 * 1000),
+      18
+    ).toISOString();
+
+    return [
+      {
+        notification_type: 'invite' as const,
+        team_id: teamId,
+        source_key: `invite:${profile.id}:${nextReminderDay}`,
+        scheduled_for: scheduledFor,
+        status: 'queued' as const,
+        payload: {
+          profileId: profile.id,
+          fullName: profile.full_name,
+          email: authUser.email,
+          role: profile.role,
+          reminderDay: nextReminderDay
+        }
+      }
+    ];
+  });
+
+  const validKeys = new Set(validRows.map((row) => row.source_key));
+
+  for (const row of validRows) {
+    const existing = existingRows.find((entry) => entry.source_key === row.source_key);
+    if (!existing) {
+      await admin.from('notification_queue').insert(row);
+      continue;
+    }
+
+    if (existing.status !== 'sent') {
+      await admin
+        .from('notification_queue')
+        .update({
+          team_id: row.team_id,
+          scheduled_for: row.scheduled_for,
+          status: 'queued',
+          payload: row.payload
+        })
+        .eq('id', existing.id);
+    }
+  }
+
+  const invalidQueuedIds = existingRows
+    .filter((row) => row.status === 'queued' && !validKeys.has(row.source_key))
+    .map((row) => row.id);
+  const staleQueuedIds = existingRows
+    .filter((row) => row.status === 'queued' && new Date(row.scheduled_for).getTime() < Date.now() - STALE_QUEUE_MS)
+    .map((row) => row.id);
+  const cancelIds = Array.from(new Set([...invalidQueuedIds, ...staleQueuedIds]));
+  if (cancelIds.length > 0) {
+    await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', cancelIds);
+  }
+}
+
 export async function syncNotificationQueue() {
   await syncReceiptQueue();
   await syncReportQueue();
+  await syncInviteQueue();
 }
 
 export async function processQueuedNotificationsBatch(now = new Date()) {
@@ -362,7 +471,10 @@ export async function processQueuedNotificationsBatch(now = new Date()) {
   for (const [key, rows] of grouped.entries()) {
     const [notificationType, teamId] = key.split(':');
     const teamName = teamNameMap.get(teamId) || 'your team';
-    const recipientEmails = Array.from(new Set(leadEmailsByTeam.get(teamId) || []));
+    const recipientEmails =
+      notificationType === 'invite'
+        ? Array.from(new Set(rows.map((row) => String(row.payload.email || '')).filter(Boolean)))
+        : Array.from(new Set(leadEmailsByTeam.get(teamId) || []));
     if (recipientEmails.length === 0) {
       await admin
         .from('notification_queue')
@@ -465,6 +577,49 @@ export async function processQueuedNotificationsBatch(now = new Date()) {
           recipients: recipientEmails.length
         }
       });
+    }
+
+    if (notificationType === 'invite') {
+      for (const row of rows) {
+        const email = String(row.payload.email || '');
+        const fullName = String(row.payload.fullName || '');
+        const role = String(row.payload.role || 'team_lead');
+
+        const generated = await admin.auth.admin.generateLink({
+          type: 'invite',
+          email,
+          options: {
+            redirectTo: `${env.siteUrl}/auth/callback`,
+            data: {
+              full_name: fullName,
+              role
+            }
+          }
+        });
+
+        if (generated.error || !generated.data?.properties) {
+          throw new Error(generated.error?.message || 'Failed to regenerate invite link.');
+        }
+
+        await sendInviteReminderEmail({
+          to: email,
+          fullName,
+          teamName,
+          actionLink: buildInviteConfirmLink(generated.data.properties)
+        });
+
+        await recordAuditEvent({
+          actorId: null,
+          action: 'email.sent',
+          targetType: 'notification_queue',
+          targetId: row.id,
+          summary: `Sent invite reminder for ${teamName}.`,
+          details: {
+            notificationType,
+            recipient: email
+          }
+        });
+      }
     }
 
     await admin
