@@ -323,6 +323,11 @@ button {
   color: var(--text);
 }
 
+.hq-textarea {
+  min-height: 128px;
+  resize: vertical;
+}
+
 .input::placeholder {
   color: #a38f8f;
 }
@@ -546,6 +551,17 @@ button {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 14px;
+}
+
+.hq-table-wrap-compact th,
+.hq-table-wrap-compact td {
+  padding: 11px 13px;
+  font-size: 0.88rem;
+}
+
+.hq-table-empty-cell {
+  color: var(--muted);
+  text-align: center;
 }
 
 table {

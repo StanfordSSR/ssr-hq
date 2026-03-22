@@ -15,6 +15,7 @@ import {
   invitePresidentAction,
   removeFinancialOfficerRoleAction,
   removePresidentRoleAction,
+  sendManualSlackPushAction,
   updateAcademicCalendarSettingsAction,
   updateAcademicRolloverSettingsAction,
   updateReceiptNotificationSettingsAction,
@@ -59,7 +60,8 @@ export default async function SettingsPage() {
     reportNotificationSettingsResponse,
     queuedNotificationsResponse,
     auditEntriesResponse,
-    allProfilesResponse
+    allProfilesResponse,
+    slackLinksResponse
   ] =
     await Promise.all([
       getAcademicCalendarSettings(),
@@ -71,9 +73,10 @@ export default async function SettingsPage() {
       admin.from('audit_log_entries').select('id, actor_id, action, target_type, target_id, summary, created_at').order('created_at', { ascending: false }).limit(40),
       admin
         .from('profiles')
-        .select('id, full_name, role, is_admin, is_president, is_financial_officer, active')
+        .select('id, full_name, email, role, is_admin, is_president, is_financial_officer, active')
         .eq('active', true)
-        .order('full_name')
+        .order('full_name'),
+      admin.from('slack_user_links').select('user_id, slack_user_id')
     ]);
   const currentAcademicYear = calendarSettings.effectiveAcademicYear;
   const nextAcademicYear = calendarSettings.nextAcademicYear;
@@ -97,6 +100,7 @@ export default async function SettingsPage() {
   const queuedNotificationsData = queuedNotificationsResponse.data || [];
   const auditEntriesData = auditEntriesResponse.data || [];
   const allProfilesData = allProfilesResponse.data || [];
+  const slackLinks = slackLinksResponse.error ? [] : slackLinksResponse.data || [];
   const reportQuestions = reportQuestionsData.map((question) => ({
     id: question.id,
     prompt: question.prompt,
@@ -115,6 +119,7 @@ export default async function SettingsPage() {
     : { data: [] };
   const actorNameMap = new Map((actorProfiles || []).map((profile) => [profile.id, profile.full_name || 'Unknown user']));
   const allProfiles = allProfilesData || [];
+  const slackIdByUser = new Map(slackLinks.map((link) => [link.user_id, link.slack_user_id]));
   const { data: leadMemberships } = await admin
     .from('team_memberships')
     .select('user_id')
@@ -586,6 +591,111 @@ export default async function SettingsPage() {
                       <h3>Quarterly report questions</h3>
                     </div>
                     <ReportQuestionEditor initialQuestions={reportQuestions} readOnly={!canEdit} />
+                  </section>
+                </div>
+              )
+            },
+            {
+              id: 'slack',
+              label: 'Slack',
+              content: (
+                <div className="hq-lead-grid">
+                  <section className="hq-lead-block">
+                    <div className="hq-block-head">
+                      <h3>Portal users and Slack IDs</h3>
+                    </div>
+                    <div className="table-wrap hq-table-wrap-compact">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Slack ID</th>
+                            <th>Portal roles</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allProfiles.length > 0 ? (
+                            allProfiles.map((profile) => {
+                              const roles = [
+                                profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
+                                profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+                                profileHasFinancialOfficerRole(profile) ? getRoleLabel('financial_officer') : null,
+                                profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
+                              ]
+                                .filter(Boolean)
+                                .join(', ');
+
+                              return (
+                                <tr key={profile.id}>
+                                  <td>{profile.full_name || 'Unnamed user'}</td>
+                                  <td>{profile.email || 'No email'}</td>
+                                  <td>{slackIdByUser.get(profile.id) || 'Not linked'}</td>
+                                  <td>{roles || 'Portal user'}</td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td colSpan={4} className="hq-table-empty-cell">
+                                No active portal users yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="hq-lead-block">
+                    <div className="hq-block-head">
+                      <h3>Send Slack push</h3>
+                    </div>
+                    {canEdit ? (
+                      <form action={sendManualSlackPushAction} className="form-stack">
+                        <div className="field">
+                          <label className="label" htmlFor="slack-push-profile-id">
+                            Recipient
+                          </label>
+                          <select className="select" id="slack-push-profile-id" name="profile_id" defaultValue="">
+                            <option value="" disabled>
+                              Select a portal user
+                            </option>
+                            {allProfiles.map((profile) => (
+                              <option key={profile.id} value={profile.id}>
+                                {profile.full_name || 'Unnamed user'} · {profile.email || 'No email'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="field">
+                          <label className="label" htmlFor="slack-push-message">
+                            Message
+                          </label>
+                          <textarea
+                            className="input hq-textarea"
+                            id="slack-push-message"
+                            name="message"
+                            maxLength={400}
+                            placeholder="Write a short Slack DM from SSR HQ."
+                            required
+                          />
+                        </div>
+
+                        <p className="helper">
+                          Sends a direct Slack message through the HQ bot using the selected user&apos;s portal email.
+                        </p>
+
+                        <div className="button-row">
+                          <button className="button" type="submit">
+                            Send Slack push
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <p className="empty-note">Slack pushes can be sent by admins only.</p>
+                    )}
                   </section>
                 </div>
               )

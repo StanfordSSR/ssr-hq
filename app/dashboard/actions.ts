@@ -55,6 +55,7 @@ import {
 } from '@/lib/reports';
 import { recordAuditEvent } from '@/lib/audit';
 import { syncNotificationQueue } from '@/lib/notification-queue';
+import { getSlackbotFallbackContext, sendSlackbotNotification } from '@/lib/slackbot';
 
 const REVALIDATE_PATHS = {
   dashboard: ['/dashboard'],
@@ -258,6 +259,108 @@ async function getTeamMemberCount(teamId: string) {
   ]);
 
   return (membershipCount || 0) + (rosterCount || 0);
+}
+
+export async function sendManualSlackPushAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Slack push sent.',
+    action: async () => {
+      const { profile } = await requireAdmin();
+      const recipientProfileId = String(formData.get('profile_id') || '').trim();
+      const rawMessage = String(formData.get('message') || '').trim();
+
+      if (!recipientProfileId) {
+        throw new Error('Choose a portal user to message.');
+      }
+
+      if (!rawMessage) {
+        throw new Error('Enter a message to send.');
+      }
+
+      if (rawMessage.length > 400) {
+        throw new Error('Slack pushes should stay under 400 characters.');
+      }
+
+      const admin = createAdminClient();
+      const [{ data: recipient }, { data: leadMembership }, { data: team }] = await Promise.all([
+        admin
+          .from('profiles')
+          .select('id, full_name, email')
+          .eq('id', recipientProfileId)
+          .eq('active', true)
+          .maybeSingle(),
+        admin
+          .from('team_memberships')
+          .select('team_id')
+          .eq('user_id', recipientProfileId)
+          .eq('team_role', 'lead')
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle(),
+        Promise.resolve({ data: null as { id: string; name: string } | null })
+      ]);
+
+      if (!recipient?.email) {
+        throw new Error('That portal user does not have an email on file.');
+      }
+
+      let teamContext = getSlackbotFallbackContext();
+      if (leadMembership?.team_id) {
+        const { data: resolvedTeam } = await admin
+          .from('teams')
+          .select('id, name')
+          .eq('id', leadMembership.team_id)
+          .maybeSingle();
+        if (resolvedTeam) {
+          teamContext = {
+            teamId: resolvedTeam.id,
+            teamName: resolvedTeam.name
+          };
+        }
+      } else if (team) {
+        teamContext = {
+          teamId: team.id,
+          teamName: team.name
+        };
+      }
+
+      const idempotencyKey = `manual_slack_push:${recipientProfileId}:${Date.now()}`;
+      const senderName = profile.full_name || 'SSR HQ admin';
+
+      const result = await sendSlackbotNotification({
+        idempotency_key: idempotencyKey,
+        type: 'manual_message',
+        team_id: teamContext.teamId,
+        team_name: teamContext.teamName,
+        recipient_emails: [recipient.email.toLowerCase()],
+        title: 'Message from SSR HQ',
+        message: rawMessage,
+        metadata: {
+          source: 'hq_admin_manual_push',
+          senderProfileId: profile.id,
+          senderName,
+          recipientProfileId
+        }
+      });
+
+      await recordAuditEvent({
+        actorId: profile.id,
+        action: 'slack.sent',
+        targetType: 'profile',
+        targetId: recipient.id,
+        summary: `Sent Slack push to ${recipient.full_name || recipient.email}.`,
+        details: {
+          delivered: result.delivered || 0,
+          failed: result.failed || 0,
+          recipientEmail: recipient.email,
+          teamContext: teamContext.teamName
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.settings);
+    }
+  });
 }
 
 async function getQuarterFundsSpent(teamId: string, academicYear: string, quarter: string) {

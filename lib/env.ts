@@ -23,6 +23,8 @@ export const env = {
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   siteUrl: normalizeSiteUrl(process.env.NEXT_PUBLIC_SITE_URL),
   cronSecret: process.env.CRON_SECRET,
+  slackbotNotifyUrl: process.env.SSR_SLACKBOT_NOTIFY_URL,
+  slackbotNotifySecret: process.env.SSR_SLACKBOT_NOTIFY_SECRET,
   resendApiKey: process.env.RESEND_API_KEY,
   resendSenderEmail: process.env.RESEND_SENDER_EMAIL || 'hq@stanfordssr.org',
   resendSenderName: process.env.RESEND_SENDER_NAME || 'SSR HQ'
