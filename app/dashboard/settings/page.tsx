@@ -16,6 +16,7 @@ import {
   removeFinancialOfficerRoleAction,
   removePresidentRoleAction,
   sendManualSlackPushAction,
+  updateInviteNotificationSettingsAction,
   updateAcademicCalendarSettingsAction,
   updateAcademicRolloverSettingsAction,
   updateReceiptNotificationSettingsAction,
@@ -58,6 +59,7 @@ export default async function SettingsPage() {
     receiptSettings,
     reportQuestionsResponse,
     reportNotificationSettingsResponse,
+    inviteNotificationSettingsResponse,
     queuedNotificationsResponse,
     auditEntriesResponse,
     allProfilesResponse
@@ -67,7 +69,8 @@ export default async function SettingsPage() {
       getAcademicCalendarTemplate(),
       getReceiptNotificationSettings(),
       admin.from('report_questions').select('id, prompt, field_type, word_limit, sort_order').eq('is_active', true).order('sort_order'),
-      admin.from('report_notification_settings').select('email_enabled, reminder_days').eq('id', 1).maybeSingle(),
+      admin.from('report_notification_settings').select('email_enabled, slack_enabled, reminder_days').eq('id', 1).maybeSingle(),
+      admin.from('invite_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle(),
       admin.from('notification_queue').select('id, notification_type').eq('status', 'queued').gte('scheduled_for', new Date().toISOString()),
       admin.from('audit_log_entries').select('id, actor_id, action, target_type, target_id, summary, created_at').order('created_at', { ascending: false }).limit(40),
       admin
@@ -95,6 +98,7 @@ export default async function SettingsPage() {
   ]);
   const reportQuestionsData = reportQuestionsResponse.data || [];
   const reportNotificationSettings = reportNotificationSettingsResponse.data;
+  const inviteNotificationSettings = inviteNotificationSettingsResponse.data;
   const queuedNotificationsData = queuedNotificationsResponse.data || [];
   const auditEntriesData = auditEntriesResponse.data || [];
   const allProfilesData = allProfilesResponse.data || [];
@@ -406,6 +410,14 @@ export default async function SettingsPage() {
                       <small>Turn receipt reminder emails on or off.</small>
                     </span>
                   </label>
+                  <label className="hq-switch">
+                    <input type="checkbox" name="slack_enabled" defaultChecked={receiptSettings.slackEnabled} />
+                    <span className="hq-switch-track" aria-hidden="true" />
+                    <span className="hq-switch-copy">
+                      <strong>Also send Slack DMs</strong>
+                      <small>Push receipt reminders to linked Slack accounts through the HQ bot.</small>
+                    </span>
+                  </label>
                   <div className="hq-inline-grid">
                     <div className="field"><label className="label" htmlFor="reminder-day-one">Reminder 1</label><input className="input" id="reminder-day-one" name="reminder_day_one" type="number" min="1" max="365" defaultValue={receiptSettings.reminderDays[0] || ''} /></div>
                     <div className="field"><label className="label" htmlFor="reminder-day-two">Reminder 2</label><input className="input" id="reminder-day-two" name="reminder_day_two" type="number" min="1" max="365" defaultValue={receiptSettings.reminderDays[1] || ''} /></div>
@@ -416,6 +428,7 @@ export default async function SettingsPage() {
               ) : (
                 <div className="hq-summary-list">
                   <div className="hq-summary-row"><span>Email reminders</span><strong>{receiptSettings.emailEnabled ? 'Enabled' : 'Disabled'}</strong></div>
+                  <div className="hq-summary-row"><span>Slack reminders</span><strong>{receiptSettings.slackEnabled ? 'Enabled' : 'Disabled'}</strong></div>
                   <div className="hq-summary-row"><span>Reminder cadence</span><strong>{receiptSettings.reminderDays.map((day) => `Day ${day}`).join(', ')}</strong></div>
                 </div>
               )}
@@ -435,6 +448,14 @@ export default async function SettingsPage() {
                       <small>Control report due emails in addition to in-portal reminders.</small>
                     </span>
                   </label>
+                  <label className="hq-switch">
+                    <input type="checkbox" name="report_slack_enabled" defaultChecked={reportNotificationSettings?.slack_enabled ?? false} />
+                    <span className="hq-switch-track" aria-hidden="true" />
+                    <span className="hq-switch-copy">
+                      <strong>Also send Slack DMs</strong>
+                      <small>Push report reminders to linked Slack accounts through the HQ bot.</small>
+                    </span>
+                  </label>
                   <div className="hq-inline-grid">
                     <div className="field"><label className="label" htmlFor="report-reminder-one">Reminder 1</label><input className="input" id="report-reminder-one" name="report_reminder_day_one" type="number" min="1" max="365" defaultValue={reportReminderDays[0] || ''} /></div>
                     <div className="field"><label className="label" htmlFor="report-reminder-two">Reminder 2</label><input className="input" id="report-reminder-two" name="report_reminder_day_two" type="number" min="1" max="365" defaultValue={reportReminderDays[1] || ''} /></div>
@@ -445,7 +466,44 @@ export default async function SettingsPage() {
               ) : (
                 <div className="hq-summary-list">
                   <div className="hq-summary-row"><span>Email reminders</span><strong>{reportNotificationSettings?.email_enabled ?? true ? 'Enabled' : 'Disabled'}</strong></div>
+                  <div className="hq-summary-row"><span>Slack reminders</span><strong>{reportNotificationSettings?.slack_enabled ?? false ? 'Enabled' : 'Disabled'}</strong></div>
                   <div className="hq-summary-row"><span>Reminder cadence</span><strong>{reportReminderDays.map((day) => `${day} days before`).join(', ')}</strong></div>
+                </div>
+              )}
+            </section>
+
+            <section className="hq-lead-block">
+              <div className="hq-block-head">
+                <h3>Invite reminders</h3>
+              </div>
+              {canEdit ? (
+                <form action={updateInviteNotificationSettingsAction} className="form-stack">
+                  <label className="hq-switch">
+                    <input type="checkbox" name="invite_email_enabled" defaultChecked={inviteNotificationSettings?.email_enabled ?? true} />
+                    <span className="hq-switch-track" aria-hidden="true" />
+                    <span className="hq-switch-copy">
+                      <strong>Email invited leads</strong>
+                      <small>Send account confirmation reminders every 3 days until they sign in.</small>
+                    </span>
+                  </label>
+                  <label className="hq-switch">
+                    <input type="checkbox" name="invite_slack_enabled" defaultChecked={inviteNotificationSettings?.slack_enabled ?? false} />
+                    <span className="hq-switch-track" aria-hidden="true" />
+                    <span className="hq-switch-copy">
+                      <strong>Also send Slack DMs</strong>
+                      <small>Deliver invite reminders through the HQ bot when their Slack account can be resolved.</small>
+                    </span>
+                  </label>
+                  <div className="hq-summary-list">
+                    <div className="hq-summary-row"><span>Reminder cadence</span><strong>Every 3 days at 6:00 PM PT</strong></div>
+                  </div>
+                  <div className="button-row"><button className="button" type="submit">Save invite reminders</button></div>
+                </form>
+              ) : (
+                <div className="hq-summary-list">
+                  <div className="hq-summary-row"><span>Email reminders</span><strong>{inviteNotificationSettings?.email_enabled ?? true ? 'Enabled' : 'Disabled'}</strong></div>
+                  <div className="hq-summary-row"><span>Slack reminders</span><strong>{inviteNotificationSettings?.slack_enabled ?? false ? 'Enabled' : 'Disabled'}</strong></div>
+                  <div className="hq-summary-row"><span>Reminder cadence</span><strong>Every 3 days at 6:00 PM PT</strong></div>
                 </div>
               )}
             </section>

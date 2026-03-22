@@ -2,6 +2,7 @@ export type PurchaseCategory = 'equipment' | 'food' | 'travel';
 export type PurchasePaymentMethod = 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
 export type ReceiptNotificationSettings = {
   emailEnabled: boolean;
+  slackEnabled: boolean;
   reminderDays: number[];
 };
 

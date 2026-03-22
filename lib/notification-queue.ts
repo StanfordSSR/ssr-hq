@@ -12,6 +12,7 @@ import { sendInviteReminderEmail, sendReceiptDigestEmail, sendReportReminderEmai
 import { normalizeReminderDays } from '@/lib/purchases';
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { formatQuarterKey, formatQuarterReportTitle } from '@/lib/reports';
+import { sendSlackbotNotification } from '@/lib/slackbot';
 
 type QueueRow = {
   id: string;
@@ -118,7 +119,7 @@ async function syncReceiptQueue() {
     .eq('notification_type', 'receipt');
   const existingRows = (existingRowsData || []) as QueueRow[];
 
-  if (!settings.emailEnabled || settings.reminderDays.length === 0) {
+  if ((!settings.emailEnabled && !settings.slackEnabled) || settings.reminderDays.length === 0) {
     const queuedIds = existingRows.filter((row) => row.status === 'queued').map((row) => row.id);
     if (queuedIds.length > 0) {
       await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', queuedIds);
@@ -204,7 +205,7 @@ async function syncReportQueue() {
   const admin = createAdminClient();
   const { data: settings } = await admin
     .from('report_notification_settings')
-    .select('email_enabled, reminder_days')
+    .select('email_enabled, slack_enabled, reminder_days')
     .eq('id', 1)
     .maybeSingle();
   const { data: existingRowsData } = await admin
@@ -212,7 +213,7 @@ async function syncReportQueue() {
     .select('id, notification_type, team_id, source_key, scheduled_for, status, payload')
     .eq('notification_type', 'report');
   const existingRows = (existingRowsData || []) as QueueRow[];
-  if (settings && settings.email_enabled === false) {
+  if (settings && settings.email_enabled === false && settings.slack_enabled === false) {
     const queuedIds = existingRows.filter((row) => row.status === 'queued').map((row) => row.id);
     if (queuedIds.length > 0) {
       await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', queuedIds);
@@ -308,11 +309,23 @@ async function syncReportQueue() {
 
 async function syncInviteQueue() {
   const admin = createAdminClient();
+  const { data: inviteSettings } = await admin
+    .from('invite_notification_settings')
+    .select('email_enabled, slack_enabled')
+    .eq('id', 1)
+    .maybeSingle();
   const { data: existingRowsData } = await admin
     .from('notification_queue')
     .select('id, notification_type, team_id, source_key, scheduled_for, status, payload')
     .eq('notification_type', 'invite');
   const existingRows = (existingRowsData || []) as QueueRow[];
+  if (inviteSettings && inviteSettings.email_enabled === false && inviteSettings.slack_enabled === false) {
+    const queuedIds = existingRows.filter((row) => row.status === 'queued').map((row) => row.id);
+    if (queuedIds.length > 0) {
+      await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', queuedIds);
+    }
+    return;
+  }
   const { data: leadMemberships } = await admin
     .from('team_memberships')
     .select('team_id, user_id')
@@ -423,6 +436,19 @@ export async function processQueuedNotificationsBatch(now = new Date()) {
   await syncNotificationQueue();
 
   const admin = createAdminClient();
+  const [receiptSettings, reportSettingsResponse, inviteSettingsResponse] = await Promise.all([
+    getReceiptNotificationSettings(),
+    admin.from('report_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle(),
+    admin.from('invite_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle()
+  ]);
+  const reportSettings = {
+    emailEnabled: reportSettingsResponse.data?.email_enabled ?? true,
+    slackEnabled: reportSettingsResponse.data?.slack_enabled ?? false
+  };
+  const inviteSettings = {
+    emailEnabled: inviteSettingsResponse.data?.email_enabled ?? true,
+    slackEnabled: inviteSettingsResponse.data?.slack_enabled ?? false
+  };
   const { data: dueRowsData } = await admin
     .from('notification_queue')
     .select('id, notification_type, team_id, source_key, scheduled_for, status, payload')
@@ -527,24 +553,58 @@ export async function processQueuedNotificationsBatch(now = new Date()) {
         ).values()
       );
 
-      await sendReceiptDigestEmail({
-        to: recipientEmails,
-        teamName,
-        items,
-        uploadLink: `${env.siteUrl}/dashboard/expenses`
-      });
+      if (receiptSettings.slackEnabled) {
+        await sendSlackbotNotification({
+          idempotency_key: `queue-receipt:${teamId}:${rows.map((row) => row.id).sort().join(',')}`,
+          type: 'receipt_reminder',
+          team_id: teamId,
+          team_name: teamName,
+          recipient_emails: recipientEmails,
+          title: `Receipt uploads needed for ${teamName}`,
+          message:
+            items.length === 1
+              ? `${items[0]!.itemName} still needs a receipt upload. ${items[0]!.timeLeftLabel}.`
+              : `${items.length} purchases still need receipt uploads. Most urgent status: ${items[0]!.timeLeftLabel}.`,
+          cta_label: 'Open expense log',
+          cta_url: `${env.siteUrl}/dashboard/expenses`,
+          metadata: {
+            purchase_ids: rows.map((row) => String((row.payload as { purchaseId: string }).purchaseId))
+          }
+        });
 
-      await recordAuditEvent({
-        actorId: null,
-        action: 'email.sent',
-        targetType: 'notification_queue',
-        summary: `Sent receipt reminder batch for ${teamName}.`,
-        details: {
-          notificationType,
-          itemCount: items.length,
-          recipients: recipientEmails.length
-        }
-      });
+        await recordAuditEvent({
+          actorId: null,
+          action: 'slack.sent',
+          targetType: 'notification_queue',
+          summary: `Sent Slack receipt reminder batch for ${teamName}.`,
+          details: {
+            notificationType,
+            itemCount: items.length,
+            recipients: recipientEmails.length
+          }
+        });
+      }
+
+      if (receiptSettings.emailEnabled) {
+        await sendReceiptDigestEmail({
+          to: recipientEmails,
+          teamName,
+          items,
+          uploadLink: `${env.siteUrl}/dashboard/expenses`
+        });
+
+        await recordAuditEvent({
+          actorId: null,
+          action: 'email.sent',
+          targetType: 'notification_queue',
+          summary: `Sent receipt reminder batch for ${teamName}.`,
+          details: {
+            notificationType,
+            itemCount: items.length,
+            recipients: recipientEmails.length
+          }
+        });
+      }
     }
 
     if (notificationType === 'report') {
@@ -556,27 +616,60 @@ export async function processQueuedNotificationsBatch(now = new Date()) {
       const payload = latest.payload as { academicYear: string; quarter: string; dueAt: string };
       const dueAt = new Date(payload.dueAt);
 
-      await sendReportReminderEmail({
-        to: recipientEmails,
-        teamName,
-        reportTitle: formatQuarterReportTitle(payload.quarter),
-        dueDateLabel: formatDateLabel(dueAt),
-        timeLeftLabel: formatCountdown(dueAt, now),
-        reportLink: `${env.siteUrl}/dashboard/reports`
-      });
+      if (reportSettings.slackEnabled) {
+        await sendSlackbotNotification({
+          idempotency_key: `queue-report:${teamId}:${rows.map((row) => row.id).sort().join(',')}`,
+          type: 'report_reminder',
+          team_id: teamId,
+          team_name: teamName,
+          recipient_emails: recipientEmails,
+          title: `${formatQuarterReportTitle(payload.quarter)} is due`,
+          message: `${teamName} still needs to submit this report. Due ${formatDateLabel(dueAt)}. ${formatCountdown(dueAt, now)} remaining.`,
+          cta_label: 'Open report',
+          cta_url: `${env.siteUrl}/dashboard/reports`,
+          metadata: {
+            academic_year: payload.academicYear,
+            quarter: payload.quarter
+          }
+        });
 
-      await recordAuditEvent({
-        actorId: null,
-        action: 'email.sent',
-        targetType: 'notification_queue',
-        summary: `Sent report reminder batch for ${teamName}.`,
-        details: {
-          notificationType,
-          academicYear: payload.academicYear,
-          quarter: payload.quarter,
-          recipients: recipientEmails.length
-        }
-      });
+        await recordAuditEvent({
+          actorId: null,
+          action: 'slack.sent',
+          targetType: 'notification_queue',
+          summary: `Sent Slack report reminder batch for ${teamName}.`,
+          details: {
+            notificationType,
+            academicYear: payload.academicYear,
+            quarter: payload.quarter,
+            recipients: recipientEmails.length
+          }
+        });
+      }
+
+      if (reportSettings.emailEnabled) {
+        await sendReportReminderEmail({
+          to: recipientEmails,
+          teamName,
+          reportTitle: formatQuarterReportTitle(payload.quarter),
+          dueDateLabel: formatDateLabel(dueAt),
+          timeLeftLabel: formatCountdown(dueAt, now),
+          reportLink: `${env.siteUrl}/dashboard/reports`
+        });
+
+        await recordAuditEvent({
+          actorId: null,
+          action: 'email.sent',
+          targetType: 'notification_queue',
+          summary: `Sent report reminder batch for ${teamName}.`,
+          details: {
+            notificationType,
+            academicYear: payload.academicYear,
+            quarter: payload.quarter,
+            recipients: recipientEmails.length
+          }
+        });
+      }
     }
 
     if (notificationType === 'invite') {
@@ -601,24 +694,59 @@ export async function processQueuedNotificationsBatch(now = new Date()) {
           throw new Error(generated.error?.message || 'Failed to regenerate invite link.');
         }
 
-        await sendInviteReminderEmail({
-          to: email,
-          fullName,
-          teamName,
-          actionLink: buildInviteConfirmLink(generated.data.properties)
-        });
+        const actionLink = buildInviteConfirmLink(generated.data.properties);
 
-        await recordAuditEvent({
-          actorId: null,
-          action: 'email.sent',
-          targetType: 'notification_queue',
-          targetId: row.id,
-          summary: `Sent invite reminder for ${teamName}.`,
-          details: {
-            notificationType,
-            recipient: email
-          }
-        });
+        if (inviteSettings.slackEnabled) {
+          await sendSlackbotNotification({
+            idempotency_key: `queue-invite:${row.id}`,
+            type: 'invite_reminder',
+            team_id: teamId,
+            team_name: teamName,
+            recipient_emails: [email],
+            title: 'Your SSR HQ invite is still waiting',
+            message: teamName
+              ? `You were added as a lead to ${teamName}, but your SSR HQ account still needs to be confirmed.`
+              : 'Your SSR HQ portal invite is still waiting to be confirmed.',
+            cta_label: 'Confirm account',
+            cta_url: actionLink,
+            metadata: {
+              queue_id: row.id
+            }
+          });
+
+          await recordAuditEvent({
+            actorId: null,
+            action: 'slack.sent',
+            targetType: 'notification_queue',
+            targetId: row.id,
+            summary: `Sent Slack invite reminder for ${teamName}.`,
+            details: {
+              notificationType,
+              recipient: email
+            }
+          });
+        }
+
+        if (inviteSettings.emailEnabled) {
+          await sendInviteReminderEmail({
+            to: email,
+            fullName,
+            teamName,
+            actionLink
+          });
+
+          await recordAuditEvent({
+            actorId: null,
+            action: 'email.sent',
+            targetType: 'notification_queue',
+            targetId: row.id,
+            summary: `Sent invite reminder for ${teamName}.`,
+            details: {
+              notificationType,
+              recipient: email
+            }
+          });
+        }
       }
     }
 

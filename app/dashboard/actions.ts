@@ -1401,11 +1401,13 @@ export async function updateReceiptNotificationSettingsAction(formData: FormData
         formData.get('reminder_day_three')?.toString()
       ]);
       const emailEnabled = String(formData.get('email_enabled') || '') === 'on';
+      const slackEnabled = String(formData.get('slack_enabled') || '') === 'on';
 
       const admin = createAdminClient();
       const { error } = await admin.from('receipt_notification_settings').upsert({
         id: 1,
         email_enabled: emailEnabled,
+        slack_enabled: slackEnabled,
         reminder_days: reminderDays,
         updated_at: new Date().toISOString()
       });
@@ -1422,6 +1424,7 @@ export async function updateReceiptNotificationSettingsAction(formData: FormData
         summary: 'Updated receipt reminder settings.',
         details: {
           emailEnabled,
+          slackEnabled,
           reminderDays
         }
       });
@@ -1443,11 +1446,13 @@ export async function updateReportNotificationSettingsAction(formData: FormData)
         formData.get('report_reminder_day_three')?.toString()
       ]);
       const emailEnabled = String(formData.get('report_email_enabled') || '') === 'on';
+      const slackEnabled = String(formData.get('report_slack_enabled') || '') === 'on';
 
       const admin = createAdminClient();
       const { error } = await admin.from('report_notification_settings').upsert({
         id: 1,
         email_enabled: emailEnabled,
+        slack_enabled: slackEnabled,
         reminder_days: reminderDays,
         updated_at: new Date().toISOString()
       });
@@ -1464,7 +1469,47 @@ export async function updateReportNotificationSettingsAction(formData: FormData)
         summary: 'Updated report reminder settings.',
         details: {
           emailEnabled,
+          slackEnabled,
           reminderDays
+        }
+      });
+
+      await syncQueueAndRevalidate(REVALIDATE_PATHS.settings);
+    }
+  });
+}
+
+export async function updateInviteNotificationSettingsAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Updated invite reminder settings.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const emailEnabled = String(formData.get('invite_email_enabled') || '') === 'on';
+      const slackEnabled = String(formData.get('invite_slack_enabled') || '') === 'on';
+
+      const admin = createAdminClient();
+      const { error } = await admin.from('invite_notification_settings').upsert({
+        id: 1,
+        email_enabled: emailEnabled,
+        slack_enabled: slackEnabled,
+        updated_at: new Date().toISOString()
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'settings.invite_reminders.updated',
+        targetType: 'invite_notification_settings',
+        targetId: '1',
+        summary: 'Updated invite reminder settings.',
+        details: {
+          emailEnabled,
+          slackEnabled,
+          cadenceDays: 3
         }
       });
 

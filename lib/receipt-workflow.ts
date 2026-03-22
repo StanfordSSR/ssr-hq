@@ -9,12 +9,13 @@ export async function getReceiptNotificationSettings() {
   const admin = createAdminClient();
   const { data } = await admin
     .from('receipt_notification_settings')
-    .select('email_enabled, reminder_days')
+    .select('email_enabled, slack_enabled, reminder_days')
     .eq('id', 1)
     .maybeSingle();
 
   return {
     emailEnabled: data?.email_enabled ?? true,
+    slackEnabled: data?.slack_enabled ?? false,
     reminderDays: normalizeReminderDays(data?.reminder_days || [3, 7])
   } satisfies ReceiptNotificationSettings;
 }
