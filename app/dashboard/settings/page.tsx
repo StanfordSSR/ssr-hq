@@ -60,8 +60,7 @@ export default async function SettingsPage() {
     reportNotificationSettingsResponse,
     queuedNotificationsResponse,
     auditEntriesResponse,
-    allProfilesResponse,
-    slackLinksResponse
+    allProfilesResponse
   ] =
     await Promise.all([
       getAcademicCalendarSettings(),
@@ -73,10 +72,9 @@ export default async function SettingsPage() {
       admin.from('audit_log_entries').select('id, actor_id, action, target_type, target_id, summary, created_at').order('created_at', { ascending: false }).limit(40),
       admin
         .from('profiles')
-        .select('id, full_name, email, role, is_admin, is_president, is_financial_officer, active')
+        .select('id, full_name, email, slack_user_id, role, is_admin, is_president, is_financial_officer, active')
         .eq('active', true)
-        .order('full_name'),
-      admin.from('slack_user_links').select('user_id, slack_user_id')
+        .order('full_name')
     ]);
   const currentAcademicYear = calendarSettings.effectiveAcademicYear;
   const nextAcademicYear = calendarSettings.nextAcademicYear;
@@ -100,7 +98,6 @@ export default async function SettingsPage() {
   const queuedNotificationsData = queuedNotificationsResponse.data || [];
   const auditEntriesData = auditEntriesResponse.data || [];
   const allProfilesData = allProfilesResponse.data || [];
-  const slackLinks = slackLinksResponse.error ? [] : slackLinksResponse.data || [];
   const reportQuestions = reportQuestionsData.map((question) => ({
     id: question.id,
     prompt: question.prompt,
@@ -119,7 +116,6 @@ export default async function SettingsPage() {
     : { data: [] };
   const actorNameMap = new Map((actorProfiles || []).map((profile) => [profile.id, profile.full_name || 'Unknown user']));
   const allProfiles = allProfilesData || [];
-  const slackIdByUser = new Map(slackLinks.map((link) => [link.user_id, link.slack_user_id]));
   const { data: leadMemberships } = await admin
     .from('team_memberships')
     .select('user_id')
@@ -630,7 +626,7 @@ export default async function SettingsPage() {
                                 <tr key={profile.id}>
                                   <td>{profile.full_name || 'Unnamed user'}</td>
                                   <td>{profile.email || 'No email'}</td>
-                                  <td>{slackIdByUser.get(profile.id) || 'Not linked'}</td>
+                                  <td>{profile.slack_user_id || 'Not linked'}</td>
                                   <td>{roles || 'Portal user'}</td>
                                 </tr>
                               );
