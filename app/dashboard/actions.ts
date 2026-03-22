@@ -1860,7 +1860,7 @@ export async function deleteTaskAction(formData: FormData) {
 export async function sendQueuedReminderPreviewAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/settings/queue',
-    successMessage: 'Sent the test reminder email.',
+    successMessage: 'Sent the test reminder.',
     action: async () => {
       const { user } = await requireAdmin();
       const queueId = String(formData.get('queue_id') || '').trim();
@@ -1888,6 +1888,11 @@ export async function sendQueuedReminderPreviewAction(formData: FormData) {
         throw new Error('Your admin profile does not have an email address saved.');
       }
 
+      const [receiptSettings, reportSettingsResponse, inviteSettingsResponse] = await Promise.all([
+        createAdminClient().from('receipt_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle(),
+        createAdminClient().from('report_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle(),
+        createAdminClient().from('invite_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle()
+      ]);
       const { data: team } = await admin.from('teams').select('name').eq('id', queueRow.team_id).maybeSingle();
       const teamName = team?.name || 'Unknown team';
 
@@ -1898,39 +1903,85 @@ export async function sendQueuedReminderPreviewAction(formData: FormData) {
         const deadline = new Date(purchasedDate.getTime() + 14 * 24 * 60 * 60 * 1000);
         const daysOpen = Math.max(0, Math.ceil((Date.now() - purchasedDate.getTime()) / (24 * 60 * 60 * 1000)));
         const timeLeftDays = Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+        const emailEnabled = receiptSettings.data?.email_enabled ?? true;
+        const slackEnabled = receiptSettings.data?.slack_enabled ?? false;
 
-        await sendReceiptDigestEmail({
-          to: [actorProfile.email],
-          teamName,
-          items: [
-            {
-              itemName,
-              purchasedAt: formatDateLabel(purchasedDate),
-              reminderDay: Number(queueRow.payload?.reminderDay || 0),
-              deadlineLabel: formatDateLabel(deadline),
-              timeLeftLabel: timeLeftDays <= 0 ? 'due now' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left`,
-              daysOpen
+        if (slackEnabled) {
+          await sendSlackbotNotification({
+            idempotency_key: `preview-receipt:${queueId}:${user.id}`,
+            type: 'receipt_reminder',
+            team_id: queueRow.team_id,
+            team_name: teamName,
+            recipient_emails: [actorProfile.email.toLowerCase()],
+            title: `Receipt uploads needed for ${teamName}`,
+            message: `${itemName} still needs a receipt upload. ${timeLeftDays <= 0 ? 'due now' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left`}.`,
+            cta_label: 'Open expense log',
+            cta_url: `${env.siteUrl}/dashboard/expenses`,
+            metadata: {
+              preview: true,
+              queueId
             }
-          ],
-          uploadLink: `${env.siteUrl}/dashboard/expenses`
-        });
+          });
+        }
+
+        if (emailEnabled) {
+          await sendReceiptDigestEmail({
+            to: [actorProfile.email],
+            teamName,
+            items: [
+              {
+                itemName,
+                purchasedAt: formatDateLabel(purchasedDate),
+                reminderDay: Number(queueRow.payload?.reminderDay || 0),
+                deadlineLabel: formatDateLabel(deadline),
+                timeLeftLabel: timeLeftDays <= 0 ? 'due now' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left`,
+                daysOpen
+              }
+            ],
+            uploadLink: `${env.siteUrl}/dashboard/expenses`
+          });
+        }
       } else if (queueRow.notification_type === 'report') {
         const quarter = String(queueRow.payload?.quarter || 'Quarter report');
         const dueAt = new Date(String(queueRow.payload?.dueAt || queueRow.scheduled_for));
         const timeLeftDays = Math.max(0, Math.ceil((dueAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+        const emailEnabled = reportSettingsResponse.data?.email_enabled ?? true;
+        const slackEnabled = reportSettingsResponse.data?.slack_enabled ?? false;
 
-        await sendReportReminderEmail({
-          to: [actorProfile.email],
-          teamName,
-          reportTitle: formatQuarterReportTitle(quarter),
-          dueDateLabel: formatDateLabel(dueAt),
-          timeLeftLabel: timeLeftDays <= 0 ? 'due now' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left`,
-          reportLink: `${env.siteUrl}/dashboard/reports`
-        });
+        if (slackEnabled) {
+          await sendSlackbotNotification({
+            idempotency_key: `preview-report:${queueId}:${user.id}`,
+            type: 'report_reminder',
+            team_id: queueRow.team_id,
+            team_name: teamName,
+            recipient_emails: [actorProfile.email.toLowerCase()],
+            title: `${formatQuarterReportTitle(quarter)} is due`,
+            message: `${teamName} still needs to submit this report. ${timeLeftDays <= 0 ? 'Due now.' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left.`}`,
+            cta_label: 'Open report',
+            cta_url: `${env.siteUrl}/dashboard/reports`,
+            metadata: {
+              preview: true,
+              queueId
+            }
+          });
+        }
+
+        if (emailEnabled) {
+          await sendReportReminderEmail({
+            to: [actorProfile.email],
+            teamName,
+            reportTitle: formatQuarterReportTitle(quarter),
+            dueDateLabel: formatDateLabel(dueAt),
+            timeLeftLabel: timeLeftDays <= 0 ? 'due now' : `${timeLeftDays} day${timeLeftDays === 1 ? '' : 's'} left`,
+            reportLink: `${env.siteUrl}/dashboard/reports`
+          });
+        }
       } else {
         const email = String(queueRow.payload?.email || actorProfile.email);
         const fullName = String(queueRow.payload?.fullName || '');
         const role = String(queueRow.payload?.role || 'team_lead');
+        const emailEnabled = inviteSettingsResponse.data?.email_enabled ?? true;
+        const slackEnabled = inviteSettingsResponse.data?.slack_enabled ?? false;
         const generated = await admin.auth.admin.generateLink({
           type: 'invite',
           email,
@@ -1947,24 +1998,62 @@ export async function sendQueuedReminderPreviewAction(formData: FormData) {
           throw new Error(generated.error?.message || 'Failed to generate a fresh invite link.');
         }
 
-        await sendInviteReminderEmail({
-          to: actorProfile.email,
-          fullName,
-          teamName,
-          actionLink: buildInviteConfirmLink(generated.data.properties)
-        });
+        const actionLink = buildInviteConfirmLink(generated.data.properties);
+
+        if (slackEnabled) {
+          await sendSlackbotNotification({
+            idempotency_key: `preview-invite:${queueId}:${user.id}`,
+            type: 'invite_reminder',
+            team_id: queueRow.team_id,
+            team_name: teamName,
+            recipient_emails: [actorProfile.email.toLowerCase()],
+            title: 'Your SSR HQ invite is still waiting',
+            message: teamName
+              ? `You were added as a lead to ${teamName}, but your SSR HQ account still needs to be confirmed.`
+              : 'Your SSR HQ portal invite is still waiting to be confirmed.',
+            cta_label: 'Confirm account',
+            cta_url: actionLink,
+            metadata: {
+              preview: true,
+              queueId
+            }
+          });
+        }
+
+        if (emailEnabled) {
+          await sendInviteReminderEmail({
+            to: actorProfile.email,
+            fullName,
+            teamName,
+            actionLink
+          });
+        }
       }
 
       await recordAuditEvent({
         actorId: user.id,
-        action: 'email.sent',
+        action: 'notification.preview.sent',
         targetType: 'notification_queue',
         targetId: queueId,
         summary: `Sent queued ${queueRow.notification_type} reminder preview to ${actorProfile.email}.`,
         details: {
           queueId,
           notificationType: queueRow.notification_type,
-          previewRecipient: actorProfile.email
+          previewRecipient: actorProfile.email,
+          channels: {
+            email:
+              queueRow.notification_type === 'receipt'
+                ? receiptSettings.data?.email_enabled ?? true
+                : queueRow.notification_type === 'report'
+                  ? reportSettingsResponse.data?.email_enabled ?? true
+                  : inviteSettingsResponse.data?.email_enabled ?? true,
+            slack:
+              queueRow.notification_type === 'receipt'
+                ? receiptSettings.data?.slack_enabled ?? false
+                : queueRow.notification_type === 'report'
+                  ? reportSettingsResponse.data?.slack_enabled ?? false
+                  : inviteSettingsResponse.data?.slack_enabled ?? false
+          }
         }
       });
     }
