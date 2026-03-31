@@ -129,6 +129,22 @@ const financialOfficerCards = [
   }
 ];
 
+function getQuarterVisual(quarter: string) {
+  if (quarter.startsWith('Autumn')) {
+    return { label: 'Fall', mark: 'Leaf', tone: 'autumn' as const };
+  }
+
+  if (quarter.startsWith('Winter')) {
+    return { label: 'Winter', mark: 'Snow', tone: 'winter' as const };
+  }
+
+  if (quarter.startsWith('Spring')) {
+    return { label: 'Spring', mark: 'Bloom', tone: 'spring' as const };
+  }
+
+  return { label: 'Summer', mark: 'Sun', tone: 'summer' as const };
+}
+
 export default async function DashboardPage() {
   const admin = createAdminClient();
   const { user, profile: me, currentRole } = await getViewerContext();
@@ -558,14 +574,21 @@ export default async function DashboardPage() {
             </div>
 
             <div className="hq-quarter-spend-grid">
-              {quarterlySpend.map((entry) => (
-                <div key={entry.quarter} className="hq-quarter-spend-card">
-                  <span>{entry.quarter.replace('Autumn', 'Fall').replace(' Quarter', '')}</span>
+              {quarterlySpend.map((entry) => {
+                const visual = getQuarterVisual(entry.quarter);
+
+                return (
+                <div key={entry.quarter} className={`hq-quarter-spend-card hq-quarter-spend-card-${visual.tone}`}>
+                  <div className="hq-quarter-spend-head">
+                    <span>{visual.label}</span>
+                    <small>{visual.mark}</small>
+                  </div>
                   <strong>
                     ${entry.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </strong>
                 </div>
-              ))}
+              );
+              })}
             </div>
           </section>
         </section>
