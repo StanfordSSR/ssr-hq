@@ -1790,12 +1790,12 @@ export async function createTaskAction(formData: FormData) {
 
             await sendSlackbotNotification({
               idempotency_key: `task_push:${task.id}`,
-              type: 'manual_message',
+              type: 'task_assigned',
               team_id: teamContext.teamId,
               team_name: teamContext.teamName,
               recipient_emails: recipientEmails,
-              title,
-              message: details || 'Open SSR HQ to review this task.',
+              title: `${teamContext.teamName} has a new assigned task below: ${title}`,
+              message: details || 'No additional description was provided.',
               cta_label: 'Open tasks',
               cta_url: `${env.siteUrl}/dashboard/tasks`,
               metadata: {
