@@ -1726,7 +1726,7 @@ export async function createTaskAction(formData: FormData) {
           title,
           details: details || null,
           recipient_scope: recipientScope === 'all_teams' ? 'all_teams' : 'specific_teams',
-          push_notification: pushNotification,
+          push_notification: pushNotification || slackPushNotification,
           created_by: user.id,
           is_active: true
         })
@@ -1747,7 +1747,7 @@ export async function createTaskAction(formData: FormData) {
         }
       }
 
-      if (pushNotification) {
+      if (pushNotification || slackPushNotification) {
         const recipientTeamIds =
           recipientScope === 'all_teams'
             ? (
@@ -1790,7 +1790,7 @@ export async function createTaskAction(formData: FormData) {
 
             await sendSlackbotNotification({
               idempotency_key: `task_push:${task.id}`,
-              type: 'task_assigned',
+              type: 'manual_message',
               team_id: teamContext.teamId,
               team_name: teamContext.teamName,
               recipient_emails: recipientEmails,
