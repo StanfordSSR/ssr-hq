@@ -307,7 +307,7 @@ async function syncReportQueue() {
   }
 }
 
-async function syncInviteQueue() {
+export async function syncInviteQueue() {
   const admin = createAdminClient();
   const { data: inviteSettings } = await admin
     .from('invite_notification_settings')

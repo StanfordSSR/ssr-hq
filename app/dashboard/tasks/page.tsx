@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
 import { completeTaskAction, createTaskAction, deleteTaskAction } from '@/app/dashboard/actions';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
+import { getLeadTeamIds } from '@/lib/lead-state';
 
 type Team = {
   id: string;
@@ -44,13 +44,12 @@ type ReceiptPurchase = {
 };
 
 export default async function TasksPage() {
-  const supabase = await createClient();
   const admin = createAdminClient();
   const { user, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
   const isPresident = currentRole === 'president';
   const isPrivilegedViewer = isAdmin || isPresident;
-  const reportState = await getNextReportState(new Date());
+  const reportState = await getNextReportState();
 
   const { data: teamsData } = await admin.from('teams').select('id, name').order('name');
   const teams = (teamsData || []) as Team[];
@@ -86,14 +85,7 @@ export default async function TasksPage() {
   } | null = null;
 
   if (!isPrivilegedViewer) {
-    const { data: myMemberships } = await admin
-      .from('team_memberships')
-      .select('team_id')
-      .eq('user_id', user.id)
-      .eq('team_role', 'lead')
-      .eq('is_active', true);
-
-    const myTeamIds = new Set((myMemberships || []).map((membership) => membership.team_id));
+    const myTeamIds = new Set(await getLeadTeamIds(user.id));
     const completedTaskIds = new Set(
       completions
         .filter((completion) => myTeamIds.has(completion.team_id))

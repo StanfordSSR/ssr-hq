@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { invitePortalMemberAction } from '@/app/dashboard/actions';
 import { AdminMemberDirectory } from '@/components/admin-member-directory';
@@ -12,6 +11,7 @@ import {
   profileHasLeadRole,
   profileHasPresidentRole
 } from '@/lib/auth';
+import { getLeadTeamIds } from '@/lib/lead-state';
 
 type Profile = {
   id: string;
@@ -281,15 +281,7 @@ export default async function ManageMembersPage() {
     );
   }
 
-  const { data: myLeadMembershipsData } = await admin
-    .from('team_memberships')
-    .select('id, team_id, user_id, team_role, is_active')
-    .eq('user_id', user.id)
-    .eq('team_role', 'lead')
-    .eq('is_active', true);
-
-  const myLeadMemberships = (myLeadMembershipsData || []) as Membership[];
-  const primaryTeamId = myLeadMemberships[0]?.team_id;
+  const primaryTeamId = (await getLeadTeamIds(user.id))[0];
 
   if (!primaryTeamId) {
     redirect('/dashboard');
@@ -327,14 +319,11 @@ export default async function ManageMembersPage() {
 
   const rosterMembers = (rosterData || []) as RosterMember[];
   const leadIds = leadMemberships.map((membership) => membership.user_id);
-  const [{ data: leadProfilesData }, { data: leadAuthUsers }] = await Promise.all([
-    leadIds.length
-      ? admin.from('profiles').select('id, full_name').in('id', leadIds)
-      : Promise.resolve({ data: [] }),
-    leadIds.length ? admin.auth.admin.listUsers() : Promise.resolve({ data: { users: [] } })
-  ]);
+  const { data: leadProfilesData } = await (leadIds.length
+    ? admin.from('profiles').select('id, full_name, email').in('id', leadIds)
+    : Promise.resolve({ data: [] }));
   const leadProfileMap = new Map((leadProfilesData || []).map((profile) => [profile.id, profile.full_name || 'Unnamed lead']));
-  const leadEmailMap = new Map((leadAuthUsers?.users || []).map((authUser) => [authUser.id, authUser.email || '']));
+  const leadEmailMap = new Map((leadProfilesData || []).map((profile) => [profile.id, profile.email || 'No email found']));
   const workspaceMembers: LeadWorkspaceMember[] = [
     ...leadMemberships.map((membership) => ({
       id: `lead-${membership.user_id}`,

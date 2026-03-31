@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
-import { syncNotificationQueue } from '@/lib/notification-queue';
+import { syncInviteQueue } from '@/lib/notification-queue';
 import { env } from '@/lib/env';
 import { getViewerContext } from '@/lib/auth';
 
@@ -58,6 +58,12 @@ function buildStatusPath(path: string, status: 'success' | 'error', message: str
   url.searchParams.set('status', status);
   url.searchParams.set('message', message);
   return `${url.pathname}${url.search}`;
+}
+
+function revalidatePaths(paths: string[]) {
+  for (const path of new Set(paths)) {
+    revalidatePath(path);
+  }
 }
 
 async function redirectWithActionStatus(status: 'success' | 'error', message: string, fallbackPath: string) {
@@ -185,10 +191,10 @@ export async function createTeamAction(formData: FormData) {
         }
       });
 
-      await syncNotificationQueue();
-      revalidatePath('/dashboard');
-      revalidatePath('/dashboard/teams');
-      revalidatePath('/dashboard/members');
+      if (initialLeadIds.length > 0) {
+        await syncInviteQueue();
+      }
+      revalidatePaths(['/dashboard', '/dashboard/teams', '/dashboard/members']);
     }
   });
 }
@@ -312,10 +318,8 @@ export async function assignExistingLeadAction(formData: FormData) {
         }
       });
 
-      await syncNotificationQueue();
-      revalidatePath('/dashboard');
-      revalidatePath('/dashboard/teams');
-      revalidatePath('/dashboard/members');
+      await syncInviteQueue();
+      revalidatePaths(['/dashboard', '/dashboard/teams', '/dashboard/members']);
     }
   });
 }
@@ -364,10 +368,8 @@ export async function removeLeadFromTeamAction(formData: FormData) {
         }
       });
 
-      await syncNotificationQueue();
-      revalidatePath('/dashboard');
-      revalidatePath('/dashboard/teams');
-      revalidatePath('/dashboard/members');
+      await syncInviteQueue();
+      revalidatePaths(['/dashboard', '/dashboard/teams', '/dashboard/members']);
     }
   });
 }

@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { ClearExpenseLogForm } from '@/components/clear-expense-log-form';
@@ -10,6 +9,7 @@ import { PurchaseEntryActions } from '@/components/purchase-entry-actions';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
+import { getLeadTeamIds } from '@/lib/lead-state';
 
 type Team = {
   id: string;
@@ -90,16 +90,7 @@ export default async function ExpenseLogPage({
   const isFinancialOfficer = currentRole === 'financial_officer';
   const isReadOnlyFinanceViewer = isPresident || isFinancialOfficer;
   const isPrivilegedViewer = isAdmin || isReadOnlyFinanceViewer;
-  const { data: memberships } = isPrivilegedViewer
-    ? { data: [] }
-    : await admin
-        .from('team_memberships')
-        .select('team_id')
-        .eq('user_id', user.id)
-        .eq('team_role', 'lead')
-        .eq('is_active', true);
-
-  const myTeamIds = isPrivilegedViewer ? [] : (memberships || []).map((membership) => membership.team_id);
+  const myTeamIds = isPrivilegedViewer ? [] : await getLeadTeamIds(user.id);
   const { data: teamsData } = isPrivilegedViewer
     ? await admin.from('teams').select('id, name').order('name')
     : await admin.from('teams').select('id, name').in('id', myTeamIds).order('name');

@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { PurchaseImport } from '@/components/purchase-import';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
+import { getLeadTeamIds } from '@/lib/lead-state';
 
 type Team = {
   id: string;
@@ -46,16 +46,7 @@ export default async function PurchasesPage() {
   const isFinancialOfficer = currentRole === 'financial_officer';
   const isPrivilegedViewer = isAdmin || isPresident || isFinancialOfficer;
 
-  const { data: memberships } = isPrivilegedViewer
-    ? { data: [] }
-    : await admin
-        .from('team_memberships')
-        .select('team_id')
-        .eq('user_id', user.id)
-        .eq('team_role', 'lead')
-        .eq('is_active', true);
-
-  const myTeamIds = isPrivilegedViewer ? [] : (memberships || []).map((membership) => membership.team_id);
+  const myTeamIds = isPrivilegedViewer ? [] : await getLeadTeamIds(user.id);
   const { data: teamsData } = isPrivilegedViewer
     ? await admin.from('teams').select('id, name').order('name')
     : await admin.from('teams').select('id, name').in('id', myTeamIds).order('name');

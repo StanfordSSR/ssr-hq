@@ -1,13 +1,13 @@
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, getCurrentAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { updateLeadTeamDescriptionAction } from '@/app/dashboard/teams/actions';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { formatQuarterReportTitle } from '@/lib/reports';
 import { getViewerContext } from '@/lib/auth';
+import { getLeadTeamIds } from '@/lib/lead-state';
 
 type Team = {
   id: string;
@@ -130,7 +130,6 @@ const financialOfficerCards = [
 ];
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
   const admin = createAdminClient();
   const { user, profile: me, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
@@ -202,15 +201,8 @@ export default async function DashboardPage() {
     );
   }
 
-  const { data: membershipsData } = await supabase
-    .from('team_memberships')
-    .select('id, team_id, user_id, team_role, is_active')
-    .eq('is_active', true)
-    .eq('user_id', user.id)
-    .eq('team_role', 'lead');
-
-  const myMemberships = (membershipsData || []) as Membership[];
-  const primaryTeamId = myMemberships[0]?.team_id;
+  const myTeamIds = await getLeadTeamIds(user.id);
+  const primaryTeamId = myTeamIds[0];
 
   if (!primaryTeamId) {
     return (
@@ -227,7 +219,7 @@ export default async function DashboardPage() {
   }
 
   const [{ data: team }, { data: teamMembershipsData }, { data: rosterMembersData }, reportState, cycle] = await Promise.all([
-    supabase
+    admin
       .from('teams')
       .select('id, name, description, logo_url, is_active, created_at')
       .eq('id', primaryTeamId)
@@ -241,7 +233,7 @@ export default async function DashboardPage() {
       .from('team_roster_members')
       .select('id, team_id')
       .eq('team_id', primaryTeamId),
-    getNextReportState(new Date()),
+    getNextReportState(),
     getCurrentAcademicYear()
   ]);
 

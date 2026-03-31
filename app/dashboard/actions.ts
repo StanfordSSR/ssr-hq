@@ -54,7 +54,7 @@ import {
   normalizeReportQuestions
 } from '@/lib/reports';
 import { recordAuditEvent } from '@/lib/audit';
-import { syncNotificationQueue } from '@/lib/notification-queue';
+import { syncInviteQueue, syncNotificationQueue } from '@/lib/notification-queue';
 import { getSlackbotFallbackContext, sendSlackbotNotification } from '@/lib/slackbot';
 
 const REVALIDATE_PATHS = {
@@ -83,6 +83,11 @@ function revalidatePaths(paths: string[]) {
 
 async function syncQueueAndRevalidate(paths: string[]) {
   await syncNotificationQueue();
+  revalidatePaths(paths);
+}
+
+async function syncInviteQueueAndRevalidate(paths: string[]) {
+  await syncInviteQueue();
   revalidatePaths(paths);
 }
 
@@ -2245,7 +2250,7 @@ export async function invitePortalMemberAction(formData: FormData) {
         }
       });
 
-      await syncQueueAndRevalidate(REVALIDATE_PATHS.teamsAndMembers);
+      await syncInviteQueueAndRevalidate(REVALIDATE_PATHS.teamsAndMembers);
     }
   });
 }

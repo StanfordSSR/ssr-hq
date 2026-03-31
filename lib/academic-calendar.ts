@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export type ReportingWindow = {
@@ -126,7 +127,7 @@ function isMonthDay(value: string) {
   return /^\d{2}-\d{2}$/.test(value);
 }
 
-export async function getAcademicCalendarTemplate(): Promise<AcademicCalendarTemplate> {
+const getAcademicCalendarTemplateCached = cache(async function getAcademicCalendarTemplateCached(): Promise<AcademicCalendarTemplate> {
   const admin = createAdminClient();
   const { data } = await admin
     .from('academic_calendar_templates')
@@ -145,6 +146,10 @@ export async function getAcademicCalendarTemplate(): Promise<AcademicCalendarTem
     springEndMonthDay: isMonthDay(data.spring_end_md) ? data.spring_end_md : DEFAULT_TEMPLATE.springEndMonthDay,
     summerEndMonthDay: isMonthDay(data.summer_end_md) ? data.summer_end_md : DEFAULT_TEMPLATE.summerEndMonthDay
   };
+});
+
+export async function getAcademicCalendarTemplate(): Promise<AcademicCalendarTemplate> {
+  return getAcademicCalendarTemplateCached();
 }
 
 function getAcademicYearStartYear(now: Date, template: AcademicCalendarTemplate) {
@@ -178,13 +183,8 @@ function buildWindowsForStartYear(startYear: number, template: AcademicCalendarT
   }));
 }
 
-export async function getCurrentAcademicYear(now = new Date()) {
-  const settings = await getAcademicCalendarSettings(now);
-  return settings.effectiveAcademicYear;
-}
-
-export async function getAcademicCalendarSettings(now = new Date()): Promise<AcademicCalendarSettings> {
-  const template = await getAcademicCalendarTemplate();
+async function resolveAcademicCalendarSettings(now: Date): Promise<AcademicCalendarSettings> {
+  const template = await getAcademicCalendarTemplateCached();
   const derivedAcademicYear = formatAcademicYearFromStartYear(getAcademicYearStartYear(now, template));
   const admin = createAdminClient();
   const { data } = await admin
@@ -208,8 +208,30 @@ export async function getAcademicCalendarSettings(now = new Date()): Promise<Aca
   };
 }
 
-export async function getReportingWindows(academicYear?: string) {
-  const template = await getAcademicCalendarTemplate();
+const getAcademicCalendarSettingsCached = cache(async function getAcademicCalendarSettingsCached() {
+  return resolveAcademicCalendarSettings(new Date());
+});
+
+export async function getAcademicCalendarSettings(now?: Date): Promise<AcademicCalendarSettings> {
+  return now ? resolveAcademicCalendarSettings(now) : getAcademicCalendarSettingsCached();
+}
+
+const getCurrentAcademicYearCached = cache(async function getCurrentAcademicYearCached() {
+  const settings = await getAcademicCalendarSettingsCached();
+  return settings.effectiveAcademicYear;
+});
+
+export async function getCurrentAcademicYear(now?: Date) {
+  if (now) {
+    const settings = await resolveAcademicCalendarSettings(now);
+    return settings.effectiveAcademicYear;
+  }
+
+  return getCurrentAcademicYearCached();
+}
+
+export const getReportingWindows = cache(async function getReportingWindows(academicYear?: string) {
+  const template = await getAcademicCalendarTemplateCached();
   let startYear = getAcademicYearStartYear(new Date(), template);
   if (academicYear) {
     const parsed = Number(academicYear.slice(0, 4));
@@ -218,15 +240,15 @@ export async function getReportingWindows(academicYear?: string) {
     }
   }
   return buildWindowsForStartYear(startYear, template);
-}
+});
 
 export async function getReportingWindow(academicYear: string, quarter: string) {
   const windows = await getReportingWindows(academicYear);
   return windows.find((window) => window.quarter === quarter) ?? null;
 }
 
-export async function getNextReportState(now = new Date()): Promise<NextReportState> {
-  const template = await getAcademicCalendarTemplate();
+async function resolveNextReportState(now: Date): Promise<NextReportState> {
+  const template = await getAcademicCalendarTemplateCached();
   const startYear = getAcademicYearStartYear(now, template);
   const windows = buildWindowsForStartYear(startYear, template);
   const currentWindow = windows.find((window) => now >= window.start && now <= window.end) ?? null;
@@ -274,4 +296,12 @@ export async function getNextReportState(now = new Date()): Promise<NextReportSt
     message: `Reporting opens on ${formatDateLabel(upcoming.openAt)}.`,
     countdownLabel: formatCountdown(upcoming.openAt, now)
   };
+}
+
+const getNextReportStateCached = cache(async function getNextReportStateCached() {
+  return resolveNextReportState(new Date());
+});
+
+export async function getNextReportState(now?: Date): Promise<NextReportState> {
+  return now ? resolveNextReportState(now) : getNextReportStateCached();
 }
