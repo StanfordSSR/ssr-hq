@@ -131,18 +131,18 @@ const financialOfficerCards = [
 
 function getQuarterVisual(quarter: string) {
   if (quarter.startsWith('Autumn')) {
-    return { label: 'Fall', mark: 'Leaf', tone: 'autumn' as const };
+    return { label: 'Fall', mark: '🍁', tone: 'autumn' as const };
   }
 
   if (quarter.startsWith('Winter')) {
-    return { label: 'Winter', mark: 'Snow', tone: 'winter' as const };
+    return { label: 'Winter', mark: '❄', tone: 'winter' as const };
   }
 
   if (quarter.startsWith('Spring')) {
-    return { label: 'Spring', mark: 'Bloom', tone: 'spring' as const };
+    return { label: 'Spring', mark: '🌸', tone: 'spring' as const };
   }
 
-  return { label: 'Summer', mark: 'Sun', tone: 'summer' as const };
+  return { label: 'Summer', mark: '☀', tone: 'summer' as const };
 }
 
 export default async function DashboardPage() {
