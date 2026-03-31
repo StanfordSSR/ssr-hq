@@ -1691,6 +1691,7 @@ export async function createTaskAction(formData: FormData) {
       const details = String(formData.get('details') || '').trim();
       const recipientScope = String(formData.get('recipient_scope') || 'specific_teams').trim();
       const pushNotification = String(formData.get('push_notification') || '') === 'on';
+      const slackPushNotification = String(formData.get('slack_push_notification') || '') === 'on';
       const teamIds = formData
         .getAll('team_ids')
         .map((value) => String(value).trim())
@@ -1760,34 +1761,80 @@ export async function createTaskAction(formData: FormData) {
         const uniqueTeamIds = Array.from(new Set(recipientTeamIds));
 
         if (uniqueTeamIds.length > 0) {
-          const { data: leadMemberships } = await admin
-            .from('team_memberships')
-            .select('user_id, team_id')
-            .in('team_id', uniqueTeamIds)
-            .eq('team_role', 'lead')
-            .eq('is_active', true);
+          const [{ data: leadMemberships }, { data: leadProfiles }, { data: taskTeams }] = await Promise.all([
+            admin
+              .from('team_memberships')
+              .select('user_id, team_id')
+              .in('team_id', uniqueTeamIds)
+              .eq('team_role', 'lead')
+              .eq('is_active', true),
+            admin
+              .from('profiles')
+              .select('id, email')
+              .not('email', 'is', null),
+            uniqueTeamIds.length === 1
+              ? admin.from('teams').select('id, name').in('id', uniqueTeamIds)
+              : Promise.resolve({ data: [] as Array<{ id: string; name: string }> })
+          ]);
 
           const uniqueLeadIds = Array.from(new Set((leadMemberships || []).map((membership) => membership.user_id)));
-          const { data: authUsers } = await admin.auth.admin.listUsers();
-          const emailMap = new Map(authUsers.users.map((authUser) => [authUser.id, authUser.email || '']));
+          const emailMap = new Map((leadProfiles || []).map((profile) => [profile.id, profile.email || '']));
           const recipientEmails = uniqueLeadIds.map((leadId) => emailMap.get(leadId) || '').filter(Boolean);
 
-          await sendTaskEmails({
-            to: recipientEmails,
-            title,
-            details: details || 'Open SSR HQ to review this task.'
-          });
+          if (slackPushNotification && recipientEmails.length > 0) {
+            const fallbackContext = getSlackbotFallbackContext();
+            const singleTeam = (taskTeams || [])[0];
+            const teamContext = singleTeam
+              ? { teamId: singleTeam.id, teamName: singleTeam.name }
+              : fallbackContext;
 
-          await recordAuditEvent({
-            actorId: user.id,
-            action: 'email.sent',
-            targetType: 'task',
-            targetId: task.id,
-            summary: `Sent task email for "${title}".`,
-            details: {
-              recipientCount: recipientEmails.length
-            }
-          });
+            await sendSlackbotNotification({
+              idempotency_key: `task_push:${task.id}`,
+              type: 'task_assigned',
+              team_id: teamContext.teamId,
+              team_name: teamContext.teamName,
+              recipient_emails: recipientEmails,
+              title,
+              message: details || 'Open SSR HQ to review this task.',
+              cta_label: 'Open tasks',
+              cta_url: `${env.siteUrl}/dashboard/tasks`,
+              metadata: {
+                taskId: task.id,
+                recipientScope,
+                teamIds: uniqueTeamIds
+              }
+            });
+
+            await recordAuditEvent({
+              actorId: user.id,
+              action: 'slack.sent',
+              targetType: 'task',
+              targetId: task.id,
+              summary: `Sent task Slack push for "${title}".`,
+              details: {
+                recipientCount: recipientEmails.length
+              }
+            });
+          }
+
+          if (recipientEmails.length > 0) {
+            await sendTaskEmails({
+              to: recipientEmails,
+              title,
+              details: details || 'Open SSR HQ to review this task.'
+            });
+
+            await recordAuditEvent({
+              actorId: user.id,
+              action: 'email.sent',
+              targetType: 'task',
+              targetId: task.id,
+              summary: `Sent task email for "${title}".`,
+              details: {
+                recipientCount: recipientEmails.length
+              }
+            });
+          }
         }
       }
 
@@ -1800,6 +1847,7 @@ export async function createTaskAction(formData: FormData) {
         details: {
           recipientScope,
           pushNotification,
+          slackPushNotification,
           teamIds: allowedTeamIds
         }
       });

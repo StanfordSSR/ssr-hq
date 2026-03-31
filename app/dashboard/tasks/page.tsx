@@ -206,6 +206,15 @@ export default async function TasksPage() {
                 </span>
               </label>
 
+              <label className="hq-switch">
+                <input type="checkbox" name="slack_push_notification" />
+                <span className="hq-switch-track" aria-hidden="true" />
+                <span className="hq-switch-copy">
+                  <strong>Also send Slack DM</strong>
+                  <small>When push notification is on, also DM the task to leads through the HQ bot.</small>
+                </span>
+              </label>
+
               <div className="button-row">
                 <button className="button" type="submit">
                   Assign task
