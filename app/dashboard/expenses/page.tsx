@@ -331,10 +331,12 @@ export default async function ExpenseLogPage({
                   })}
                 </strong>
               </div>
-              <div className="hq-purchase-stat">
-                <span>Allocated</span>
-                <strong>${(allocatedBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
-              </div>
+              {isPrivilegedViewer ? (
+                <div className="hq-purchase-stat">
+                  <span>Allocated</span>
+                  <strong>${(allocatedBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                </div>
+              ) : null}
               <div className="hq-purchase-stat">
                 <span>{rawRange === 'last_90_days' ? 'Spent in range' : 'Spent'}</span>
                 <strong>${(spendInRangeCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
@@ -348,7 +350,7 @@ export default async function ExpenseLogPage({
                 <strong>${(remainingAllocatedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
-                <span>{rawRange === 'last_90_days' ? 'Already spent before range' : 'Spent to date'}</span>
+                <span>Spent prior to time range</span>
                 <strong>${(alreadySpentBeforeRangeCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
