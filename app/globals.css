@@ -1594,6 +1594,36 @@ tr:last-child td {
   margin-top: 22px;
 }
 
+.hq-quarter-spend-block {
+  margin-top: 28px;
+}
+
+.hq-quarter-spend-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hq-quarter-spend-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.hq-quarter-spend-card span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hq-quarter-spend-card strong {
+  font-size: 1rem;
+}
+
 .hq-roster-top {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);

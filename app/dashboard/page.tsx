@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getNextReportState, getCurrentAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
+import { getNextReportState, getCurrentAcademicYear, getReportingWindows, formatDateLabel, formatPacificDateKey } from '@/lib/academic-calendar';
 import { updateLeadTeamDescriptionAction } from '@/app/dashboard/teams/actions';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { formatQuarterReportTitle } from '@/lib/reports';
@@ -244,7 +244,15 @@ export default async function DashboardPage() {
   const teamMemberships = (teamMembershipsData || []) as Membership[];
   const rosterMembers = (rosterMembersData || []) as RosterMember[];
   const memberCount = teamMemberships.length + rosterMembers.length;
-  const [{ data: teamBudget }, { data: purchasesData }, { data: pendingReceiptsData }, { data: tasksData }, { data: taskRecipients }, { data: taskCompletions }] =
+  const [
+    { data: teamBudget },
+    { data: purchasesData },
+    { data: pendingReceiptsData },
+    { data: tasksData },
+    { data: taskRecipients },
+    { data: taskCompletions },
+    reportingWindows
+  ] =
     await Promise.all([
       admin
         .from('team_budgets')
@@ -254,7 +262,7 @@ export default async function DashboardPage() {
         .maybeSingle(),
       admin
         .from('purchase_logs')
-        .select('amount_cents')
+        .select('amount_cents, purchased_at')
         .eq('team_id', team.id)
         .eq('academic_year', cycle),
       admin
@@ -271,7 +279,8 @@ export default async function DashboardPage() {
         .eq('is_active', true)
         .order('created_at', { ascending: false }),
       admin.from('task_recipients').select('task_id, team_id').eq('team_id', team.id),
-      admin.from('task_completions').select('task_id').eq('team_id', team.id)
+      admin.from('task_completions').select('task_id').eq('team_id', team.id),
+      getReportingWindows(cycle)
     ]);
   const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
   const completedTaskIds = new Set((taskCompletions || []).map((entry) => entry.task_id));
@@ -279,10 +288,28 @@ export default async function DashboardPage() {
     (task) => !completedTaskIds.has(task.id) && (task.recipient_scope === 'all_teams' || recipientTaskIds.has(task.id))
   );
   const annualBudget = teamBudget?.annual_budget_cents ? teamBudget.annual_budget_cents / 100 : 0;
-  const spent = ((purchasesData || []) as Array<{ amount_cents: number }>).reduce(
+  const purchases = (purchasesData || []) as Array<{ amount_cents: number; purchased_at: string }>;
+  const spent = purchases.reduce(
     (sum, purchase) => sum + purchase.amount_cents / 100,
     0
   );
+  const quarterlySpend = reportingWindows.map((window) => {
+    const startKey = formatPacificDateKey(window.start);
+    const endKey = formatPacificDateKey(window.end);
+    const totalCents = purchases.reduce((sum, purchase) => {
+      const purchaseKey = formatPacificDateKey(new Date(purchase.purchased_at));
+      if (purchaseKey < startKey || purchaseKey > endKey) {
+        return sum;
+      }
+
+      return sum + purchase.amount_cents;
+    }, 0);
+
+    return {
+      quarter: window.quarter,
+      total: totalCents / 100
+    };
+  });
   const pendingReceipts = (pendingReceiptsData || []) as PendingReceipt[];
   const spentPercent = annualBudget > 0 ? Math.min(100, Math.round((spent / annualBudget) * 100)) : 0;
   const { data: reportRecord } = await admin
@@ -523,6 +550,24 @@ export default async function DashboardPage() {
               </div>
             </section>
           </div>
+
+          <section className="hq-lead-block hq-quarter-spend-block">
+            <div className="hq-block-head">
+              <h3>Money spent per quarter</h3>
+              <span className="hq-inline-note">{cycle} cycle</span>
+            </div>
+
+            <div className="hq-quarter-spend-grid">
+              {quarterlySpend.map((entry) => (
+                <div key={entry.quarter} className="hq-quarter-spend-card">
+                  <span>{entry.quarter.replace('Autumn', 'Fall').replace(' Quarter', '')}</span>
+                  <strong>
+                    ${entry.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          </section>
         </section>
       </div>
     </div>
