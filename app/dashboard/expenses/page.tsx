@@ -323,8 +323,13 @@ export default async function ExpenseLogPage({
 
             <div className="hq-expense-metrics">
               <div className="hq-purchase-stat">
-                <span>Total club budget</span>
-                <strong>${(clubBudgetTotalCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                <span>{isPrivilegedViewer ? 'Total club budget' : 'Team budget'}</span>
+                <strong>
+                  $
+                  {((isPrivilegedViewer ? clubBudgetTotalCents : allocatedBudgetCents) / 100).toLocaleString(undefined, {
+                    minimumFractionDigits: 2
+                  })}
+                </strong>
               </div>
               <div className="hq-purchase-stat">
                 <span>Allocated</span>
