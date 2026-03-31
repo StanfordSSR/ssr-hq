@@ -39,6 +39,7 @@ const financialOfficerNav = [
 
 const leadNav = [
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard/purchases', label: 'Log Purchase', emphasis: 'primary' as const },
   { href: '/dashboard/members', label: 'Manage Members' },
   { href: '/dashboard/expenses', label: 'Expense Log' },
   { href: '/dashboard/tasks', label: 'Tasks', notificationKey: 'tasks' as const }
@@ -90,7 +91,11 @@ export default async function DashboardLayout({
 
             <nav className="hq-nav" aria-label="HQ navigation">
               {nav.map((item) => (
-                <Link key={item.href} href={item.href} className="hq-nav-link">
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`hq-nav-link${'emphasis' in item && item.emphasis === 'primary' ? ' hq-nav-link-primary' : ''}`}
+                >
                   {item.label}
                   {'notificationKey' in item && item.notificationKey === 'tasks' && hasPendingLeadTasks ? (
                     <span className="hq-nav-dot" aria-hidden="true" />

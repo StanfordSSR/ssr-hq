@@ -736,6 +736,21 @@ tr:last-child td {
   color: var(--text);
 }
 
+.hq-nav-link-primary {
+  background: #f7eded;
+  border: 1px solid #e6d0d0;
+  border-radius: 999px;
+  color: var(--cardinal);
+  font-weight: 700;
+  padding-inline: 14px;
+}
+
+.hq-nav-link-primary:hover {
+  background: #f3e3e3;
+  color: var(--cardinal-dark);
+  border-color: #ddc1c1;
+}
+
 .hq-nav-dot {
   width: 7px;
   height: 7px;
