@@ -12,6 +12,7 @@ type RosterMember = {
   id: string;
   full_name: string;
   stanford_email: string;
+  slack_user_id?: string | null;
   joined_month: number | null;
   joined_year: number | null;
   source: 'lead' | 'recorded';
@@ -27,7 +28,7 @@ type LeadRosterWorkspaceProps = {
 
 type EditingState = {
   memberId: string;
-  field: 'full_name' | 'stanford_email';
+  field: 'full_name' | 'stanford_email' | 'slack_user_id';
 } | null;
 
 export function LeadRosterWorkspace({
@@ -49,6 +50,7 @@ export function LeadRosterWorkspace({
   const addFormRef = useRef<HTMLFormElement | null>(null);
   const nameFormRefs = useRef<Record<string, HTMLFormElement | null>>({});
   const emailFormRefs = useRef<Record<string, HTMLFormElement | null>>({});
+  const slackFormRefs = useRef<Record<string, HTMLFormElement | null>>({});
 
   const recordedMemberCount = members.filter((member) => member.source === 'recorded').length;
   const visibleLeadCount = members.filter((member) => member.source === 'lead').length;
@@ -141,6 +143,13 @@ export function LeadRosterWorkspace({
               </div>
 
               <div className="field">
+                <label className="label" htmlFor="member-slack-user-id">
+                  Slack ID
+                </label>
+                <input className="input" id="member-slack-user-id" name="slack_user_id" placeholder="U0123456789" />
+              </div>
+
+              <div className="field">
                 <label className="label" htmlFor="joined-month">
                   Joined month
                 </label>
@@ -215,7 +224,7 @@ export function LeadRosterWorkspace({
       <section className="hq-lead-block hq-roster-list-block">
         <div className="hq-block-head">
           <h3>All recorded members</h3>
-          <span className="hq-inline-note">Double-click name or email to edit</span>
+          <span className="hq-inline-note">Double-click name, email, or Slack ID to edit</span>
         </div>
 
         {members.length > 0 ? (
@@ -223,6 +232,7 @@ export function LeadRosterWorkspace({
             {members.map((member) => {
               const editingName = editing?.memberId === member.id && editing.field === 'full_name';
               const editingEmail = editing?.memberId === member.id && editing.field === 'stanford_email';
+              const editingSlack = editing?.memberId === member.id && editing.field === 'slack_user_id';
               const isLeadAccount = member.source === 'lead';
 
               return (
@@ -260,6 +270,7 @@ export function LeadRosterWorkspace({
                     >
                       <input type="hidden" name="member_id" value={isLeadAccount ? '' : member.id} />
                       <input type="hidden" name="stanford_email" value={member.stanford_email} />
+                      <input type="hidden" name="slack_user_id" value={member.slack_user_id || ''} />
                       {editingName && !isLeadAccount ? (
                         <input
                           className="input hq-roster-inline-input"
@@ -311,6 +322,7 @@ export function LeadRosterWorkspace({
                     >
                       <input type="hidden" name="member_id" value={isLeadAccount ? '' : member.id} />
                       <input type="hidden" name="full_name" value={member.full_name} />
+                      <input type="hidden" name="slack_user_id" value={member.slack_user_id || ''} />
                       {editingEmail && !isLeadAccount ? (
                         <input
                           className="input hq-roster-inline-input"
@@ -350,6 +362,60 @@ export function LeadRosterWorkspace({
                             title={isLeadAccount ? 'Lead accounts are managed through portal invites' : 'Double-click to edit'}
                           >
                             {member.stanford_email}
+                          </button>
+                        </>
+                      )}
+                    </form>
+
+                    <form
+                      action={handleUpdateSubmit}
+                      className="hq-roster-inline-form"
+                      ref={(node) => {
+                        slackFormRefs.current[member.id] = node;
+                      }}
+                    >
+                      <input type="hidden" name="member_id" value={isLeadAccount ? '' : member.id} />
+                      <input type="hidden" name="full_name" value={member.full_name} />
+                      <input type="hidden" name="stanford_email" value={member.stanford_email} />
+                      {editingSlack && !isLeadAccount ? (
+                        <input
+                          className="input hq-roster-inline-input"
+                          name="slack_user_id"
+                          defaultValue={member.slack_user_id || ''}
+                          autoFocus
+                          placeholder="No Slack ID"
+                          onBlur={(event) => {
+                            const value = event.currentTarget.value.trim();
+                            if (value !== (member.slack_user_id || '')) {
+                              slackFormRefs.current[member.id]?.requestSubmit();
+                            } else {
+                              setEditing(null);
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              slackFormRefs.current[member.id]?.requestSubmit();
+                            }
+                            if (event.key === 'Escape') {
+                              setEditing(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <input type="hidden" name="slack_user_id" value={member.slack_user_id || ''} />
+                          <button
+                            className="hq-roster-inline-text hq-roster-inline-text-muted"
+                            type="button"
+                            onDoubleClick={() => {
+                              if (!isLeadAccount) {
+                                setEditing({ memberId: member.id, field: 'slack_user_id' });
+                              }
+                            }}
+                            title={isLeadAccount ? 'Lead accounts sync through portal profiles' : 'Double-click to edit'}
+                          >
+                            {member.slack_user_id || 'No Slack ID'}
                           </button>
                         </>
                       )}

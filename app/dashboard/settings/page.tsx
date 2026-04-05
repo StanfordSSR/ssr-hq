@@ -62,7 +62,8 @@ export default async function SettingsPage() {
     inviteNotificationSettingsResponse,
     queuedNotificationsResponse,
     auditEntriesResponse,
-    allProfilesResponse
+    allProfilesResponse,
+    rosterMembersResponse
   ] =
     await Promise.all([
       getAcademicCalendarSettings(),
@@ -77,6 +78,10 @@ export default async function SettingsPage() {
         .from('profiles')
         .select('id, full_name, email, slack_user_id, role, is_admin, is_president, is_financial_officer, active')
         .eq('active', true)
+        .order('full_name'),
+      admin
+        .from('team_roster_members')
+        .select('id, team_id, full_name, stanford_email, slack_user_id, teams(name)')
         .order('full_name')
     ]);
   const currentAcademicYear = calendarSettings.effectiveAcademicYear;
@@ -120,6 +125,14 @@ export default async function SettingsPage() {
     : { data: [] };
   const actorNameMap = new Map((actorProfiles || []).map((profile) => [profile.id, profile.full_name || 'Unknown user']));
   const allProfiles = allProfilesData || [];
+  const rosterMembers = (rosterMembersResponse.data || []) as Array<{
+    id: string;
+    team_id: string;
+    full_name: string;
+    stanford_email: string;
+    slack_user_id?: string | null;
+    teams?: { name: string } | { name: string }[] | null;
+  }>;
   const { data: leadMemberships } = await admin
     .from('team_memberships')
     .select('user_id')
@@ -130,6 +143,37 @@ export default async function SettingsPage() {
   const presidentCandidates = allProfiles.filter((profile) => !profileHasPresidentRole(profile));
   const financialOfficers = allProfiles.filter((profile) => profileHasFinancialOfficerRole(profile));
   const financialOfficerCandidates = allProfiles.filter((profile) => !profileHasFinancialOfficerRole(profile));
+  const slackRecipients = [
+    ...allProfiles.map((profile) => ({
+      token: `profile:${profile.id}`,
+      name: profile.full_name || 'Unnamed user',
+      email: profile.email || 'No email',
+      slackUserId: profile.slack_user_id || null,
+      roles: [
+        profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
+        profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+        profileHasFinancialOfficerRole(profile) ? getRoleLabel('financial_officer') : null,
+        profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
+      ]
+        .filter(Boolean)
+        .join(', ') || 'Portal user',
+      sourceLabel: 'Portal',
+      sortGroup: 0
+    })),
+    ...rosterMembers.map((member) => ({
+      token: `roster:${member.id}`,
+      name: member.full_name,
+      email: member.stanford_email,
+      slackUserId: member.slack_user_id || null,
+      roles:
+        Array.isArray(member.teams) ? member.teams[0]?.name || 'Recorded member' : member.teams?.name || 'Recorded member',
+      sourceLabel: 'Recorded',
+      sortGroup: 1
+    }))
+  ].sort((a, b) => {
+    if (a.sortGroup !== b.sortGroup) return a.sortGroup - b.sortGroup;
+    return a.name.localeCompare(b.name);
+  });
   const currentBudgetInitialized = Boolean(currentClubBudgetData.data) || (currentTeamBudgetsData.data || []).length > 0;
   const nextBudgetInitialized = Boolean(nextClubBudgetData.data) || (nextTeamBudgetsData.data || []).length > 0;
   const currentAllocatedCents = (currentTeamBudgetsData.data || []).reduce(
@@ -656,7 +700,7 @@ export default async function SettingsPage() {
                 <div className="hq-lead-grid">
                   <section className="hq-lead-block">
                     <div className="hq-block-head">
-                      <h3>Portal users and Slack IDs</h3>
+                      <h3>People and Slack IDs</h3>
                     </div>
                     <div className="table-wrap hq-table-wrap-compact">
                       <table>
@@ -665,34 +709,25 @@ export default async function SettingsPage() {
                             <th>Name</th>
                             <th>Email</th>
                             <th>Slack ID</th>
-                            <th>Portal roles</th>
+                            <th>Role / team</th>
+                            <th>Source</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {allProfiles.length > 0 ? (
-                            allProfiles.map((profile) => {
-                              const roles = [
-                                profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
-                                profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
-                                profileHasFinancialOfficerRole(profile) ? getRoleLabel('financial_officer') : null,
-                                profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
-                              ]
-                                .filter(Boolean)
-                                .join(', ');
-
-                              return (
-                                <tr key={profile.id}>
-                                  <td>{profile.full_name || 'Unnamed user'}</td>
-                                  <td>{profile.email || 'No email'}</td>
-                                  <td>{profile.slack_user_id || 'Not linked'}</td>
-                                  <td>{roles || 'Portal user'}</td>
-                                </tr>
-                              );
-                            })
+                          {slackRecipients.length > 0 ? (
+                            slackRecipients.map((recipient) => (
+                              <tr key={recipient.token}>
+                                <td>{recipient.name}</td>
+                                <td>{recipient.email}</td>
+                                <td>{recipient.slackUserId || 'Not linked'}</td>
+                                <td>{recipient.roles}</td>
+                                <td>{recipient.sourceLabel}</td>
+                              </tr>
+                            ))
                           ) : (
                             <tr>
-                              <td colSpan={4} className="hq-table-empty-cell">
-                                No active portal users yet.
+                              <td colSpan={5} className="hq-table-empty-cell">
+                                No portal or recorded members yet.
                               </td>
                             </tr>
                           )}
@@ -708,16 +743,16 @@ export default async function SettingsPage() {
                     {canEdit ? (
                       <form action={sendManualSlackPushAction} className="form-stack">
                         <div className="field">
-                          <label className="label" htmlFor="slack-push-profile-id">
+                          <label className="label" htmlFor="slack-push-recipient-token">
                             Recipient
                           </label>
-                          <select className="select" id="slack-push-profile-id" name="profile_id" defaultValue="">
+                          <select className="select" id="slack-push-recipient-token" name="recipient_token" defaultValue="">
                             <option value="" disabled>
-                              Select a portal user
+                              Select a person
                             </option>
-                            {allProfiles.map((profile) => (
-                              <option key={profile.id} value={profile.id}>
-                                {profile.full_name || 'Unnamed user'} · {profile.email || 'No email'}
+                            {slackRecipients.map((recipient) => (
+                              <option key={recipient.token} value={recipient.token}>
+                                {recipient.name} · {recipient.email} · {recipient.sourceLabel}
                               </option>
                             ))}
                           </select>
@@ -738,7 +773,7 @@ export default async function SettingsPage() {
                         </div>
 
                         <p className="helper">
-                          Sends a direct Slack message through the HQ bot using the selected user&apos;s portal email.
+                          Sends a direct Slack message through the HQ bot using the selected person&apos;s Stanford email.
                         </p>
 
                         <div className="button-row">

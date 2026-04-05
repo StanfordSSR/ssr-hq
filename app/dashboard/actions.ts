@@ -272,11 +272,11 @@ export async function sendManualSlackPushAction(formData: FormData) {
     successMessage: 'Slack push sent.',
     action: async () => {
       const { profile } = await requireAdmin();
-      const recipientProfileId = String(formData.get('profile_id') || '').trim();
+      const recipientToken = String(formData.get('recipient_token') || '').trim();
       const rawMessage = String(formData.get('message') || '').trim();
 
-      if (!recipientProfileId) {
-        throw new Error('Choose a portal user to message.');
+      if (!recipientToken) {
+        throw new Error('Choose a recipient to message.');
       }
 
       if (!rawMessage) {
@@ -288,26 +288,61 @@ export async function sendManualSlackPushAction(formData: FormData) {
       }
 
       const admin = createAdminClient();
-      const [{ data: recipient }, { data: leadMembership }, { data: team }] = await Promise.all([
-        admin
-          .from('profiles')
-          .select('id, full_name, email')
-          .eq('id', recipientProfileId)
-          .eq('active', true)
-          .maybeSingle(),
-        admin
-          .from('team_memberships')
-          .select('team_id')
-          .eq('user_id', recipientProfileId)
-          .eq('team_role', 'lead')
-          .eq('is_active', true)
-          .limit(1)
-          .maybeSingle(),
-        Promise.resolve({ data: null as { id: string; name: string } | null })
-      ]);
+      const [recipientKind, recipientId] = recipientToken.split(':');
+      if (!recipientKind || !recipientId) {
+        throw new Error('Choose a valid recipient.');
+      }
+
+      let recipient:
+        | {
+            id: string;
+            full_name: string | null;
+            email: string | null;
+            team_id?: string | null;
+          }
+        | null = null;
+      let leadMembership: { team_id: string } | null = null;
+
+      if (recipientKind === 'profile') {
+        const [{ data: profileRecipient }, { data: leadMembershipData }] = await Promise.all([
+          admin
+            .from('profiles')
+            .select('id, full_name, email')
+            .eq('id', recipientId)
+            .eq('active', true)
+            .maybeSingle(),
+          admin
+            .from('team_memberships')
+            .select('team_id')
+            .eq('user_id', recipientId)
+            .eq('team_role', 'lead')
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle()
+        ]);
+
+        recipient = profileRecipient;
+        leadMembership = leadMembershipData;
+      } else if (recipientKind === 'roster') {
+        const { data: rosterRecipient } = await admin
+          .from('team_roster_members')
+          .select('id, full_name, stanford_email, team_id')
+          .eq('id', recipientId)
+          .maybeSingle();
+        recipient = rosterRecipient
+          ? {
+              id: rosterRecipient.id,
+              full_name: rosterRecipient.full_name,
+              email: rosterRecipient.stanford_email,
+              team_id: rosterRecipient.team_id
+            }
+          : null;
+      } else {
+        throw new Error('Choose a valid recipient.');
+      }
 
       if (!recipient?.email) {
-        throw new Error('That portal user does not have an email on file.');
+        throw new Error('That recipient does not have an email on file.');
       }
 
       let teamContext = getSlackbotFallbackContext();
@@ -323,14 +358,21 @@ export async function sendManualSlackPushAction(formData: FormData) {
             teamName: resolvedTeam.name
           };
         }
-      } else if (team) {
-        teamContext = {
-          teamId: team.id,
-          teamName: team.name
-        };
+      } else if (recipient.team_id) {
+        const { data: resolvedTeam } = await admin
+          .from('teams')
+          .select('id, name')
+          .eq('id', recipient.team_id)
+          .maybeSingle();
+        if (resolvedTeam) {
+          teamContext = {
+            teamId: resolvedTeam.id,
+            teamName: resolvedTeam.name
+          };
+        }
       }
 
-      const idempotencyKey = `manual_slack_push:${recipientProfileId}:${Date.now()}`;
+      const idempotencyKey = `manual_slack_push:${recipientKind}:${recipientId}:${Date.now()}`;
       const senderName = profile.full_name || 'SSR HQ admin';
 
       const result = await sendSlackbotNotification({
@@ -345,14 +387,15 @@ export async function sendManualSlackPushAction(formData: FormData) {
           source: 'hq_admin_manual_push',
           senderProfileId: profile.id,
           senderName,
-          recipientProfileId
+          recipientKind,
+          recipientId
         }
       });
 
       await recordAuditEvent({
         actorId: profile.id,
         action: 'slack.sent',
-        targetType: 'profile',
+        targetType: recipientKind === 'profile' ? 'profile' : 'team_roster_member',
         targetId: recipient.id,
         summary: `Sent Slack push to ${recipient.full_name || recipient.email}.`,
         details: {
@@ -2307,8 +2350,10 @@ async function addTeamRosterMemberCore(formData: FormData) {
   const teamId = String(formData.get('team_id') || '').trim();
   const fullName = String(formData.get('full_name') || '').trim();
   const stanfordEmail = String(formData.get('stanford_email') || '').trim().toLowerCase();
+  const slackUserIdRaw = String(formData.get('slack_user_id') || '').trim();
   const joinedMonth = Number(formData.get('joined_month') || 0);
   const joinedYear = Number(formData.get('joined_year') || 0);
+  const slackUserId = slackUserIdRaw || null;
 
   if (!teamId || !fullName || !stanfordEmail) {
     throw new Error('Team, full name, and Stanford email are required.');
@@ -2334,11 +2379,12 @@ async function addTeamRosterMemberCore(formData: FormData) {
       team_id: teamId,
       full_name: fullName,
       stanford_email: stanfordEmail,
+      slack_user_id: slackUserId,
       joined_month: joinedMonth,
       joined_year: joinedYear,
       created_by: user.id
     })
-    .select('id, full_name, stanford_email, joined_month, joined_year')
+    .select('id, full_name, stanford_email, slack_user_id, joined_month, joined_year')
     .single();
 
   if (error || !member) {
@@ -2355,6 +2401,7 @@ async function addTeamRosterMemberCore(formData: FormData) {
       teamId,
       fullName,
       stanfordEmail,
+      slackUserId,
       joinedMonth,
       joinedYear
     }
@@ -2366,6 +2413,7 @@ async function addTeamRosterMemberCore(formData: FormData) {
     id: member.id,
     full_name: member.full_name,
     stanford_email: member.stanford_email,
+    slack_user_id: member.slack_user_id,
     joined_month: member.joined_month,
     joined_year: member.joined_year,
     source: 'recorded' as const
@@ -2390,6 +2438,8 @@ async function updateTeamRosterMemberCore(formData: FormData) {
   const memberId = String(formData.get('member_id') || '').trim();
   const fullName = String(formData.get('full_name') || '').trim();
   const stanfordEmail = String(formData.get('stanford_email') || '').trim().toLowerCase();
+  const slackUserIdRaw = String(formData.get('slack_user_id') || '').trim();
+  const slackUserId = slackUserIdRaw || null;
 
   if (!memberId || !fullName || !stanfordEmail) {
     throw new Error('Member id, full name, and Stanford email are required.');
@@ -2415,10 +2465,11 @@ async function updateTeamRosterMemberCore(formData: FormData) {
     .from('team_roster_members')
     .update({
       full_name: fullName,
-      stanford_email: stanfordEmail
+      stanford_email: stanfordEmail,
+      slack_user_id: slackUserId
     })
     .eq('id', memberId)
-    .select('id, full_name, stanford_email, joined_month, joined_year')
+    .select('id, full_name, stanford_email, slack_user_id, joined_month, joined_year')
     .single();
 
   if (error || !updatedMember) {
@@ -2434,7 +2485,8 @@ async function updateTeamRosterMemberCore(formData: FormData) {
     details: {
       teamId: rosterMember.team_id,
       fullName,
-      stanfordEmail
+      stanfordEmail,
+      slackUserId
     }
   });
 
@@ -2444,6 +2496,7 @@ async function updateTeamRosterMemberCore(formData: FormData) {
     id: updatedMember.id,
     full_name: updatedMember.full_name,
     stanford_email: updatedMember.stanford_email,
+    slack_user_id: updatedMember.slack_user_id,
     joined_month: updatedMember.joined_month,
     joined_year: updatedMember.joined_year,
     source: 'recorded' as const

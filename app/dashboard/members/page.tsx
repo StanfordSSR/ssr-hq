@@ -43,6 +43,7 @@ type RosterMember = {
   team_id: string;
   full_name: string;
   stanford_email: string;
+  slack_user_id?: string | null;
   joined_month: number;
   joined_year: number;
 };
@@ -51,6 +52,7 @@ type LeadWorkspaceMember = {
   id: string;
   full_name: string;
   stanford_email: string;
+  slack_user_id?: string | null;
   joined_month: number | null;
   joined_year: number | null;
   source: 'lead' | 'recorded';
@@ -119,7 +121,7 @@ export default async function ManageMembersPage() {
           .eq('is_active', true),
         admin
           .from('team_roster_members')
-          .select('id, team_id, full_name, stanford_email, joined_month, joined_year')
+          .select('id, team_id, full_name, stanford_email, slack_user_id, joined_month, joined_year')
           .order('joined_year')
           .order('joined_month')
           .order('full_name'),
@@ -311,7 +313,7 @@ export default async function ManageMembersPage() {
 
   const { data: rosterData } = await admin
     .from('team_roster_members')
-    .select('id, team_id, full_name, stanford_email, joined_month, joined_year')
+    .select('id, team_id, full_name, stanford_email, slack_user_id, joined_month, joined_year')
     .eq('team_id', primaryTeamId)
     .order('joined_year', { ascending: false })
     .order('joined_month', { ascending: false })
@@ -329,6 +331,7 @@ export default async function ManageMembersPage() {
       id: `lead-${membership.user_id}`,
       full_name: leadProfileMap.get(membership.user_id) || 'Unnamed lead',
       stanford_email: leadEmailMap.get(membership.user_id) || 'No email found',
+      slack_user_id: null,
       joined_month: null,
       joined_year: null,
       source: 'lead' as const
@@ -337,6 +340,7 @@ export default async function ManageMembersPage() {
       id: member.id,
       full_name: member.full_name,
       stanford_email: member.stanford_email,
+      slack_user_id: member.slack_user_id || null,
       joined_month: member.joined_month,
       joined_year: member.joined_year,
       source: 'recorded' as const
