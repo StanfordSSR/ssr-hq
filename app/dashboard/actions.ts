@@ -1771,6 +1771,51 @@ async function resolveLeadEmailsForTeams(admin: ReturnType<typeof createAdminCli
   };
 }
 
+async function resolveTrackedMemberEmailsForTeams(admin: ReturnType<typeof createAdminClient>, teamIds: string[]) {
+  const uniqueTeamIds = Array.from(new Set(teamIds));
+
+  if (uniqueTeamIds.length === 0) {
+    return {
+      uniqueTeamIds,
+      recipientEmails: [] as string[],
+      teamIdByEmail: new Map<string, string | null>()
+    };
+  }
+
+  const [{ data: memberships }, { data: profiles }, { data: rosterMembers }] = await Promise.all([
+    admin.from('team_memberships').select('user_id, team_id').in('team_id', uniqueTeamIds).eq('is_active', true),
+    admin.from('profiles').select('id, email').not('email', 'is', null),
+    admin
+      .from('team_roster_members')
+      .select('team_id, stanford_email')
+      .in('team_id', uniqueTeamIds)
+      .not('stanford_email', 'is', null)
+  ]);
+
+  const emailByUserId = new Map((profiles || []).map((profile) => [profile.id, (profile.email || '').toLowerCase()]));
+  const teamIdByEmail = new Map<string, string | null>();
+
+  for (const membership of memberships || []) {
+    const email = emailByUserId.get(membership.user_id);
+    if (email && !teamIdByEmail.has(email)) {
+      teamIdByEmail.set(email, membership.team_id);
+    }
+  }
+
+  for (const rosterMember of rosterMembers || []) {
+    const email = (rosterMember.stanford_email || '').toLowerCase();
+    if (email && !teamIdByEmail.has(email)) {
+      teamIdByEmail.set(email, rosterMember.team_id);
+    }
+  }
+
+  return {
+    uniqueTeamIds,
+    recipientEmails: Array.from(teamIdByEmail.keys()),
+    teamIdByEmail
+  };
+}
+
 export async function createTaskAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/tasks',
@@ -1997,42 +2042,14 @@ export async function createAnnouncementAction(formData: FormData) {
         recipientScope === 'all_teams'
           ? (
               await admin
-                .from('team_memberships')
-                .select('team_id')
-                .eq('team_role', 'lead')
+                .from('teams')
+                .select('id')
                 .eq('is_active', true)
-            ).data?.map((membership) => membership.team_id) || []
+            ).data?.map((team) => team.id) || []
           : teamIds;
 
-      const { uniqueTeamIds, recipientEmails, teamsById } = await resolveLeadEmailsForTeams(admin, recipientTeamIds);
+      const { recipientEmails, teamIdByEmail } = await resolveTrackedMemberEmailsForTeams(admin, recipientTeamIds);
       if (recipientEmails.length > 0) {
-        const teamIdByEmail = new Map<string, string | null>();
-        const leadMemberships = (
-          await admin
-            .from('team_memberships')
-            .select('user_id, team_id')
-            .in('team_id', uniqueTeamIds)
-            .eq('team_role', 'lead')
-            .eq('is_active', true)
-        ).data || [];
-        const leadProfiles = (
-          await admin
-            .from('profiles')
-            .select('id, email')
-            .in(
-              'id',
-              Array.from(new Set(leadMemberships.map((membership) => membership.user_id)))
-            )
-            .not('email', 'is', null)
-        ).data || [];
-        const emailByUserId = new Map(leadProfiles.map((row) => [row.id, (row.email || '').toLowerCase()]));
-        for (const membership of leadMemberships) {
-          const email = emailByUserId.get(membership.user_id);
-          if (email && !teamIdByEmail.has(email)) {
-            teamIdByEmail.set(email, membership.team_id);
-          }
-        }
-
         const { error: deliveryError } = await admin.from('announcement_deliveries').insert(
           recipientEmails.map((email) => ({
             announcement_id: announcement.id,
@@ -2127,14 +2144,14 @@ export async function processNextAnnouncementDeliveryAction(announcementId: stri
         team_name: teamContext.teamName,
         recipient_emails: [nextDelivery.recipient_email],
         title: `${announcement.title} · ${formatAnnouncementDateTime(announcement.event_at)}`,
-        message: `${announcement.location}\n\n${announcement.details || 'Open HQ for the full event notice.'}`,
-        cta_label: 'RSVP',
-        cta_url: `${env.siteUrl}/dashboard/announcements/${announcementId}`,
+        message: `${announcement.location}\n\n${announcement.details || 'Event notification from SSR HQ.'}`,
         metadata: {
           announcementId,
           announcementType: 'event',
           location: announcement.location,
-          eventAt: announcement.event_at
+          eventAt: announcement.event_at,
+          recipientEmail: nextDelivery.recipient_email,
+          rsvpCallbackUrl: `${env.siteUrl}/api/internal/announcement-rsvp`
         }
       });
 
@@ -2186,62 +2203,6 @@ export async function processNextAnnouncementDeliveryAction(announcementId: stri
       done: remaining === 0
     };
   }, 'Processed the next announcement delivery.');
-}
-
-export async function submitAnnouncementRsvpAction(formData: FormData) {
-  await runRedirectingAction({
-    fallbackPath: '/dashboard/tasks',
-    successMessage: 'Saved your RSVP.',
-    action: async () => {
-      const { user } = await requireActiveProfile();
-      const announcementId = String(formData.get('announcement_id') || '').trim();
-      const response = String(formData.get('response') || '').trim();
-
-      if (!announcementId) {
-        throw new Error('Missing announcement.');
-      }
-
-      if (response !== 'yes' && response !== 'maybe' && response !== 'no') {
-        throw new Error('Choose a valid RSVP response.');
-      }
-
-      const admin = createAdminClient();
-      const { data: announcement } = await admin
-        .from('announcements')
-        .select('id, title')
-        .eq('id', announcementId)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (!announcement) {
-        throw new Error('Announcement not found.');
-      }
-
-      const { error } = await admin.from('announcement_rsvps').upsert({
-        announcement_id: announcementId,
-        profile_id: user.id,
-        response,
-        responded_at: new Date().toISOString()
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'announcement.rsvp.updated',
-        targetType: 'announcement',
-        targetId: announcementId,
-        summary: `RSVP’d ${response} for "${announcement.title}".`,
-        details: {
-          response
-        }
-      });
-
-      revalidatePaths(REVALIDATE_PATHS.tasks.concat(REVALIDATE_PATHS.dashboard));
-    }
-  });
 }
 
 export async function deleteAnnouncementAction(formData: FormData) {

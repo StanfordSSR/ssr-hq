@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
@@ -9,6 +8,7 @@ import {
   deleteAnnouncementAction,
   deleteTaskAction
 } from '@/app/dashboard/actions';
+import Link from 'next/link';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { AnnouncementDeliveryProgress } from '@/components/announcement-delivery-progress';
 import { getReceiptTaskState } from '@/lib/purchases';
@@ -111,7 +111,7 @@ export default async function TasksPage() {
     admin.from('task_completions').select('task_id, team_id'),
     admin.from('announcement_recipients').select('announcement_id, team_id'),
     admin.from('announcement_deliveries').select('announcement_id, status'),
-    admin.from('announcement_rsvps').select('announcement_id, response')
+    admin.from('announcement_recipient_rsvps').select('announcement_id, response')
   ]);
   const recipients = (recipientsData || []) as TaskRecipient[];
   const completions = (completionsData || []) as TaskCompletion[];
@@ -506,11 +506,6 @@ export default async function TasksPage() {
                       <span>RSVPs: {announcementRsvpStats.get(announcement.id)?.yes || 0} yes</span>
                       <span>{announcementRsvpStats.get(announcement.id)?.maybe || 0} maybe</span>
                       <span>{announcementRsvpStats.get(announcement.id)?.no || 0} no</span>
-                    </div>
-                    <div className="button-row">
-                      <Link href={`/dashboard/announcements/${announcement.id}`} className="button-secondary">
-                        RSVP
-                      </Link>
                     </div>
                   </article>
                 );

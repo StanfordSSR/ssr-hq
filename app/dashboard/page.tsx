@@ -320,7 +320,7 @@ export default async function DashboardPage() {
         .gte('event_at', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
         .order('event_at', { ascending: true }),
       admin.from('announcement_recipients').select('announcement_id, team_id').eq('team_id', team.id),
-      admin.from('announcement_rsvps').select('announcement_id, response'),
+      admin.from('announcement_recipient_rsvps').select('announcement_id, response'),
       getReportingWindows(cycle)
     ]);
   const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
@@ -540,11 +540,6 @@ export default async function DashboardPage() {
                       <span>RSVPs: {announcementRsvpStats.get(announcement.id)?.yes || 0} yes</span>
                       <span>{announcementRsvpStats.get(announcement.id)?.maybe || 0} maybe</span>
                       <span>{announcementRsvpStats.get(announcement.id)?.no || 0} no</span>
-                    </div>
-                    <div className="button-row">
-                      <Link href={`/dashboard/announcements/${announcement.id}`} className="button-secondary">
-                        RSVP
-                      </Link>
                     </div>
                   </article>
                 ))}
