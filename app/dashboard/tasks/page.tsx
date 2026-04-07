@@ -309,7 +309,7 @@ export default async function TasksPage() {
                       </option>
                     ))}
                   </select>
-                  <span className="helper">Publishes a prominent portal notice and sends the event to recipient leads through the HQ Slack bot.</span>
+                  <span className="helper">Publishes a prominent portal notice and sends the event to all tracked members on the selected teams through the HQ Slack bot.</span>
                 </div>
 
                 <div className="button-row">

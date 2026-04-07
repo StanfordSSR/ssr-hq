@@ -1734,6 +1734,43 @@ function formatAnnouncementDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function parseOffset(offsetLabel: string) {
+  const normalized = offsetLabel.replace('GMT', '').replace('UTC', '').trim();
+  const sign = normalized.startsWith('-') ? '-' : '+';
+  const raw = normalized.replace(/^[-+]/, '');
+
+  if (!raw.includes(':')) {
+    const hours = raw.padStart(2, '0');
+    return `${sign}${hours}:00`;
+  }
+
+  const [hours, minutes] = raw.split(':');
+  return `${sign}${hours.padStart(2, '0')}:${(minutes || '00').padStart(2, '0')}`;
+}
+
+function getPacificOffsetForInstant(date: Date) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    timeZoneName: 'shortOffset'
+  });
+  const part = formatter.formatToParts(date).find((entry) => entry.type === 'timeZoneName')?.value || 'GMT-8';
+  return parseOffset(part);
+}
+
+function parsePacificDateTimeInput(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day, hour, minute] = match;
+  const probe = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)));
+  const offset = getPacificOffsetForInstant(probe);
+  const parsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:00${offset}`);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 async function resolveLeadEmailsForTeams(admin: ReturnType<typeof createAdminClient>, teamIds: string[]) {
   const uniqueTeamIds = Array.from(new Set(teamIds));
 
@@ -2004,8 +2041,8 @@ export async function createAnnouncementAction(formData: FormData) {
         throw new Error('Choose at least one team or switch the announcement to all teams.');
       }
 
-      const eventAt = new Date(eventAtRaw);
-      if (Number.isNaN(eventAt.getTime())) {
+      const eventAt = parsePacificDateTimeInput(eventAtRaw);
+      if (!eventAt) {
         throw new Error('Choose a valid date and time.');
       }
 
@@ -2145,6 +2182,7 @@ export async function processNextAnnouncementDeliveryAction(announcementId: stri
         recipient_emails: [nextDelivery.recipient_email],
         title: `${announcement.title} · ${formatAnnouncementDateTime(announcement.event_at)}`,
         message: `${announcement.location}\n\n${announcement.details || 'Event notification from SSR HQ.'}`,
+        cta_label: 'RSVP',
         metadata: {
           announcementId,
           announcementType: 'event',
