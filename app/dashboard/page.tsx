@@ -40,6 +40,15 @@ type PendingReceipt = {
   receipt_not_needed: boolean;
 };
 
+type Announcement = {
+  id: string;
+  title: string;
+  details: string | null;
+  location: string;
+  event_at: string;
+  recipient_scope: 'all_teams' | 'specific_teams';
+};
+
 const adminCards = [
   {
     href: '/dashboard/teams',
@@ -267,6 +276,8 @@ export default async function DashboardPage() {
     { data: tasksData },
     { data: taskRecipients },
     { data: taskCompletions },
+    { data: announcementsData },
+    { data: announcementRecipientsData },
     reportingWindows
   ] =
     await Promise.all([
@@ -296,12 +307,23 @@ export default async function DashboardPage() {
         .order('created_at', { ascending: false }),
       admin.from('task_recipients').select('task_id, team_id').eq('team_id', team.id),
       admin.from('task_completions').select('task_id').eq('team_id', team.id),
+      admin
+        .from('announcements')
+        .select('id, title, details, location, event_at, recipient_scope')
+        .eq('is_active', true)
+        .gte('event_at', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+        .order('event_at', { ascending: true }),
+      admin.from('announcement_recipients').select('announcement_id, team_id').eq('team_id', team.id),
       getReportingWindows(cycle)
     ]);
   const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
   const completedTaskIds = new Set((taskCompletions || []).map((entry) => entry.task_id));
+  const recipientAnnouncementIds = new Set((announcementRecipientsData || []).map((entry) => entry.announcement_id));
   const teamTasks = (tasksData || []).filter(
     (task) => !completedTaskIds.has(task.id) && (task.recipient_scope === 'all_teams' || recipientTaskIds.has(task.id))
+  );
+  const teamAnnouncements = ((announcementsData || []) as Announcement[]).filter(
+    (announcement) => announcement.recipient_scope === 'all_teams' || recipientAnnouncementIds.has(announcement.id)
   );
   const annualBudget = teamBudget?.annual_budget_cents ? teamBudget.annual_budget_cents / 100 : 0;
   const purchases = (purchasesData || []) as Array<{ amount_cents: number; purchased_at: string }>;
@@ -467,6 +489,35 @@ export default async function DashboardPage() {
               <strong>${spent.toLocaleString()}</strong>
             </div>
           </div>
+
+          {teamAnnouncements.length > 0 ? (
+            <section className="hq-lead-block hq-lead-announcements-block">
+              <div className="hq-block-head">
+                <h3>Upcoming events</h3>
+                <Link href="/dashboard/tasks" className="hq-inline-link">
+                  View all
+                </Link>
+              </div>
+
+              <div className="hq-task-stack">
+                {teamAnnouncements.slice(0, 3).map((announcement) => (
+                  <article key={announcement.id} className="hq-task-card hq-task-card-announcement">
+                    <div className="hq-task-card-head">
+                      <div>
+                        <span className="hq-task-kicker">Event notification</span>
+                        <h4>{announcement.title}</h4>
+                      </div>
+                    </div>
+                    <div className="hq-task-card-meta">
+                      <span>{announcement.location}</span>
+                      <span>{new Date(announcement.event_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })}</span>
+                    </div>
+                    <p>{announcement.details || 'Open HQ for the event details.'}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <div className="hq-lead-grid hq-lead-grid-secondary">
             <section className="hq-lead-block">

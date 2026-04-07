@@ -2,7 +2,13 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
-import { completeTaskAction, createTaskAction, deleteTaskAction } from '@/app/dashboard/actions';
+import {
+  completeTaskAction,
+  createAnnouncementAction,
+  createTaskAction,
+  deleteAnnouncementAction,
+  deleteTaskAction
+} from '@/app/dashboard/actions';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
@@ -29,6 +35,21 @@ type TaskRecipient = {
 
 type TaskCompletion = {
   task_id: string;
+  team_id: string;
+};
+
+type Announcement = {
+  id: string;
+  title: string;
+  details: string | null;
+  location: string;
+  event_at: string;
+  recipient_scope: 'all_teams' | 'specific_teams';
+  created_at: string;
+};
+
+type AnnouncementRecipient = {
+  announcement_id: string;
   team_id: string;
 };
 
@@ -60,13 +81,22 @@ export default async function TasksPage() {
     .eq('is_active', true)
     .order('created_at', { ascending: false });
   const tasks = (tasksData || []) as Task[];
+  const { data: announcementsData } = await admin
+    .from('announcements')
+    .select('id, title, details, location, event_at, recipient_scope, created_at')
+    .eq('is_active', true)
+    .gte('event_at', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+    .order('event_at', { ascending: true });
+  const announcements = (announcementsData || []) as Announcement[];
 
-  const [{ data: recipientsData }, { data: completionsData }] = await Promise.all([
+  const [{ data: recipientsData }, { data: completionsData }, { data: announcementRecipientsData }] = await Promise.all([
     admin.from('task_recipients').select('task_id, team_id'),
-    admin.from('task_completions').select('task_id, team_id')
+    admin.from('task_completions').select('task_id, team_id'),
+    admin.from('announcement_recipients').select('announcement_id, team_id')
   ]);
   const recipients = (recipientsData || []) as TaskRecipient[];
   const completions = (completionsData || []) as TaskCompletion[];
+  const announcementRecipients = (announcementRecipientsData || []) as AnnouncementRecipient[];
   const recipientMap = new Map<string, string[]>();
   for (const recipient of recipients) {
     if (!recipientMap.has(recipient.task_id)) {
@@ -74,8 +104,16 @@ export default async function TasksPage() {
     }
     recipientMap.get(recipient.task_id)!.push(recipient.team_id);
   }
+  const announcementRecipientMap = new Map<string, string[]>();
+  for (const recipient of announcementRecipients) {
+    if (!announcementRecipientMap.has(recipient.announcement_id)) {
+      announcementRecipientMap.set(recipient.announcement_id, []);
+    }
+    announcementRecipientMap.get(recipient.announcement_id)!.push(recipient.team_id);
+  }
 
   let visibleTasks = tasks;
+  let visibleAnnouncements = announcements;
   let selectableTeams = teams;
   let pendingReceipts: ReceiptPurchase[] = [];
   let reportTask: {
@@ -99,6 +137,11 @@ export default async function TasksPage() {
       if (task.recipient_scope === 'all_teams') return true;
       const taskTeamIds = recipientMap.get(task.id) || [];
       return taskTeamIds.some((teamId) => myTeamIds.has(teamId));
+    });
+    visibleAnnouncements = announcements.filter((announcement) => {
+      if (announcement.recipient_scope === 'all_teams') return true;
+      const announcementTeamIds = announcementRecipientMap.get(announcement.id) || [];
+      return announcementTeamIds.some((teamId) => myTeamIds.has(teamId));
     });
 
     const { data: pendingReceiptsData } = await admin
@@ -158,69 +201,141 @@ export default async function TasksPage() {
           </div>
 
           {isAdmin ? (
-            <form action={createTaskAction} className="form-stack">
-              <div className="field">
-                <label className="label" htmlFor="task-title">
-                  Task title
+            <div className="form-stack">
+              <form action={createAnnouncementAction} className="form-stack hq-divider-block">
+                <div className="hq-block-head">
+                  <h3>Publish event announcement</h3>
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="announcement-title">
+                    Event name
+                  </label>
+                  <input className="input" id="announcement-title" name="title" placeholder="Spring design review, pool test, recruiting session..." required />
+                </div>
+
+                <div className="hq-inline-grid hq-inline-grid-roster">
+                  <div className="field">
+                    <label className="label" htmlFor="announcement-event-at">
+                      Date and time
+                    </label>
+                    <input className="input" id="announcement-event-at" name="event_at" type="datetime-local" required />
+                  </div>
+
+                  <div className="field">
+                    <label className="label" htmlFor="announcement-location">
+                      Location
+                    </label>
+                    <input className="input" id="announcement-location" name="location" placeholder="Huang basement, Packard 101, Lake Lag..." required />
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="announcement-details">
+                    Details
+                  </label>
+                  <textarea className="input hq-textarea" id="announcement-details" name="details" rows={4} />
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="announcement-recipient-scope">
+                    Recipients
+                  </label>
+                  <select className="select" id="announcement-recipient-scope" name="recipient_scope" defaultValue="specific_teams">
+                    <option value="specific_teams">Specific teams</option>
+                    <option value="all_teams">All teams</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="announcement-team-ids">
+                    Specific teams
+                  </label>
+                  <select className="select hq-multiselect" id="announcement-team-ids" name="team_ids" multiple size={Math.min(6, Math.max(3, selectableTeams.length))}>
+                    {selectableTeams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="helper">Publishes a prominent portal notice and sends the event to recipient leads through the HQ Slack bot.</span>
+                </div>
+
+                <div className="button-row">
+                  <button className="button" type="submit">
+                    Publish announcement
+                  </button>
+                </div>
+              </form>
+
+              <form action={createTaskAction} className="form-stack">
+                <div className="hq-block-head">
+                  <h3>Create task</h3>
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="task-title">
+                    Task title
+                  </label>
+                  <input className="input" id="task-title" name="title" placeholder="Quarterly report draft, safety checklist, budget follow-up..." required />
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="task-details">
+                    Details
+                  </label>
+                  <textarea className="input hq-textarea" id="task-details" name="details" rows={4} />
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="recipient-scope">
+                    Recipients
+                  </label>
+                  <select className="select" id="recipient-scope" name="recipient_scope" defaultValue="specific_teams">
+                    <option value="specific_teams">Specific teams</option>
+                    <option value="all_teams">All teams</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="team-ids">
+                    Specific teams
+                  </label>
+                  <select className="select hq-multiselect" id="team-ids" name="team_ids" multiple size={Math.min(6, Math.max(3, selectableTeams.length))}>
+                    {selectableTeams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="helper">Use Command/Ctrl-click to select multiple teams.</span>
+                </div>
+
+                <label className="hq-switch">
+                  <input type="checkbox" name="push_notification" />
+                  <span className="hq-switch-track" aria-hidden="true" />
+                  <span className="hq-switch-copy">
+                    <strong>Push notification</strong>
+                    <small>Marks the task as a notification request for recipients.</small>
+                  </span>
                 </label>
-                <input className="input" id="task-title" name="title" placeholder="Quarterly report draft, safety checklist, budget follow-up..." required />
-              </div>
 
-              <div className="field">
-                <label className="label" htmlFor="task-details">
-                  Details
+                <label className="hq-switch">
+                  <input type="checkbox" name="slack_push_notification" />
+                  <span className="hq-switch-track" aria-hidden="true" />
+                  <span className="hq-switch-copy">
+                    <strong>Also send Slack DM</strong>
+                    <small>When push notification is on, also DM the task to leads through the HQ bot.</small>
+                  </span>
                 </label>
-                <textarea className="input hq-textarea" id="task-details" name="details" rows={4} />
-              </div>
 
-              <div className="field">
-                <label className="label" htmlFor="recipient-scope">
-                  Recipients
-                </label>
-                <select className="select" id="recipient-scope" name="recipient_scope" defaultValue="specific_teams">
-                  <option value="specific_teams">Specific teams</option>
-                  <option value="all_teams">All teams</option>
-                </select>
-              </div>
-
-              <div className="field">
-                <label className="label" htmlFor="team-ids">
-                  Specific teams
-                </label>
-                <select className="select hq-multiselect" id="team-ids" name="team_ids" multiple size={Math.min(6, Math.max(3, selectableTeams.length))}>
-                  {selectableTeams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-                <span className="helper">Use Command/Ctrl-click to select multiple teams.</span>
-              </div>
-
-              <label className="hq-switch">
-                <input type="checkbox" name="push_notification" />
-                <span className="hq-switch-track" aria-hidden="true" />
-                <span className="hq-switch-copy">
-                  <strong>Push notification</strong>
-                  <small>Marks the task as a notification request for recipients.</small>
-                </span>
-              </label>
-
-              <label className="hq-switch">
-                <input type="checkbox" name="slack_push_notification" />
-                <span className="hq-switch-track" aria-hidden="true" />
-                <span className="hq-switch-copy">
-                  <strong>Also send Slack DM</strong>
-                  <small>When push notification is on, also DM the task to leads through the HQ bot.</small>
-                </span>
-              </label>
-
-              <div className="button-row">
-                <button className="button" type="submit">
-                  Assign task
-                </button>
-              </div>
-            </form>
+                <div className="button-row">
+                  <button className="button" type="submit">
+                    Assign task
+                  </button>
+                </div>
+              </form>
+            </div>
           ) : isPresident ? (
             <div className="hq-report-card">
               <strong>Read-only access</strong>
@@ -252,8 +367,32 @@ export default async function TasksPage() {
           </div>
 
           {isPrivilegedViewer ? (
-            visibleTasks.length > 0 ? (
+            visibleAnnouncements.length > 0 || visibleTasks.length > 0 ? (
               <div className="hq-summary-list">
+                {visibleAnnouncements.map((announcement) => {
+                  const teamNames =
+                    announcement.recipient_scope === 'all_teams'
+                      ? ['All teams']
+                      : (announcementRecipientMap.get(announcement.id) || []).map((teamId) => teamNameMap.get(teamId) || 'Unknown team');
+
+                  return (
+                    <div key={announcement.id} className="hq-summary-row">
+                      <span>{teamNames.join(', ')}</span>
+                      <strong>{announcement.title}</strong>
+                      <strong>{announcement.location} · {new Date(announcement.event_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })}</strong>
+                      {isAdmin ? (
+                        <div className="hq-inline-editor-actions">
+                          <form action={deleteAnnouncementAction}>
+                            <input type="hidden" name="announcement_id" value={announcement.id} />
+                            <button className="button-secondary" type="submit">
+                              Remove
+                            </button>
+                          </form>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
                 {visibleTasks.map((task) => {
                   const teamNames =
                     task.recipient_scope === 'all_teams'
@@ -284,6 +423,32 @@ export default async function TasksPage() {
             )
           ) : (
             <div className="hq-task-stack">
+              {visibleAnnouncements.map((announcement) => {
+                const teamNames =
+                  announcement.recipient_scope === 'all_teams'
+                    ? ['All teams']
+                    : (announcementRecipientMap.get(announcement.id) || []).map((teamId) => teamNameMap.get(teamId) || 'Unknown team');
+
+                return (
+                  <article key={`announcement-${announcement.id}`} className="hq-task-card hq-task-card-announcement">
+                    <div className="hq-task-card-head">
+                      <div>
+                        <span className="hq-task-kicker">Event notification</span>
+                        <h4>{announcement.title}</h4>
+                      </div>
+                    </div>
+
+                    <div className="hq-task-card-meta">
+                      <span>{teamNames.join(', ')}</span>
+                      <span>{announcement.location}</span>
+                      <span>{new Date(announcement.event_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })}</span>
+                    </div>
+
+                    <p>{announcement.details || 'Open HQ for the event details.'}</p>
+                  </article>
+                );
+              })}
+
               {reportTask ? (
                 <article className="hq-task-card hq-task-card-report">
                   <div className="hq-task-card-head">

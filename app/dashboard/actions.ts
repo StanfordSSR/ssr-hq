@@ -1724,6 +1724,53 @@ export async function submitTeamReportAction(formData: FormData) {
   });
 }
 
+function formatAnnouncementDateTime(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Los_Angeles'
+  }).format(new Date(value));
+}
+
+async function resolveLeadEmailsForTeams(admin: ReturnType<typeof createAdminClient>, teamIds: string[]) {
+  const uniqueTeamIds = Array.from(new Set(teamIds));
+
+  if (uniqueTeamIds.length === 0) {
+    return {
+      uniqueTeamIds,
+      recipientEmails: [] as string[],
+      teamsById: new Map<string, { id: string; name: string }>()
+    };
+  }
+
+  const [{ data: leadMemberships }, { data: leadProfiles }, { data: teamRows }] = await Promise.all([
+    admin
+      .from('team_memberships')
+      .select('user_id, team_id')
+      .in('team_id', uniqueTeamIds)
+      .eq('team_role', 'lead')
+      .eq('is_active', true),
+    admin
+      .from('profiles')
+      .select('id, email')
+      .not('email', 'is', null),
+    admin.from('teams').select('id, name').in('id', uniqueTeamIds)
+  ]);
+
+  const uniqueLeadIds = Array.from(new Set((leadMemberships || []).map((membership) => membership.user_id)));
+  const emailMap = new Map((leadProfiles || []).map((profile) => [profile.id, profile.email || '']));
+  const recipientEmails = uniqueLeadIds.map((leadId) => emailMap.get(leadId) || '').filter(Boolean);
+  const teamsById = new Map((teamRows || []).map((team) => [team.id, team]));
+
+  return {
+    uniqueTeamIds,
+    recipientEmails,
+    teamsById
+  };
+}
+
 export async function createTaskAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/tasks',
@@ -1801,32 +1848,12 @@ export async function createTaskAction(formData: FormData) {
                   .eq('is_active', true)
               ).data?.map((membership) => membership.team_id) || []
             : allowedTeamIds;
-        const uniqueTeamIds = Array.from(new Set(recipientTeamIds));
+        const { uniqueTeamIds, recipientEmails, teamsById } = await resolveLeadEmailsForTeams(admin, recipientTeamIds);
 
         if (uniqueTeamIds.length > 0) {
-          const [{ data: leadMemberships }, { data: leadProfiles }, { data: taskTeams }] = await Promise.all([
-            admin
-              .from('team_memberships')
-              .select('user_id, team_id')
-              .in('team_id', uniqueTeamIds)
-              .eq('team_role', 'lead')
-              .eq('is_active', true),
-            admin
-              .from('profiles')
-              .select('id, email')
-              .not('email', 'is', null),
-            uniqueTeamIds.length === 1
-              ? admin.from('teams').select('id, name').in('id', uniqueTeamIds)
-              : Promise.resolve({ data: [] as Array<{ id: string; name: string }> })
-          ]);
-
-          const uniqueLeadIds = Array.from(new Set((leadMemberships || []).map((membership) => membership.user_id)));
-          const emailMap = new Map((leadProfiles || []).map((profile) => [profile.id, profile.email || '']));
-          const recipientEmails = uniqueLeadIds.map((leadId) => emailMap.get(leadId) || '').filter(Boolean);
-
           if (slackPushNotification && recipientEmails.length > 0) {
             const fallbackContext = getSlackbotFallbackContext();
-            const singleTeam = (taskTeams || [])[0];
+            const singleTeam = uniqueTeamIds.length === 1 ? teamsById.get(uniqueTeamIds[0]) || null : null;
             const teamContext = singleTeam
               ? { teamId: singleTeam.id, teamName: singleTeam.name }
               : fallbackContext;
@@ -1892,6 +1919,195 @@ export async function createTaskAction(formData: FormData) {
           pushNotification,
           slackPushNotification,
           teamIds: allowedTeamIds
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.tasks);
+    }
+  });
+}
+
+export async function createAnnouncementAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/tasks',
+    successMessage: 'Published the announcement.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const title = String(formData.get('title') || '').trim();
+      const details = String(formData.get('details') || '').trim();
+      const location = String(formData.get('location') || '').trim();
+      const eventAtRaw = String(formData.get('event_at') || '').trim();
+      const recipientScope = String(formData.get('recipient_scope') || 'specific_teams').trim();
+      const teamIds = formData
+        .getAll('team_ids')
+        .map((value) => String(value).trim())
+        .filter(Boolean);
+
+      if (!title) {
+        throw new Error('Event name is required.');
+      }
+
+      if (!location) {
+        throw new Error('Location is required.');
+      }
+
+      if (!eventAtRaw) {
+        throw new Error('Date and time are required.');
+      }
+
+      if (recipientScope !== 'all_teams' && teamIds.length === 0) {
+        throw new Error('Choose at least one team or switch the announcement to all teams.');
+      }
+
+      const eventAt = new Date(eventAtRaw);
+      if (Number.isNaN(eventAt.getTime())) {
+        throw new Error('Choose a valid date and time.');
+      }
+
+      const admin = createAdminClient();
+      const { data: announcement, error } = await admin
+        .from('announcements')
+        .insert({
+          title,
+          details: details || null,
+          location,
+          event_at: eventAt.toISOString(),
+          recipient_scope: recipientScope === 'all_teams' ? 'all_teams' : 'specific_teams',
+          created_by: user.id,
+          is_active: true
+        })
+        .select('id')
+        .single();
+
+      if (error || !announcement) {
+        throw new Error(error?.message || 'Failed to create the announcement.');
+      }
+
+      if (recipientScope !== 'all_teams') {
+        const { error: recipientsError } = await admin
+          .from('announcement_recipients')
+          .insert(Array.from(new Set(teamIds)).map((teamId) => ({ announcement_id: announcement.id, team_id: teamId })));
+
+        if (recipientsError) {
+          throw new Error(recipientsError.message);
+        }
+      }
+
+      const recipientTeamIds =
+        recipientScope === 'all_teams'
+          ? (
+              await admin
+                .from('team_memberships')
+                .select('team_id')
+                .eq('team_role', 'lead')
+                .eq('is_active', true)
+            ).data?.map((membership) => membership.team_id) || []
+          : teamIds;
+
+      const { uniqueTeamIds, recipientEmails, teamsById } = await resolveLeadEmailsForTeams(admin, recipientTeamIds);
+
+      if (recipientEmails.length > 0) {
+        const fallbackContext = getSlackbotFallbackContext();
+        const singleTeam = uniqueTeamIds.length === 1 ? teamsById.get(uniqueTeamIds[0]) || null : null;
+        const teamContext = singleTeam
+          ? { teamId: singleTeam.id, teamName: singleTeam.name }
+          : fallbackContext;
+
+        await sendSlackbotNotification({
+          idempotency_key: `announcement:${announcement.id}`,
+          type: 'manual_message',
+          team_id: teamContext.teamId,
+          team_name: teamContext.teamName,
+          recipient_emails: recipientEmails,
+          title: `${title} · ${formatAnnouncementDateTime(eventAt.toISOString())}`,
+          message: `${location}\n\n${details || 'Open HQ for the full event notice.'}`,
+          cta_label: 'Open HQ',
+          cta_url: `${env.siteUrl}/dashboard/tasks`,
+          metadata: {
+            announcementId: announcement.id,
+            announcementType: 'event',
+            recipientScope,
+            teamIds: uniqueTeamIds,
+            location,
+            eventAt: eventAt.toISOString()
+          }
+        });
+
+        await recordAuditEvent({
+          actorId: user.id,
+          action: 'slack.sent',
+          targetType: 'announcement',
+          targetId: announcement.id,
+          summary: `Sent Slack event announcement for "${title}".`,
+          details: {
+            recipientCount: recipientEmails.length,
+            recipientScope,
+            teamIds: uniqueTeamIds
+          }
+        });
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'announcement.created',
+        targetType: 'announcement',
+        targetId: announcement.id,
+        summary: `Published event announcement "${title}".`,
+        details: {
+          recipientScope,
+          teamIds: Array.from(new Set(teamIds)),
+          location,
+          eventAt: eventAt.toISOString()
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.tasks);
+    }
+  });
+}
+
+export async function deleteAnnouncementAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/tasks',
+    successMessage: 'Removed the announcement.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const announcementId = String(formData.get('announcement_id') || '').trim();
+
+      if (!announcementId) {
+        throw new Error('Missing announcement id.');
+      }
+
+      const admin = createAdminClient();
+      const { data: announcement } = await admin
+        .from('announcements')
+        .select('id, title')
+        .eq('id', announcementId)
+        .maybeSingle();
+
+      if (!announcement) {
+        throw new Error('Announcement not found.');
+      }
+
+      const { error } = await admin
+        .from('announcements')
+        .update({ is_active: false })
+        .eq('id', announcementId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await admin.from('announcement_recipients').delete().eq('announcement_id', announcementId);
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'announcement.deleted',
+        targetType: 'announcement',
+        targetId: announcementId,
+        summary: `Removed announcement "${announcement.title}".`,
+        details: {
+          title: announcement.title
         }
       });
 

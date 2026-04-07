@@ -24,7 +24,16 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
     };
   }
 
-  const [{ count: pendingReceiptCount }, { count: allTeamsTaskCount }, { data: taskRecipients }, { data: taskCompletions }, reportState] =
+  const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+  const [
+    { count: pendingReceiptCount },
+    { count: allTeamsTaskCount },
+    { data: taskRecipients },
+    { data: taskCompletions },
+    { count: allTeamsAnnouncementCount },
+    { data: announcementRecipients },
+    reportState
+  ] =
     await Promise.all([
       admin
         .from('purchase_logs')
@@ -40,6 +49,13 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
         .eq('recipient_scope', 'all_teams'),
       admin.from('task_recipients').select('task_id').in('team_id', myTeamIds),
       admin.from('task_completions').select('task_id').in('team_id', myTeamIds),
+      admin
+        .from('announcements')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_active', true)
+        .eq('recipient_scope', 'all_teams')
+        .gte('event_at', staleThreshold),
+      admin.from('announcement_recipients').select('announcement_id').in('team_id', myTeamIds),
       getNextReportState()
     ]);
 
@@ -47,6 +63,7 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
   const hasAssignedAllTeamTask = (allTeamsTaskCount || 0) > completedTaskIds.size;
   const hasSpecificAssignedTasks = (taskRecipients || []).some((entry) => !completedTaskIds.has(entry.task_id));
   const hasAssignedTasks = hasAssignedAllTeamTask || hasSpecificAssignedTasks;
+  const hasAnnouncements = (allTeamsAnnouncementCount || 0) > 0 || (announcementRecipients || []).length > 0;
   const hasPendingReceipts = (pendingReceiptCount || 0) > 0;
   let hasPendingReport = false;
 
@@ -65,6 +82,6 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
   }
 
   return {
-    hasPendingLeadTasks: hasAssignedTasks || hasPendingReceipts || hasPendingReport
+    hasPendingLeadTasks: hasAssignedTasks || hasPendingReceipts || hasPendingReport || hasAnnouncements
   };
 });
