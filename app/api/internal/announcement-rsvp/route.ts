@@ -56,17 +56,25 @@ export async function POST(request: NextRequest) {
     admin.from('team_roster_members').select('id').eq('stanford_email', recipientEmail).maybeSingle()
   ]);
 
-  const { error } = await admin.from('announcement_recipient_rsvps').upsert(
-    {
-      announcement_id: announcementId,
-      profile_id: profile?.id || null,
-      team_roster_member_id: rosterMember?.id || null,
-      recipient_email: recipientEmail,
-      response,
-      responded_at: new Date().toISOString()
-    },
-    { onConflict: 'announcement_id,recipient_email' }
-  );
+  const { data: existingRsvp } = await admin
+    .from('announcement_recipient_rsvps')
+    .select('id')
+    .eq('announcement_id', announcementId)
+    .eq('recipient_email', recipientEmail)
+    .maybeSingle();
+
+  const payload = {
+    announcement_id: announcementId,
+    profile_id: profile?.id || null,
+    team_roster_member_id: rosterMember?.id || null,
+    recipient_email: recipientEmail,
+    response,
+    responded_at: new Date().toISOString()
+  };
+
+  const { error } = existingRsvp
+    ? await admin.from('announcement_recipient_rsvps').update(payload).eq('id', existingRsvp.id)
+    : await admin.from('announcement_recipient_rsvps').insert(payload);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
