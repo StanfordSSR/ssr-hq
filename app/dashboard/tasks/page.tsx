@@ -10,6 +10,7 @@ import {
   deleteTaskAction
 } from '@/app/dashboard/actions';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
+import { AnnouncementDeliveryProgress } from '@/components/announcement-delivery-progress';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
@@ -53,6 +54,16 @@ type AnnouncementRecipient = {
   team_id: string;
 };
 
+type AnnouncementDelivery = {
+  announcement_id: string;
+  status: 'queued' | 'sent' | 'failed';
+};
+
+type AnnouncementRsvp = {
+  announcement_id: string;
+  response: 'yes' | 'maybe' | 'no';
+};
+
 type ReceiptPurchase = {
   id: string;
   team_id: string;
@@ -89,14 +100,24 @@ export default async function TasksPage() {
     .order('event_at', { ascending: true });
   const announcements = (announcementsData || []) as Announcement[];
 
-  const [{ data: recipientsData }, { data: completionsData }, { data: announcementRecipientsData }] = await Promise.all([
+  const [
+    { data: recipientsData },
+    { data: completionsData },
+    { data: announcementRecipientsData },
+    { data: announcementDeliveriesData },
+    { data: announcementRsvpsData }
+  ] = await Promise.all([
     admin.from('task_recipients').select('task_id, team_id'),
     admin.from('task_completions').select('task_id, team_id'),
-    admin.from('announcement_recipients').select('announcement_id, team_id')
+    admin.from('announcement_recipients').select('announcement_id, team_id'),
+    admin.from('announcement_deliveries').select('announcement_id, status'),
+    admin.from('announcement_rsvps').select('announcement_id, response')
   ]);
   const recipients = (recipientsData || []) as TaskRecipient[];
   const completions = (completionsData || []) as TaskCompletion[];
   const announcementRecipients = (announcementRecipientsData || []) as AnnouncementRecipient[];
+  const announcementDeliveries = (announcementDeliveriesData || []) as AnnouncementDelivery[];
+  const announcementRsvps = (announcementRsvpsData || []) as AnnouncementRsvp[];
   const recipientMap = new Map<string, string[]>();
   for (const recipient of recipients) {
     if (!recipientMap.has(recipient.task_id)) {
@@ -110,6 +131,36 @@ export default async function TasksPage() {
       announcementRecipientMap.set(recipient.announcement_id, []);
     }
     announcementRecipientMap.get(recipient.announcement_id)!.push(recipient.team_id);
+  }
+  const announcementDeliveryStats = new Map<
+    string,
+    {
+      total: number;
+      sent: number;
+      failed: number;
+    }
+  >();
+  for (const delivery of announcementDeliveries) {
+    const stats = announcementDeliveryStats.get(delivery.announcement_id) || { total: 0, sent: 0, failed: 0 };
+    stats.total += 1;
+    if (delivery.status === 'sent') stats.sent += 1;
+    if (delivery.status === 'failed') stats.failed += 1;
+    announcementDeliveryStats.set(delivery.announcement_id, stats);
+  }
+  const announcementRsvpStats = new Map<
+    string,
+    {
+      yes: number;
+      maybe: number;
+      no: number;
+    }
+  >();
+  for (const rsvp of announcementRsvps) {
+    const stats = announcementRsvpStats.get(rsvp.announcement_id) || { yes: 0, maybe: 0, no: 0 };
+    if (rsvp.response === 'yes') stats.yes += 1;
+    if (rsvp.response === 'maybe') stats.maybe += 1;
+    if (rsvp.response === 'no') stats.no += 1;
+    announcementRsvpStats.set(rsvp.announcement_id, stats);
   }
 
   let visibleTasks = tasks;
@@ -380,6 +431,12 @@ export default async function TasksPage() {
                       <span>{teamNames.join(', ')}</span>
                       <strong>{announcement.title}</strong>
                       <strong>{announcement.location} · {new Date(announcement.event_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })}</strong>
+                      <AnnouncementDeliveryProgress
+                        announcementId={announcement.id}
+                        initialTotal={announcementDeliveryStats.get(announcement.id)?.total || 0}
+                        initialSent={announcementDeliveryStats.get(announcement.id)?.sent || 0}
+                        initialFailed={announcementDeliveryStats.get(announcement.id)?.failed || 0}
+                      />
                       {isAdmin ? (
                         <div className="hq-inline-editor-actions">
                           <form action={deleteAnnouncementAction}>
@@ -445,6 +502,16 @@ export default async function TasksPage() {
                     </div>
 
                     <p>{announcement.details || 'Open HQ for the event details.'}</p>
+                    <div className="hq-task-card-meta">
+                      <span>RSVPs: {announcementRsvpStats.get(announcement.id)?.yes || 0} yes</span>
+                      <span>{announcementRsvpStats.get(announcement.id)?.maybe || 0} maybe</span>
+                      <span>{announcementRsvpStats.get(announcement.id)?.no || 0} no</span>
+                    </div>
+                    <div className="button-row">
+                      <Link href={`/dashboard/announcements/${announcement.id}`} className="button-secondary">
+                        RSVP
+                      </Link>
+                    </div>
                   </article>
                 );
               })}

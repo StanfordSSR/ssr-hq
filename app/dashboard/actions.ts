@@ -2005,46 +2005,46 @@ export async function createAnnouncementAction(formData: FormData) {
           : teamIds;
 
       const { uniqueTeamIds, recipientEmails, teamsById } = await resolveLeadEmailsForTeams(admin, recipientTeamIds);
-
       if (recipientEmails.length > 0) {
-        const fallbackContext = getSlackbotFallbackContext();
-        const singleTeam = uniqueTeamIds.length === 1 ? teamsById.get(uniqueTeamIds[0]) || null : null;
-        const teamContext = singleTeam
-          ? { teamId: singleTeam.id, teamName: singleTeam.name }
-          : fallbackContext;
-
-        await sendSlackbotNotification({
-          idempotency_key: `announcement:${announcement.id}`,
-          type: 'manual_message',
-          team_id: teamContext.teamId,
-          team_name: teamContext.teamName,
-          recipient_emails: recipientEmails,
-          title: `${title} · ${formatAnnouncementDateTime(eventAt.toISOString())}`,
-          message: `${location}\n\n${details || 'Open HQ for the full event notice.'}`,
-          cta_label: 'Open HQ',
-          cta_url: `${env.siteUrl}/dashboard/tasks`,
-          metadata: {
-            announcementId: announcement.id,
-            announcementType: 'event',
-            recipientScope,
-            teamIds: uniqueTeamIds,
-            location,
-            eventAt: eventAt.toISOString()
+        const teamIdByEmail = new Map<string, string | null>();
+        const leadMemberships = (
+          await admin
+            .from('team_memberships')
+            .select('user_id, team_id')
+            .in('team_id', uniqueTeamIds)
+            .eq('team_role', 'lead')
+            .eq('is_active', true)
+        ).data || [];
+        const leadProfiles = (
+          await admin
+            .from('profiles')
+            .select('id, email')
+            .in(
+              'id',
+              Array.from(new Set(leadMemberships.map((membership) => membership.user_id)))
+            )
+            .not('email', 'is', null)
+        ).data || [];
+        const emailByUserId = new Map(leadProfiles.map((row) => [row.id, (row.email || '').toLowerCase()]));
+        for (const membership of leadMemberships) {
+          const email = emailByUserId.get(membership.user_id);
+          if (email && !teamIdByEmail.has(email)) {
+            teamIdByEmail.set(email, membership.team_id);
           }
-        });
+        }
 
-        await recordAuditEvent({
-          actorId: user.id,
-          action: 'slack.sent',
-          targetType: 'announcement',
-          targetId: announcement.id,
-          summary: `Sent Slack event announcement for "${title}".`,
-          details: {
-            recipientCount: recipientEmails.length,
-            recipientScope,
-            teamIds: uniqueTeamIds
-          }
-        });
+        const { error: deliveryError } = await admin.from('announcement_deliveries').insert(
+          recipientEmails.map((email) => ({
+            announcement_id: announcement.id,
+            team_id: teamIdByEmail.get(email.toLowerCase()) || null,
+            recipient_email: email.toLowerCase(),
+            status: 'queued' as const
+          }))
+        );
+
+        if (deliveryError) {
+          throw new Error(deliveryError.message);
+        }
       }
 
       await recordAuditEvent({
@@ -2057,11 +2057,189 @@ export async function createAnnouncementAction(formData: FormData) {
           recipientScope,
           teamIds: Array.from(new Set(teamIds)),
           location,
-          eventAt: eventAt.toISOString()
+          eventAt: eventAt.toISOString(),
+          queuedRecipientCount: recipientEmails.length
         }
       });
 
-      revalidatePaths(REVALIDATE_PATHS.tasks);
+      revalidatePaths(REVALIDATE_PATHS.tasks.concat(REVALIDATE_PATHS.dashboard));
+    }
+  });
+}
+
+export async function processNextAnnouncementDeliveryAction(announcementId: string) {
+  return runInlineAction(async () => {
+    const { user } = await requireAdmin();
+
+    if (!announcementId) {
+      throw new Error('Missing announcement id.');
+    }
+
+    const admin = createAdminClient();
+    const { data: announcement } = await admin
+      .from('announcements')
+      .select('id, title, details, location, event_at, recipient_scope')
+      .eq('id', announcementId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (!announcement) {
+      throw new Error('Announcement not found.');
+    }
+
+    const { data: nextDelivery } = await admin
+      .from('announcement_deliveries')
+      .select('id, recipient_email, team_id')
+      .eq('announcement_id', announcementId)
+      .eq('status', 'queued')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!nextDelivery) {
+      const { data: deliveries } = await admin
+        .from('announcement_deliveries')
+        .select('status')
+        .eq('announcement_id', announcementId);
+      const total = (deliveries || []).length;
+      const sent = (deliveries || []).filter((row) => row.status === 'sent').length;
+      const failed = (deliveries || []).filter((row) => row.status === 'failed').length;
+      return { total, sent, failed, remaining: 0, done: true };
+    }
+
+    let teamContext = getSlackbotFallbackContext();
+    if (nextDelivery.team_id) {
+      const { data: team } = await admin
+        .from('teams')
+        .select('id, name')
+        .eq('id', nextDelivery.team_id)
+        .maybeSingle();
+      if (team) {
+        teamContext = { teamId: team.id, teamName: team.name };
+      }
+    }
+
+    try {
+      await sendSlackbotNotification({
+        idempotency_key: `announcement:${announcementId}:${nextDelivery.id}`,
+        type: 'manual_message',
+        team_id: teamContext.teamId,
+        team_name: teamContext.teamName,
+        recipient_emails: [nextDelivery.recipient_email],
+        title: `${announcement.title} · ${formatAnnouncementDateTime(announcement.event_at)}`,
+        message: `${announcement.location}\n\n${announcement.details || 'Open HQ for the full event notice.'}`,
+        cta_label: 'RSVP',
+        cta_url: `${env.siteUrl}/dashboard/announcements/${announcementId}`,
+        metadata: {
+          announcementId,
+          announcementType: 'event',
+          location: announcement.location,
+          eventAt: announcement.event_at
+        }
+      });
+
+      await admin
+        .from('announcement_deliveries')
+        .update({
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+          error_text: null
+        })
+        .eq('id', nextDelivery.id);
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'slack.sent',
+        targetType: 'announcement',
+        targetId: announcementId,
+        summary: `Sent announcement "${announcement.title}" to ${nextDelivery.recipient_email}.`,
+        details: {
+          recipientEmail: nextDelivery.recipient_email
+        }
+      });
+    } catch (error) {
+      await admin
+        .from('announcement_deliveries')
+        .update({
+          status: 'failed',
+          error_text: getActionErrorMessage(error)
+        })
+        .eq('id', nextDelivery.id);
+    }
+
+    const { data: deliveries } = await admin
+      .from('announcement_deliveries')
+      .select('status')
+      .eq('announcement_id', announcementId);
+    const total = (deliveries || []).length;
+    const sent = (deliveries || []).filter((row) => row.status === 'sent').length;
+    const failed = (deliveries || []).filter((row) => row.status === 'failed').length;
+    const remaining = total - sent - failed;
+
+    revalidatePaths(REVALIDATE_PATHS.tasks.concat(REVALIDATE_PATHS.dashboard));
+
+    return {
+      total,
+      sent,
+      failed,
+      remaining,
+      done: remaining === 0
+    };
+  }, 'Processed the next announcement delivery.');
+}
+
+export async function submitAnnouncementRsvpAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/tasks',
+    successMessage: 'Saved your RSVP.',
+    action: async () => {
+      const { user } = await requireActiveProfile();
+      const announcementId = String(formData.get('announcement_id') || '').trim();
+      const response = String(formData.get('response') || '').trim();
+
+      if (!announcementId) {
+        throw new Error('Missing announcement.');
+      }
+
+      if (response !== 'yes' && response !== 'maybe' && response !== 'no') {
+        throw new Error('Choose a valid RSVP response.');
+      }
+
+      const admin = createAdminClient();
+      const { data: announcement } = await admin
+        .from('announcements')
+        .select('id, title')
+        .eq('id', announcementId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (!announcement) {
+        throw new Error('Announcement not found.');
+      }
+
+      const { error } = await admin.from('announcement_rsvps').upsert({
+        announcement_id: announcementId,
+        profile_id: user.id,
+        response,
+        responded_at: new Date().toISOString()
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'announcement.rsvp.updated',
+        targetType: 'announcement',
+        targetId: announcementId,
+        summary: `RSVP’d ${response} for "${announcement.title}".`,
+        details: {
+          response
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.tasks.concat(REVALIDATE_PATHS.dashboard));
     }
   });
 }

@@ -49,6 +49,11 @@ type Announcement = {
   recipient_scope: 'all_teams' | 'specific_teams';
 };
 
+type AnnouncementRsvp = {
+  announcement_id: string;
+  response: 'yes' | 'maybe' | 'no';
+};
+
 const adminCards = [
   {
     href: '/dashboard/teams',
@@ -278,6 +283,7 @@ export default async function DashboardPage() {
     { data: taskCompletions },
     { data: announcementsData },
     { data: announcementRecipientsData },
+    { data: announcementRsvpsData },
     reportingWindows
   ] =
     await Promise.all([
@@ -314,6 +320,7 @@ export default async function DashboardPage() {
         .gte('event_at', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
         .order('event_at', { ascending: true }),
       admin.from('announcement_recipients').select('announcement_id, team_id').eq('team_id', team.id),
+      admin.from('announcement_rsvps').select('announcement_id, response'),
       getReportingWindows(cycle)
     ]);
   const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
@@ -325,6 +332,22 @@ export default async function DashboardPage() {
   const teamAnnouncements = ((announcementsData || []) as Announcement[]).filter(
     (announcement) => announcement.recipient_scope === 'all_teams' || recipientAnnouncementIds.has(announcement.id)
   );
+  const announcementRsvps = (announcementRsvpsData || []) as AnnouncementRsvp[];
+  const announcementRsvpStats = new Map<
+    string,
+    {
+      yes: number;
+      maybe: number;
+      no: number;
+    }
+  >();
+  for (const rsvp of announcementRsvps) {
+    const stats = announcementRsvpStats.get(rsvp.announcement_id) || { yes: 0, maybe: 0, no: 0 };
+    if (rsvp.response === 'yes') stats.yes += 1;
+    if (rsvp.response === 'maybe') stats.maybe += 1;
+    if (rsvp.response === 'no') stats.no += 1;
+    announcementRsvpStats.set(rsvp.announcement_id, stats);
+  }
   const annualBudget = teamBudget?.annual_budget_cents ? teamBudget.annual_budget_cents / 100 : 0;
   const purchases = (purchasesData || []) as Array<{ amount_cents: number; purchased_at: string }>;
   const spent = purchases.reduce(
@@ -513,6 +536,16 @@ export default async function DashboardPage() {
                       <span>{new Date(announcement.event_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })}</span>
                     </div>
                     <p>{announcement.details || 'Open HQ for the event details.'}</p>
+                    <div className="hq-task-card-meta">
+                      <span>RSVPs: {announcementRsvpStats.get(announcement.id)?.yes || 0} yes</span>
+                      <span>{announcementRsvpStats.get(announcement.id)?.maybe || 0} maybe</span>
+                      <span>{announcementRsvpStats.get(announcement.id)?.no || 0} no</span>
+                    </div>
+                    <div className="button-row">
+                      <Link href={`/dashboard/announcements/${announcement.id}`} className="button-secondary">
+                        RSVP
+                      </Link>
+                    </div>
                   </article>
                 ))}
               </div>
