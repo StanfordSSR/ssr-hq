@@ -1717,6 +1717,12 @@ tr:last-child td {
   margin-bottom: 14px;
 }
 
+.hq-tab-row-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
 .hq-tab-button {
   border: 1px solid var(--line);
   background: #fff;

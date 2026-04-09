@@ -45,6 +45,24 @@ function getLastCompleteMonthValue() {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
+function getRecentMonthValues(count = 12) {
+  const values: string[] = [];
+  const [startYear, startMonth] = getLastCompleteMonthValue().split('-').map(Number);
+  let year = startYear;
+  let month = startMonth;
+
+  for (let index = 0; index < count; index += 1) {
+    values.push(`${year}-${String(month).padStart(2, '0')}`);
+    month -= 1;
+    if (month === 0) {
+      month = 12;
+      year -= 1;
+    }
+  }
+
+  return values;
+}
+
 function getMonthRange(monthValue: string) {
   const match = monthValue.match(/^(\d{4})-(\d{2})$/);
   if (!match) {
@@ -135,6 +153,7 @@ export default async function ReceiptsPage({
     month: selectedMonth,
     sort: selectedSort
   };
+  const monthTabs = getRecentMonthValues(12);
 
   return (
     <div className="hq-page">
@@ -156,13 +175,20 @@ export default async function ReceiptsPage({
           <span className="hq-inline-note">{purchases.length} receipt-backed purchases</span>
         </div>
 
+        <div className="hq-tab-row hq-tab-row-scroll">
+          {monthTabs.map((monthValue) => (
+            <Link
+              key={monthValue}
+              href={`/dashboard/receipts?${buildQueryString(currentParams, { month: monthValue })}`}
+              className={`hq-tab-button${monthValue === selectedMonth ? ' hq-tab-button-active' : ''}`}
+            >
+              {formatMonthLabel(monthValue)}
+            </Link>
+          ))}
+        </div>
+
         <AutoSubmitFilters className="hq-finance-filter-row">
-          <div className="field">
-            <label className="label" htmlFor="receipts-month">
-              Month
-            </label>
-            <input className="input" id="receipts-month" name="month" type="month" defaultValue={selectedMonth} />
-          </div>
+          <input type="hidden" name="month" value={selectedMonth} />
 
           <div className="field">
             <label className="label" htmlFor="receipts-sort">
