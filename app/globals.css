@@ -1723,6 +1723,15 @@ tr:last-child td {
   scrollbar-width: thin;
 }
 
+.hq-tab-row-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.hq-tab-row-scroll::-webkit-scrollbar-thumb {
+  background: #d7dce4;
+  border-radius: 999px;
+}
+
 .hq-tab-button {
   border: 1px solid var(--line);
   background: #fff;
@@ -1737,6 +1746,21 @@ tr:last-child td {
   color: var(--text);
   border-color: var(--line-strong);
   background: #f7f2f2;
+}
+
+.hq-tab-button-receipts {
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #f7f9fc;
+  color: #5a6573;
+  border-color: #d8dee7;
+  white-space: nowrap;
+}
+
+.hq-tab-button-receipts-active {
+  background: #e8eef9;
+  border-color: #b7c8e7;
+  color: #163f7a;
 }
 
 .hq-roster-tab-spacer {

@@ -45,19 +45,23 @@ function getLastCompleteMonthValue() {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
-function getRecentMonthValues(count = 12) {
-  const values: string[] = [];
-  const [startYear, startMonth] = getLastCompleteMonthValue().split('-').map(Number);
-  let year = startYear;
-  let month = startMonth;
+function shiftMonth(monthValue: string, offset: number) {
+  const match = monthValue.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return monthValue;
+  }
 
-  for (let index = 0; index < count; index += 1) {
-    values.push(`${year}-${String(month).padStart(2, '0')}`);
-    month -= 1;
-    if (month === 0) {
-      month = 12;
-      year -= 1;
-    }
+  const baseYear = Number(match[1]);
+  const baseMonth = Number(match[2]) - 1;
+  const shifted = new Date(Date.UTC(baseYear, baseMonth + offset, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function getCenteredMonthValues(centerMonth: string, before = 6, after = 5) {
+  const values: string[] = [];
+
+  for (let offset = -before; offset <= after; offset += 1) {
+    values.push(shiftMonth(centerMonth, offset));
   }
 
   return values;
@@ -153,7 +157,7 @@ export default async function ReceiptsPage({
     month: selectedMonth,
     sort: selectedSort
   };
-  const monthTabs = getRecentMonthValues(12);
+  const monthTabs = getCenteredMonthValues(selectedMonth, 6, 5);
 
   return (
     <div className="hq-page">
@@ -180,7 +184,7 @@ export default async function ReceiptsPage({
             <Link
               key={monthValue}
               href={`/dashboard/receipts?${buildQueryString(currentParams, { month: monthValue })}`}
-              className={`hq-tab-button${monthValue === selectedMonth ? ' hq-tab-button-active' : ''}`}
+              className={`hq-tab-button hq-tab-button-receipts${monthValue === selectedMonth ? ' hq-tab-button-active hq-tab-button-receipts-active' : ''}`}
             >
               {formatMonthLabel(monthValue)}
             </Link>
