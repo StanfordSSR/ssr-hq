@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { formatDateLabel } from '@/lib/academic-calendar';
 import { getViewerContext } from '@/lib/auth';
+import { AutoSubmitFilters } from '@/components/auto-submit-filters';
 
 type Team = {
   id: string;
@@ -155,7 +156,7 @@ export default async function ReceiptsPage({
           <span className="hq-inline-note">{purchases.length} receipt-backed purchases</span>
         </div>
 
-        <form method="get" className="hq-finance-filter-row">
+        <AutoSubmitFilters className="hq-finance-filter-row">
           <div className="field">
             <label className="label" htmlFor="receipts-month">
               Month
@@ -172,13 +173,7 @@ export default async function ReceiptsPage({
               <option value="amount">Amount</option>
             </select>
           </div>
-
-          <div className="button-row">
-            <button className="button-secondary" type="submit">
-              Apply
-            </button>
-          </div>
-        </form>
+        </AutoSubmitFilters>
 
         {purchases.length > 0 ? (
           <div className="table-wrap">
