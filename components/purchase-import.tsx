@@ -1,7 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+import { useActionState, useMemo, useState } from 'react';
 import { importPurchasesAction } from '@/app/dashboard/actions';
 import {
   detectPurchaseCategory,
@@ -66,6 +65,89 @@ const guessColumn = (headers: string[], patterns: RegExp[]) =>
 
 const readCellText = (value: unknown) => String(value ?? '').trim();
 
+function parseCsvRow(line: string) {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values.map((value) => value.trim());
+}
+
+function parseCsv(text: string) {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/^\uFEFF/, '');
+  const rows: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+    const next = normalized[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === '\n' && !inQuotes) {
+      rows.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current || normalized.endsWith('\n')) {
+    rows.push(current);
+  }
+
+  const nonEmptyRows = rows.filter((row) => row.trim().length > 0);
+  const headers = parseCsvRow(nonEmptyRows[0] || '');
+
+  if (headers.length === 0 || headers.every((header) => header.length === 0)) {
+    return { headers: [] as string[], rows: [] as Record<string, string>[] };
+  }
+
+  const parsedRows = nonEmptyRows.slice(1).map((row) => {
+    const values = parseCsvRow(row);
+    return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? '']));
+  });
+
+  return {
+    headers,
+    rows: parsedRows
+  };
+}
+
 export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseImportProps) {
   const [parsed, setParsed] = useState<ParsedSheet | null>(null);
   const [teamId, setTeamId] = useState(defaultTeamId);
@@ -94,25 +176,17 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
       .map(([value]) => value);
   }, [parsed, mapping.payment]);
 
-  useEffect(() => {
-    if (paymentCandidates.length === 0) {
-      return;
+  const resolvedPaymentMappings = useMemo(() => {
+    const next = { ...paymentMappings };
+
+    for (const candidate of paymentCandidates) {
+      if (!next[candidate] || next[candidate] === 'unknown') {
+        next[candidate] = normalizePaymentMethod(candidate);
+      }
     }
 
-    setPaymentMappings((current) => {
-      const next = { ...current };
-      let changed = false;
-
-      for (const candidate of paymentCandidates) {
-        if (!next[candidate] || next[candidate] === 'unknown') {
-          next[candidate] = normalizePaymentMethod(candidate);
-          changed = true;
-        }
-      }
-
-      return changed ? next : current;
-    });
-  }, [paymentCandidates]);
+    return next;
+  }, [paymentCandidates, paymentMappings]);
 
   const preparedPayload = useMemo(() => {
     if (!parsed || !mapping.item || !mapping.amount) {
@@ -134,7 +208,7 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
 
       const paymentSource = mapping.payment ? readCellText(row[mapping.payment]) : '';
       const paymentMethod = paymentSource
-        ? paymentMappings[paymentSource] || normalizePaymentMethod(paymentSource)
+        ? resolvedPaymentMappings[paymentSource] || normalizePaymentMethod(paymentSource)
         : 'unknown';
 
       purchases.push({
@@ -152,7 +226,7 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
       purchases,
       skippedRows
     };
-  }, [parsed, mapping, paymentMappings]);
+  }, [parsed, mapping, resolvedPaymentMappings]);
 
   const importAmount = useMemo(
     () => preparedPayload.purchases.reduce((sum, purchase) => sum + purchase.amount, 0),
@@ -162,22 +236,14 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
   const handleFile = async (file: File) => {
     setFileError('');
 
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-    const firstSheet = workbook.SheetNames[0];
-
-    if (!firstSheet) {
+    if (!file.name.toLowerCase().endsWith('.csv')) {
       setParsed(null);
-      setFileError('This file does not contain a readable worksheet.');
+      setFileError('Only CSV import is supported.');
       return;
     }
 
-    const worksheet = workbook.Sheets[firstSheet];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-      raw: false,
-      defval: ''
-    });
-    const headers = Object.keys(rows[0] || {});
+    const text = await file.text();
+    const { headers, rows } = parseCsv(text);
 
     if (headers.length === 0) {
       setParsed(null);
@@ -203,23 +269,23 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
     <div className="hq-import-panel">
       <div className="hq-block-head">
         <h3>Import purchases</h3>
-        <span className="hq-inline-note">CSV or XLSX</span>
+        <span className="hq-inline-note">CSV only</span>
       </div>
 
       <p className="helper">
-        Upload a spreadsheet, confirm the column mapping, and we&apos;ll import every valid row into your team&apos;s
+        Upload a CSV export, confirm the column mapping, and we&apos;ll import every valid row into your team&apos;s
         purchase log.
       </p>
 
       <div className="field">
         <label className="label" htmlFor="purchase-import-file">
-          CSV or XLSX file
+          CSV file
         </label>
         <input
           className="input"
           id="purchase-import-file"
           type="file"
-          accept=".csv,.xlsx,.xls"
+          accept=".csv,text/csv"
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) {
@@ -309,7 +375,7 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
                   <select
                     className="select"
                     id={`payment-map-${candidate}`}
-                    value={paymentMappings[candidate] || 'unknown'}
+                    value={resolvedPaymentMappings[candidate] || 'unknown'}
                     onChange={(event) =>
                       setPaymentMappings((current) => ({
                         ...current,
