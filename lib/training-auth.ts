@@ -38,20 +38,38 @@ function safeEqualHex(a: string, b: string): boolean {
   }
 }
 
-export async function isEmailInRoster(email: string): Promise<boolean> {
+export async function isEmailEligible(email: string): Promise<boolean> {
   const supabase = createAdminClient();
   const normalized = normalizeEmail(email);
-  const { data, error } = await supabase
+
+  const { data: rosterRows, error: rosterError } = await supabase
     .from('team_roster_members')
     .select('id')
     .ilike('stanford_email', normalized)
     .limit(1);
 
-  if (error) {
-    throw new Error(`Failed to check roster: ${error.message}`);
+  if (rosterError) {
+    throw new Error(`Failed to check roster: ${rosterError.message}`);
   }
 
-  return Boolean(data && data.length > 0);
+  if (rosterRows && rosterRows.length > 0) {
+    return true;
+  }
+
+  // HQ portal users (admins, presidents, financial officers, team leads) are
+  // also club members for training purposes.
+  const { data: profileRows, error: profileError } = await supabase
+    .from('profiles')
+    .select('id')
+    .ilike('email', normalized)
+    .eq('active', true)
+    .limit(1);
+
+  if (profileError) {
+    throw new Error(`Failed to check profiles: ${profileError.message}`);
+  }
+
+  return Boolean(profileRows && profileRows.length > 0);
 }
 
 export async function issueOtpCode(email: string, requestIp: string | null) {
