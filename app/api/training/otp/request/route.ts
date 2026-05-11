@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isEmailInRoster, issueOtpCode, normalizeEmail, TRAINING_OTP_TTL_MINUTES } from '@/lib/training-auth';
+import { isEmailEligible, issueOtpCode, normalizeEmail, TRAINING_OTP_TTL_MINUTES } from '@/lib/training-auth';
 import { sendTrainingOtpEmail } from '@/lib/notifications';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -18,10 +18,10 @@ export async function POST(request: Request) {
   }
 
   const email = normalizeEmail(rawEmail);
-  const inRoster = await isEmailInRoster(email);
+  const eligible = await isEmailEligible(email);
 
-  // Always respond with the same shape so we don't reveal which emails are on the roster.
-  if (!inRoster) {
+  // Always respond with the same shape so we don't reveal which emails are eligible.
+  if (!eligible) {
     return NextResponse.json({ ok: true });
   }
 
