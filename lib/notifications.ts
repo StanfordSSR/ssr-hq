@@ -82,6 +82,27 @@ async function sendEmail({
   }
 }
 
+export async function sendTrainingOtpEmail({
+  to,
+  code,
+  expiresInMinutes
+}: {
+  to: string;
+  code: string;
+  expiresInMinutes: number;
+}) {
+  const subject = `Your SSR training login code: ${code}`;
+  const text = `Your Stanford Student Robotics training login code is ${code}.\n\nThis code expires in ${expiresInMinutes} minutes.\n\nIf you did not request this, you can ignore this email.`;
+  const html = renderEmailFrame({
+    eyebrow: 'Training login',
+    heading: 'Your training login code',
+    body: `<p style="margin:0 0 14px;">Enter this code on the training site to sign in.</p><p style="margin:0 0 14px;font-size:32px;letter-spacing:6px;font-weight:700;color:#171414;">${code}</p><p style="margin:0;color:#6d6161;">This code expires in ${expiresInMinutes} minutes.</p>`,
+    footer: 'If you did not request this code, no further action is needed.'
+  });
+
+  await sendEmail({ to: [to], subject, text, html });
+}
+
 export async function sendTaskEmails({
   to,
   title,
