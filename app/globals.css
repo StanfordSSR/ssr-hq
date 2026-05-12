@@ -4043,3 +4043,59 @@ tr:last-child td {
     right: -20px;
   }
 }
+
+/* Idle overlay */
+
+.training-idle-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 14, 14, 0.66);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 24px;
+  animation: trainingIdleFade 160ms ease-out;
+}
+
+@keyframes trainingIdleFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.training-idle-card {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 32px 36px;
+  max-width: 440px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+}
+
+.training-idle-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8c1515;
+  font-weight: 700;
+}
+
+.training-idle-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  color: #171414;
+}
+
+.training-idle-body {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #4b4243;
+}

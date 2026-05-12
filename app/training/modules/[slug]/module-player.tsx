@@ -57,15 +57,25 @@ export function ModulePlayer({
     return init;
   });
 
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [activeSeconds, setActiveSeconds] = useState(0);
   const [scrolledToEnd, setScrolledToEnd] = useState(false);
+  const [hasReachedBottom, setHasReachedBottom] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
+  const [isIdle, setIsIdle] = useState(false);
+  const [scrolledTooFast, setScrolledTooFast] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const startTimeRef = useRef<number>(0);
+  const lastActivityRef = useRef<number>(0);
+  const hasScrolledRef = useRef<boolean>(false);
+  const firstScrollAtRef = useRef<number | null>(null);
+  const activeSecondsRef = useRef<number>(0);
 
   const [submitting, setSubmitting] = useState(false);
   const [attempts, setAttempts] = useState(1);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+
+  const SCROLL_VELOCITY_MIN_SECONDS = 5;
+  const IDLE_THRESHOLD_MS = 60_000;
 
   const chapter = mod.chapters[chapterIndex];
   const isLastChapter = chapterIndex === mod.chapters.length - 1;
@@ -82,37 +92,64 @@ export function ModulePlayer({
     });
   }, [alreadyCompleted, mod.slug]);
 
-  // Reset per-chapter dwell + scroll on chapter change. Setting state here is
-  // intentional: the chapter index changing is the synchronization event.
+  // Reset per-chapter gates on chapter change.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    startTimeRef.current = Date.now();
-    setElapsedSeconds(0);
+    activeSecondsRef.current = 0;
+    lastActivityRef.current = Date.now();
+    hasScrolledRef.current = false;
+    firstScrollAtRef.current = null;
+    setActiveSeconds(0);
     setScrolledToEnd(false);
+    setHasReachedBottom(false);
+    setIsIdle(false);
+    setScrolledTooFast(false);
   }, [chapterIndex]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Tick the dwell timer every second.
+  // Watch tab visibility — pause the dwell timer when the tab is hidden.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000));
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, [chapterIndex]);
+    const onVisibility = () => {
+      setIsHidden(document.hidden);
+      if (!document.hidden) {
+        lastActivityRef.current = Date.now();
+      }
+    };
+    setIsHidden(document.hidden);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Track whether the user has scrolled to (or past) the end of the chapter body.
+  // Activity tracking: any user input resets the idle clock.
+  useEffect(() => {
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+      setIsIdle((prev) => (prev ? false : prev));
+    };
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'scroll'] as const;
+    events.forEach((e) => window.addEventListener(e, markActivity, { passive: true }));
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, markActivity));
+    };
+  }, []);
+
+  // Scroll tracking: record first scroll time and whether the user has reached the
+  // bottom of the chapter body at any point.
   useEffect(() => {
     const onScroll = () => {
+      if (!hasScrolledRef.current) {
+        hasScrolledRef.current = true;
+        firstScrollAtRef.current = Date.now();
+      }
       const body = bodyRef.current;
       if (!body) return;
       const rect = body.getBoundingClientRect();
-      const viewportBottom = window.innerHeight;
-      // Consider "reached end" when the bottom of the body is within view + 60px buffer.
-      if (rect.bottom - viewportBottom < 60) {
-        setScrolledToEnd(true);
+      if (rect.bottom - window.innerHeight < 60) {
+        setHasReachedBottom(true);
       }
     };
-    onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
     return () => {
@@ -121,9 +158,63 @@ export function ModulePlayer({
     };
   }, [chapterIndex]);
 
-  const dwellRemaining = Math.max(0, chapter.minSeconds - elapsedSeconds);
+  // Per-second tick: accumulate active time only when visible AND not idle.
+  // Also evaluates the scroll-velocity gate and idle threshold.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const now = Date.now();
+      const sinceActivity = now - lastActivityRef.current;
+      const idleNow = sinceActivity >= IDLE_THRESHOLD_MS;
+
+      if (idleNow) {
+        setIsIdle(true);
+      }
+
+      const visible = typeof document !== 'undefined' && !document.hidden;
+
+      if (visible && !idleNow) {
+        activeSecondsRef.current += 1;
+        setActiveSeconds(activeSecondsRef.current);
+      }
+
+      // If the chapter body is short enough that the bottom is already visible
+      // without scrolling, recognise it here.
+      const body = bodyRef.current;
+      if (body) {
+        const rect = body.getBoundingClientRect();
+        if (rect.bottom - window.innerHeight < 60) {
+          setHasReachedBottom(true);
+          if (!hasScrolledRef.current) {
+            hasScrolledRef.current = true;
+            firstScrollAtRef.current = now;
+          }
+        }
+      }
+
+      // Scroll-velocity gate: bottom reached + at least N active seconds since the
+      // first scroll. Until both conditions hold, scrolledToEnd stays false and we
+      // surface a "too fast" hint to the user.
+      if (hasReachedBottom && hasScrolledRef.current && firstScrollAtRef.current) {
+        const elapsedSinceFirstScroll = (now - firstScrollAtRef.current) / 1000;
+        if (elapsedSinceFirstScroll >= SCROLL_VELOCITY_MIN_SECONDS) {
+          setScrolledToEnd(true);
+          setScrolledTooFast(false);
+        } else {
+          setScrolledTooFast(true);
+        }
+      }
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [chapterIndex, hasReachedBottom]);
+
+  const dwellRemaining = Math.max(0, chapter.minSeconds - activeSeconds);
   const dwellMet = dwellRemaining === 0;
   const questionsUnlocked = alreadyCompleted || (dwellMet && scrolledToEnd);
+
+  const dismissIdle = () => {
+    lastActivityRef.current = Date.now();
+    setIsIdle(false);
+  };
 
   const chapterQuestionsAnswered = useMemo(() => {
     if (alreadyCompleted) return true;
@@ -310,24 +401,48 @@ export function ModulePlayer({
           {!alreadyCompleted ? (
             <div className="training-gate" data-met={questionsUnlocked ? 'true' : 'false'}>
               <div className={`training-gate-row ${dwellMet ? 'is-met' : ''}`}>
-                <span className="training-gate-icon">{dwellMet ? '✓' : '◷'}</span>
+                <span className="training-gate-icon">{dwellMet ? '✓' : isHidden || isIdle ? '⏸' : '◷'}</span>
                 <div>
-                  <p className="training-gate-label">Minimum time on chapter</p>
+                  <p className="training-gate-label">Minimum active time on chapter</p>
                   <p className="training-gate-detail">
                     {dwellMet
                       ? 'Met. You can submit the knowledge check below.'
-                      : `Stay for ${dwellRemaining}s longer. (${elapsedSeconds}/${chapter.minSeconds}s)`}
+                      : isHidden
+                        ? `Paused — tab is hidden. (${activeSeconds}/${chapter.minSeconds}s of active time)`
+                        : isIdle
+                          ? `Paused — no activity for over a minute. (${activeSeconds}/${chapter.minSeconds}s of active time)`
+                          : `Stay for ${dwellRemaining}s longer. (${activeSeconds}/${chapter.minSeconds}s of active time)`}
                   </p>
                 </div>
               </div>
               <div className={`training-gate-row ${scrolledToEnd ? 'is-met' : ''}`}>
-                <span className="training-gate-icon">{scrolledToEnd ? '✓' : '↓'}</span>
+                <span className="training-gate-icon">{scrolledToEnd ? '✓' : scrolledTooFast ? '⤴' : '↓'}</span>
                 <div>
                   <p className="training-gate-label">Reached end of chapter</p>
                   <p className="training-gate-detail">
-                    {scrolledToEnd ? 'Met.' : 'Scroll through the rest of the chapter content above.'}
+                    {scrolledToEnd
+                      ? 'Met.'
+                      : scrolledTooFast
+                        ? 'You scrolled through too quickly. Spend a few more seconds reading the chapter — the gate will clear automatically.'
+                        : 'Scroll through the rest of the chapter content above.'}
                   </p>
                 </div>
+              </div>
+            </div>
+          ) : null}
+
+          {isIdle && !alreadyCompleted ? (
+            <div className="training-idle-backdrop" role="dialog" aria-modal="true">
+              <div className="training-idle-card">
+                <p className="training-idle-eyebrow">Still there?</p>
+                <h2 className="training-idle-title">The training timer is paused.</h2>
+                <p className="training-idle-body">
+                  We did not detect any activity for over a minute. The minimum time gate only counts when you are
+                  actively on this page.
+                </p>
+                <button type="button" className="button" onClick={dismissIdle}>
+                  I&apos;m still here — resume
+                </button>
               </div>
             </div>
           ) : null}
