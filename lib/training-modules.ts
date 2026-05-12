@@ -55,6 +55,47 @@ export async function getCompletion(email: string, moduleSlug: string): Promise<
   };
 }
 
+export async function markModuleStarted(email: string, moduleSlug: string): Promise<void> {
+  const supabase = createAdminClient();
+  const normalized = normalizeEmail(email);
+
+  const { data: existing } = await supabase
+    .from('training_module_starts')
+    .select('started_at')
+    .eq('email', normalized)
+    .eq('module_slug', moduleSlug)
+    .maybeSingle();
+
+  if (existing) return;
+
+  await supabase
+    .from('training_module_starts')
+    .insert({ email: normalized, module_slug: moduleSlug });
+}
+
+export async function getModuleStartedAt(email: string, moduleSlug: string): Promise<Date | null> {
+  const supabase = createAdminClient();
+  const normalized = normalizeEmail(email);
+  const { data } = await supabase
+    .from('training_module_starts')
+    .select('started_at')
+    .eq('email', normalized)
+    .eq('module_slug', moduleSlug)
+    .maybeSingle();
+
+  return data?.started_at ? new Date(data.started_at) : null;
+}
+
+export async function clearModuleStart(email: string, moduleSlug: string): Promise<void> {
+  const supabase = createAdminClient();
+  const normalized = normalizeEmail(email);
+  await supabase
+    .from('training_module_starts')
+    .delete()
+    .eq('email', normalized)
+    .eq('module_slug', moduleSlug);
+}
+
 export async function recordCompletion(
   email: string,
   moduleSlug: string,
