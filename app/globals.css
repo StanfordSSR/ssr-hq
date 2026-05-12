@@ -3577,3 +3577,469 @@ tr:last-child td {
     grid-template-columns: 1fr;
   }
 }
+
+/* Training: rich content blocks */
+
+.training-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.training-stat {
+  background: linear-gradient(180deg, #fff 0%, #faf3f3 100%);
+  border: 1px solid #efe6e6;
+  border-radius: 14px;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.training-stat-value {
+  font-family: var(--font-brand, var(--font-sans));
+  font-size: 30px;
+  font-weight: 700;
+  color: #8c1515;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.training-stat-label {
+  font-size: 13px;
+  color: #171414;
+  font-weight: 600;
+}
+
+.training-stat-sub {
+  font-size: 11.5px;
+  color: #6d6161;
+  line-height: 1.45;
+}
+
+.training-figure {
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.training-figure-title {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8c1515;
+  font-weight: 700;
+}
+
+.training-figure-caption {
+  font-size: 12px;
+  color: #6d6161;
+}
+
+/* Org chart */
+
+.org-chart {
+  background: #fbf6f6;
+  border: 1px solid #efe6e6;
+  border-radius: 14px;
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.org-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+
+.org-card {
+  flex: 1 1 180px;
+  min-width: 160px;
+  background: #ffffff;
+  border: 1px solid #efe6e6;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.org-card-label {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #171414;
+}
+
+.org-card-sub {
+  font-size: 11.5px;
+  color: #6d6161;
+  line-height: 1.4;
+}
+
+.org-card-primary {
+  background: linear-gradient(180deg, #8c1515 0%, #6f1010 100%);
+  border-color: #6f1010;
+  color: #ffffff;
+  flex: 1 1 100%;
+  text-align: center;
+  align-items: center;
+}
+
+.org-card-primary .org-card-label,
+.org-card-primary .org-card-sub {
+  color: #ffffff;
+}
+
+.org-card-muted {
+  background: #faf3f3;
+}
+
+.org-card-team {
+  background: #1f5fa6;
+  border-color: #14365f;
+  color: #ffffff;
+  flex: 1 1 100%;
+  text-align: center;
+  align-items: center;
+}
+
+.org-card-team .org-card-label,
+.org-card-team .org-card-sub {
+  color: #ffffff;
+}
+
+.org-connector {
+  width: 2px;
+  height: 18px;
+  background: #d8c9c9;
+}
+
+.org-connector-deep {
+  height: 28px;
+}
+
+/* Timeline */
+
+.training-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+
+.training-timeline::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  background: linear-gradient(180deg, #b06012 0%, #8c1515 100%);
+  opacity: 0.4;
+}
+
+.training-timeline-step {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  position: relative;
+}
+
+.training-timeline-marker {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #b06012 0%, #8c1515 100%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(176, 96, 18, 0.3);
+  z-index: 1;
+}
+
+.training-timeline-day {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #b06012;
+  font-weight: 700;
+}
+
+.training-timeline-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #171414;
+}
+
+.training-timeline-detail {
+  font-size: 13.5px;
+  color: #4b4243;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+/* Tier table */
+
+.training-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.training-tier {
+  background: #ffffff;
+  border: 1px solid #efe6e6;
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-left: 6px solid #d8c9c9;
+}
+
+.training-tier-minor {
+  border-left-color: #c4843a;
+  background: #fdfaf5;
+}
+
+.training-tier-major {
+  border-left-color: #b03a1f;
+  background: #fdf3f0;
+}
+
+.training-tier-head {
+  font-weight: 700;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #171414;
+}
+
+.training-tier-threshold {
+  font-size: 13.5px;
+  color: #4b4243;
+  line-height: 1.5;
+}
+
+.training-tier-consequence {
+  font-size: 13px;
+  color: #6d2a16;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.training-tier-minor .training-tier-consequence {
+  color: #6f4a14;
+}
+
+/* Flowchart */
+
+.training-flow {
+  background: #f6f1ec;
+  border: 1px solid #e7dddd;
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.training-flow-root {
+  display: flex;
+  justify-content: center;
+}
+
+.training-flow-node {
+  background: #ffffff;
+  border: 1px solid #d8c9c9;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: #2c2627;
+  max-width: 320px;
+  text-align: left;
+}
+
+.training-flow-node-primary {
+  background: linear-gradient(135deg, #0e6b4e 0%, #145b40 100%);
+  color: #ffffff;
+  border-color: #0a4a36;
+  font-weight: 600;
+  text-align: center;
+}
+
+.training-flow-node-external {
+  background: #f1f6fc;
+  border-color: #b8d1e9;
+  color: #14365f;
+}
+
+.training-flow-branches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.training-flow-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.training-flow-edge {
+  font-size: 11.5px;
+  color: #4b4243;
+  background: #fff;
+  border: 1px dashed #d8c9c9;
+  border-radius: 999px;
+  padding: 3px 10px;
+  align-self: flex-start;
+}
+
+/* Gate */
+
+.training-gate {
+  background: #ffffff;
+  border: 1px solid #e7dddd;
+  border-radius: 14px;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+
+.training-gate[data-met='true'] {
+  border-color: #b9dec8;
+  background: #f5fbf7;
+}
+
+.training-gate-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.training-gate-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #efe6e6;
+  color: #6d6161;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.training-gate-row.is-met .training-gate-icon {
+  background: #14593a;
+  color: #ffffff;
+}
+
+.training-gate-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #171414;
+}
+
+.training-gate-detail {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #4b4243;
+  line-height: 1.4;
+}
+
+/* Knowledge check lock state */
+
+.training-check[data-locked='true'] {
+  opacity: 0.55;
+  pointer-events: none;
+  background: #faf6f6;
+}
+
+.training-check[data-locked='true'] .training-check-title {
+  color: #6d6161;
+}
+
+.training-question-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: #fdf0f0;
+  color: #8c1515;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-right: 6px;
+  border: 1px solid #f4d8d8;
+  vertical-align: middle;
+}
+
+/* Hero illustration mount */
+
+.training-hero-illu {
+  position: absolute;
+  right: -20px;
+  bottom: -30px;
+  width: 280px;
+  height: 280px;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.training-hero-illu svg {
+  width: 100%;
+  height: 100%;
+}
+
+.training-illu-card {
+  background: #fbf6f6;
+  border: 1px solid #efe6e6;
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  justify-content: center;
+}
+
+.training-illu-card svg {
+  width: 200px;
+  height: 200px;
+  color: #8c1515;
+}
+
+@media (max-width: 760px) {
+  .training-stat-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .org-card {
+    flex: 1 1 100%;
+  }
+  .training-hero-illu {
+    width: 180px;
+    height: 180px;
+    bottom: -10px;
+    right: -20px;
+  }
+}
