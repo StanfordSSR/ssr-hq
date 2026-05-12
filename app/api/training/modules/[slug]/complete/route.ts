@@ -1,0 +1,31 @@
+import { NextResponse } from 'next/server';
+import { getTrainingSession } from '@/lib/training-auth';
+import { getModule } from '@/lib/training-content';
+import { recordCompletion } from '@/lib/training-modules';
+
+export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const session = await getTrainingSession();
+  if (!session) {
+    return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
+  }
+
+  const { slug } = await params;
+  const mod = getModule(slug);
+  if (!mod) {
+    return NextResponse.json({ error: 'Module not found' }, { status: 404 });
+  }
+
+  let payload: { score?: number; attempts?: number } = {};
+  try {
+    payload = await request.json();
+  } catch {
+    // empty body is fine
+  }
+
+  const score = typeof payload.score === 'number' ? payload.score : 1.0;
+  const attempts = typeof payload.attempts === 'number' && payload.attempts >= 1 ? Math.floor(payload.attempts) : 1;
+
+  await recordCompletion(session.email, slug, score, attempts);
+
+  return NextResponse.json({ ok: true });
+}
