@@ -4739,3 +4739,73 @@ tr:last-child td {
     width: 240px;
   }
 }
+
+/* Workshop game v3 — phase panel + build steps */
+
+.workshop-hud-steps li.is-current {
+  color: #171414;
+  font-weight: 600;
+}
+
+.workshop-hud-build {
+  border-top: 1px solid #efe6e6;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: #2c2627;
+}
+
+.workshop-hud-build strong {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8c1515;
+}
+
+.workshop-hud-build ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workshop-hud-build ul li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  line-height: 1.4;
+}
+
+.workshop-hud-build ul li.is-done {
+  color: #0f4429;
+}
+
+.workshop-hud-build-hint {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  background: #fdf6f6;
+  border: 1px solid #f0d8a8;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #4b4243;
+}
+
+.workshop-hud-build-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 4px;
+  background: #171414;
+  color: #ffffff;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
