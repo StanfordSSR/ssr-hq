@@ -59,7 +59,7 @@ const initiation: TrainingModule = {
   subtitle:
     'A short, required orientation covering what SSR is, how it works, and how every member is expected to operate.',
   required: true,
-  estimatedMinutes: 13,
+  estimatedMinutes: 9,
   passingScore: 1.0,
   chapters: [
     {
@@ -71,7 +71,7 @@ const initiation: TrainingModule = {
         'You are now part of an organization built to design, build, and operate real robotic systems — and to train the engineers behind them.',
       accent: '#8c1515',
       illustration: 'circuit',
-      minSeconds: 45,
+      minSeconds: 27,
       blocks: [
         {
           type: 'paragraph',
@@ -182,7 +182,7 @@ const initiation: TrainingModule = {
         'Two layers run SSR: the Executive Board, which governs the organization, and Teams, which build the projects.',
       accent: '#5b3a8a',
       illustration: 'gear',
-      minSeconds: 80,
+      minSeconds: 48,
       blocks: [
         {
           type: 'heading',
@@ -295,7 +295,7 @@ const initiation: TrainingModule = {
         'SSR runs on shared trust. Every member is expected to treat people, tools, and space with the same care they would expect in return.',
       accent: '#0e6b4e',
       illustration: 'shield',
-      minSeconds: 90,
+      minSeconds: 54,
       blocks: [
         {
           type: 'heading',
@@ -426,7 +426,7 @@ const initiation: TrainingModule = {
         'Every dollar SSR spends is tracked. Even if you never touch the club credit card, you are expected to understand how the money moves.',
       accent: '#b06012',
       illustration: 'ledger',
-      minSeconds: 95,
+      minSeconds: 57,
       blocks: [
         {
           type: 'paragraph',
@@ -576,7 +576,7 @@ const initiation: TrainingModule = {
         'When you wear an SSR shirt, post about a project, or stand at a sponsor demo, you are the club to whoever is watching. Treat it that way.',
       accent: '#1f5fa6',
       illustration: 'broadcast',
-      minSeconds: 75,
+      minSeconds: 45,
       blocks: [
         {
           type: 'heading',
@@ -696,7 +696,7 @@ const initiation: TrainingModule = {
         'SSR depends on the trust of the University, sponsors, and a broad membership. Institutional neutralism is how we keep that trust intact.',
       accent: '#444444',
       illustration: 'compass',
-      minSeconds: 70,
+      minSeconds: 42,
       blocks: [
         {
           type: 'paragraph',
@@ -810,7 +810,7 @@ const roomAccess: TrainingModule = {
     'Required for any member who wants physical access to the SSR robotics room. Covers door policy, forbidden activities, 3D printers, and cleanup — and ends with a 3D workshop simulation.',
   required: false,
   gatedByOptIn: true,
-  estimatedMinutes: 14,
+  estimatedMinutes: 10,
   passingScore: 0.8,
   chapters: [
     {
@@ -822,7 +822,7 @@ const roomAccess: TrainingModule = {
         'Access to the robotics room is a privilege you keep by following a small set of rules. The most important one is the door.',
       accent: '#8c1515',
       illustration: 'shield',
-      minSeconds: 60,
+      minSeconds: 36,
       blocks: [
         {
           type: 'paragraph',
@@ -919,7 +919,7 @@ const roomAccess: TrainingModule = {
         'The robotics room is not a wet lab, not a machine shop, and not a paint booth. A short list of activities is forbidden here because the room is not ventilated for them.',
       accent: '#b03a1f',
       illustration: 'shield',
-      minSeconds: 70,
+      minSeconds: 42,
       blocks: [
         {
           type: 'paragraph',
@@ -1022,7 +1022,7 @@ const roomAccess: TrainingModule = {
         'The room has two 3D printers. Both are enclosed, but enclosed does not mean fume-proof — and a few simple rules keep us out of trouble.',
       accent: '#5b3a8a',
       illustration: 'workshop',
-      minSeconds: 80,
+      minSeconds: 48,
       blocks: [
         {
           type: 'stat-row',
@@ -1129,7 +1129,7 @@ const roomAccess: TrainingModule = {
         'The room is shared. The condition you leave it in is the condition the next person finds it in.',
       accent: '#0e6b4e',
       illustration: 'shield',
-      minSeconds: 60,
+      minSeconds: 36,
       blocks: [
         {
           type: 'heading',
