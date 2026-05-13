@@ -98,7 +98,7 @@ export function getItem(id: ItemId): ItemDef {
 
 export type BuildLocation = 'workstation' | 'bambu' | 'prusa';
 
-export type MinigameKind = 'screws' | 'filament';
+export type MinigameKind = 'screws' | 'filament' | 'torque' | 'caliper';
 
 export type BuildAction = {
   id: string;
@@ -205,8 +205,8 @@ export const ROUNDS: RoundDef[] = [
         kind: 'build',
         label: 'Assemble and measure',
         actions: [
-          { id: 'assemble', prompt: 'Drive the M3 screws and seat the bracket', tool: 'phillips-small', durationMs: 2000 },
-          { id: 'measure', prompt: 'Take a final measurement with the calipers', tool: 'caliper', durationMs: 1800 }
+          { id: 'assemble', prompt: 'Torque the bolts in a star pattern', tool: 'phillips-small', durationMs: 2000, minigame: 'torque' },
+          { id: 'measure', prompt: 'Measure the bracket with the calipers', tool: 'caliper', durationMs: 1800, minigame: 'caliper' }
         ]
       },
       { kind: 'return', label: 'Return every tool to its shelf' }

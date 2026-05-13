@@ -5522,3 +5522,137 @@ tr:last-child td {
   0%, 100% { transform: scale(1); box-shadow: 0 8px 22px rgba(140, 21, 21, 0.35); }
   50% { transform: scale(1.04); box-shadow: 0 10px 28px rgba(140, 21, 21, 0.55); }
 }
+
+/* Torque-pattern minigame */
+
+.tq-card {
+  max-width: 720px;
+}
+
+.tq-board {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 14px 0 8px;
+  background: linear-gradient(180deg, #fff8eb 0%, #ebe2ce 100%);
+  border: 1px solid #d2c4a2;
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.tq-bolt {
+  transition: transform 0.18s ease;
+}
+
+.tq-bolt.is-wrong {
+  animation: mgWrongShake 0.35s ease;
+}
+
+.tq-hint {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #2c2627;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Caliper minigame */
+
+.cal-card {
+  max-width: 760px;
+}
+
+.cal-stage {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0;
+  background: linear-gradient(180deg, #f5efe3 0%, #ebe2ce 100%);
+  border: 1px solid #d2c4a2;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.cal-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: #1a1410;
+  border-radius: 12px;
+  color: #fdf6e6;
+}
+
+.cal-label {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffd86c;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.cal-slider {
+  flex: 1;
+  height: 6px;
+  appearance: none;
+  background: linear-gradient(90deg, #5a4f3a 0%, #ffd86c 100%);
+  border-radius: 999px;
+  outline: none;
+}
+
+.cal-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffd86c;
+  border: 2px solid #fff;
+  box-shadow: 0 0 8px rgba(255, 216, 108, 0.6);
+  cursor: ew-resize;
+}
+
+.cal-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffd86c;
+  border: 2px solid #fff;
+  cursor: ew-resize;
+}
+
+.cal-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 160px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.cal-current {
+  font-size: 18px;
+  font-weight: 700;
+  color: #7aff9a;
+}
+
+.cal-diff {
+  font-size: 11.5px;
+}
+
+.cal-diff.is-good {
+  color: #7aff9a;
+}
+
+.cal-diff.is-warn {
+  color: #ffd86c;
+}
+
+.cal-diff.is-bad {
+  color: #ff9a8c;
+}
+
+.cal-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
