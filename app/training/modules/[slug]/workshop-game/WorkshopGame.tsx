@@ -83,8 +83,11 @@ const SHELF_LAYOUT: Record<Shelf, ShelfCfg> = {
   'forbidden':     { position: [ 0.6,  0,  6.85], rotY: Math.PI,       width: 2.8, depth: 0.5, height: 1.6, shelves: 2, label: 'Misc — NOT for this room', tone: 'forbidden' }
 };
 
-const BENCH_CFG = { position: [-2.0, 0, -6.5] as [number, number, number], width: 4.5, depth: 1.2, height: 0.95 };
-const PRINTER_TABLE_CFG = { position: [6.5, 0, 1.5] as [number, number, number], width: 1.4, depth: 3.0, height: 0.85 };
+const BENCH_CFG = { position: [-2.0, 0, -6.3] as [number, number, number], width: 4.5, depth: 1.2, height: 0.95 };
+// Printer table sits clearly inside the room, away from the east wall.
+const PRINTER_TABLE_CFG = { position: [5.7, 0, 1.5] as [number, number, number], widthX: 1.3, depthZ: 3.0, height: 0.85 };
+const PRUSA_POS: [number, number, number] = [5.7, PRINTER_TABLE_CFG.height, 0.5];
+const BAMBU_POS: [number, number, number] = [5.7, PRINTER_TABLE_CFG.height, 2.5];
 const DOOR_CFG = { position: [6.99, 0, 5.0] as [number, number, number] };
 
 const FLOOR_COLOR = '#dcd2c2';
@@ -103,41 +106,126 @@ function clamp(value: number, lo: number, hi: number) {
 function Room() {
   return (
     <group>
+      {/* Polished concrete / epoxy floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[ROOM_W, ROOM_D]} />
-        <meshStandardMaterial color={FLOOR_COLOR} />
+        <meshStandardMaterial color={FLOOR_COLOR} roughness={0.45} metalness={0.05} />
       </mesh>
+      {/* Faint grid stripes baked into the floor */}
+      {Array.from({ length: 7 }).map((_, i) => (
+        <mesh key={`fx-${i}`} position={[0, 0.001, -ROOM_D / 2 + (i + 1) * (ROOM_D / 8)]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[ROOM_W - 0.4, 0.012]} />
+          <meshStandardMaterial color="#c4b69e" transparent opacity={0.5} />
+        </mesh>
+      ))}
+      {Array.from({ length: 7 }).map((_, i) => (
+        <mesh key={`fz-${i}`} position={[-ROOM_W / 2 + (i + 1) * (ROOM_W / 8), 0.001, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
+          <planeGeometry args={[ROOM_D - 0.4, 0.012]} />
+          <meshStandardMaterial color="#c4b69e" transparent opacity={0.5} />
+        </mesh>
+      ))}
+      {/* Ceiling */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, WALL_H, 0]}>
         <planeGeometry args={[ROOM_W, ROOM_D]} />
-        <meshStandardMaterial color="#fdfbf6" />
+        <meshStandardMaterial color="#fdfbf6" roughness={0.95} />
       </mesh>
-      <mesh position={[0, WALL_H / 2, -ROOM_D / 2]}>
+      {/* Walls */}
+      <mesh position={[0, WALL_H / 2, -ROOM_D / 2]} receiveShadow>
         <boxGeometry args={[ROOM_W, WALL_H, 0.1]} />
-        <meshStandardMaterial color={WALL_COLOR} />
+        <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
       </mesh>
-      <mesh position={[-ROOM_W / 2, WALL_H / 2, 0]}>
+      <mesh position={[-ROOM_W / 2, WALL_H / 2, 0]} receiveShadow>
         <boxGeometry args={[0.1, WALL_H, ROOM_D]} />
-        <meshStandardMaterial color={WALL_COLOR} />
+        <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
       </mesh>
-      <mesh position={[ROOM_W / 2, WALL_H / 2, 0]}>
+      <mesh position={[ROOM_W / 2, WALL_H / 2, 0]} receiveShadow>
         <boxGeometry args={[0.1, WALL_H, ROOM_D]} />
-        <meshStandardMaterial color={WALL_COLOR} />
+        <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
       </mesh>
-      <mesh position={[0, WALL_H / 2, ROOM_D / 2]}>
+      <mesh position={[0, WALL_H / 2, ROOM_D / 2]} receiveShadow>
         <boxGeometry args={[ROOM_W, WALL_H, 0.1]} />
-        <meshStandardMaterial color={WALL_COLOR} />
+        <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
       </mesh>
+      {/* Baseboard */}
       {[
-        { pos: [0, 0.05, -ROOM_D / 2 + 0.06], size: [ROOM_W, 0.1, 0.04] },
-        { pos: [0, 0.05, ROOM_D / 2 - 0.06], size: [ROOM_W, 0.1, 0.04] },
-        { pos: [-ROOM_W / 2 + 0.06, 0.05, 0], size: [0.04, 0.1, ROOM_D] },
-        { pos: [ROOM_W / 2 - 0.06, 0.05, 0], size: [0.04, 0.1, ROOM_D] }
+        { pos: [0, 0.06, -ROOM_D / 2 + 0.06], size: [ROOM_W, 0.12, 0.04] },
+        { pos: [0, 0.06, ROOM_D / 2 - 0.06], size: [ROOM_W, 0.12, 0.04] },
+        { pos: [-ROOM_W / 2 + 0.06, 0.06, 0], size: [0.04, 0.12, ROOM_D] },
+        { pos: [ROOM_W / 2 - 0.06, 0.06, 0], size: [0.04, 0.12, ROOM_D] }
       ].map((t, i) => (
         <mesh key={i} position={t.pos as [number, number, number]}>
           <boxGeometry args={t.size as [number, number, number]} />
           <meshStandardMaterial color="#bfb3a1" />
         </mesh>
       ))}
+
+      {/* Ceiling light fixtures (emissive bars) */}
+      {[
+        [-3, WALL_H - 0.05, -2],
+        [3, WALL_H - 0.05, -2],
+        [-3, WALL_H - 0.05, 3],
+        [3, WALL_H - 0.05, 3]
+      ].map((p, i) => (
+        <group key={`fx-${i}`} position={p as [number, number, number]}>
+          <mesh>
+            <boxGeometry args={[1.6, 0.08, 0.4]} />
+            <meshStandardMaterial color="#202020" />
+          </mesh>
+          <mesh position={[0, -0.045, 0]}>
+            <boxGeometry args={[1.5, 0.005, 0.32]} />
+            <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1.4} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Safety poster on north wall */}
+      <group position={[5.0, 1.7, -6.95]}>
+        <mesh>
+          <boxGeometry args={[0.8, 1.0, 0.02]} />
+          <meshStandardMaterial color="#8c1515" />
+        </mesh>
+        <mesh position={[0, 0, 0.012]}>
+          <boxGeometry args={[0.7, 0.9, 0.005]} />
+          <meshStandardMaterial color="#fdfbf6" />
+        </mesh>
+        <Text position={[0, 0.3, 0.018]} fontSize={0.07} color="#8c1515" anchorX="center" anchorY="middle" fontWeight={700}>
+          SAFETY FIRST
+        </Text>
+        <Text position={[0, 0.1, 0.018]} fontSize={0.04} color="#3a2f24" anchorX="center" anchorY="middle" maxWidth={0.6}>
+          No machining · No soldering No fumes · No food
+        </Text>
+        <Text position={[0, -0.15, 0.018]} fontSize={0.04} color="#3a2f24" anchorX="center" anchorY="middle" maxWidth={0.6}>
+          Card access only Door must stay closed
+        </Text>
+      </group>
+
+      {/* Fire extinguisher near the door */}
+      <group position={[6.6, 0, 5.8]}>
+        <mesh position={[0, 0.55, 0]}>
+          <cylinderGeometry args={[0.09, 0.11, 0.45, 16]} />
+          <meshStandardMaterial color="#b03a1f" roughness={0.55} metalness={0.1} />
+        </mesh>
+        <mesh position={[0, 0.83, 0]}>
+          <cylinderGeometry args={[0.06, 0.06, 0.12, 12]} />
+          <meshStandardMaterial color="#1a1a1a" />
+        </mesh>
+        <mesh position={[0.06, 0.85, 0]}>
+          <boxGeometry args={[0.04, 0.04, 0.18]} />
+          <meshStandardMaterial color="#2a2a2a" metalness={0.5} />
+        </mesh>
+      </group>
+
+      {/* Trash bin in the corner */}
+      <group position={[-6.3, 0, 5.8]}>
+        <mesh position={[0, 0.32, 0]}>
+          <cylinderGeometry args={[0.2, 0.22, 0.6, 14]} />
+          <meshStandardMaterial color="#5a5a5a" roughness={0.7} />
+        </mesh>
+        <mesh position={[0, 0.625, 0]}>
+          <cylinderGeometry args={[0.21, 0.21, 0.04, 14]} />
+          <meshStandardMaterial color="#2a2a2a" />
+        </mesh>
+      </group>
     </group>
   );
 }
@@ -183,52 +271,86 @@ function Workbench({ highlight, buildActive }: { highlight: boolean; buildActive
   const cfg = BENCH_CFG;
   return (
     <group position={cfg.position}>
-      <mesh position={[0, cfg.height, 0]} castShadow>
-        <boxGeometry args={[cfg.width, 0.08, cfg.depth]} />
-        <meshStandardMaterial color={BENCH_TOP_COLOR} />
+      {/* Top — thicker beech-style countertop */}
+      <mesh position={[0, cfg.height, 0]} castShadow receiveShadow>
+        <boxGeometry args={[cfg.width, 0.1, cfg.depth]} />
+        <meshStandardMaterial color={BENCH_TOP_COLOR} roughness={0.55} />
         <Edges color="#6a4a26" />
       </mesh>
-      {[
-        [-cfg.width / 2 + 0.1, cfg.height / 2, -cfg.depth / 2 + 0.1],
-        [cfg.width / 2 - 0.1, cfg.height / 2, -cfg.depth / 2 + 0.1],
-        [-cfg.width / 2 + 0.1, cfg.height / 2, cfg.depth / 2 - 0.1],
-        [cfg.width / 2 - 0.1, cfg.height / 2, cfg.depth / 2 - 0.1]
-      ].map((p, i) => (
-        <mesh key={i} position={p as [number, number, number]}>
-          <boxGeometry args={[0.08, cfg.height, 0.08]} />
-          <meshStandardMaterial color={BENCH_LEG_COLOR} />
-        </mesh>
+      {/* Drawer fronts on the front face */}
+      {[-1.4, -0.0, 1.4].map((dx, i) => (
+        <group key={`drawer-${i}`} position={[dx, cfg.height - 0.18, cfg.depth / 2 - 0.04]}>
+          <mesh>
+            <boxGeometry args={[1.3, 0.22, 0.02]} />
+            <meshStandardMaterial color="#7d5a32" roughness={0.65} />
+            <Edges color="#3a2515" />
+          </mesh>
+          <mesh position={[0, 0, 0.012]}>
+            <boxGeometry args={[0.18, 0.025, 0.02]} />
+            <meshStandardMaterial color="#9a8a64" metalness={0.6} roughness={0.4} />
+          </mesh>
+        </group>
       ))}
-      <mesh position={[0, cfg.height - 0.18, cfg.depth / 2 - 0.05]}>
-        <boxGeometry args={[cfg.width - 0.18, 0.08, 0.04]} />
-        <meshStandardMaterial color={BENCH_LEG_COLOR} />
+      {/* Toe-kick */}
+      <mesh position={[0, 0.08, cfg.depth / 2 - 0.1]}>
+        <boxGeometry args={[cfg.width - 0.04, 0.14, 0.04]} />
+        <meshStandardMaterial color="#3a2515" />
       </mesh>
+      {/* Back panel against the wall */}
+      <mesh position={[0, cfg.height / 2, -cfg.depth / 2 + 0.03]}>
+        <boxGeometry args={[cfg.width - 0.04, cfg.height, 0.04]} />
+        <meshStandardMaterial color="#3a2515" />
+      </mesh>
+      {/* Pegboard on the north wall directly above the bench */}
+      <group position={[0, cfg.height + 0.95, -cfg.depth / 2 - 0.13]}>
+        <mesh>
+          <boxGeometry args={[cfg.width - 0.2, 1.4, 0.04]} />
+          <meshStandardMaterial color="#e6d9be" roughness={0.85} />
+          <Edges color="#7a6a44" />
+        </mesh>
+        {/* Holes (decorative) */}
+        {Array.from({ length: 6 }).flatMap((_, row) =>
+          Array.from({ length: 14 }).map((_, col) => (
+            <mesh
+              key={`peg-${row}-${col}`}
+              position={[-1.95 + col * 0.28, -0.55 + row * 0.22, 0.025]}
+            >
+              <cylinderGeometry args={[0.012, 0.012, 0.01, 8]} />
+              <meshStandardMaterial color="#3a2515" />
+            </mesh>
+          ))
+        )}
+        {/* Tool silhouettes hanging on the pegboard */}
+        <mesh position={[-1.5, 0.2, 0.05]} rotation={[0, 0, 0]}>
+          <boxGeometry args={[0.04, 0.5, 0.02]} />
+          <meshStandardMaterial color="#3a2f24" />
+        </mesh>
+        <mesh position={[-1.3, 0.2, 0.05]}>
+          <boxGeometry args={[0.04, 0.5, 0.02]} />
+          <meshStandardMaterial color="#3a2f24" />
+        </mesh>
+        <mesh position={[0.0, 0.2, 0.05]}>
+          <boxGeometry args={[0.5, 0.04, 0.02]} />
+          <meshStandardMaterial color="#3a2f24" />
+        </mesh>
+        <mesh position={[1.4, 0.2, 0.05]}>
+          <ringGeometry args={[0.16, 0.2, 24]} />
+          <meshStandardMaterial color="#3a2f24" />
+        </mesh>
+        {/* Under-cabinet light strip */}
+        <mesh position={[0, -0.78, 0.06]}>
+          <boxGeometry args={[cfg.width - 0.4, 0.05, 0.05]} />
+          <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1.0} />
+        </mesh>
+      </group>
       {highlight || buildActive ? (
-        <mesh position={[0, cfg.height + 0.05, 0]}>
+        <mesh position={[0, cfg.height + 0.07, 0]}>
           <boxGeometry args={[cfg.width + 0.1, 0.08, cfg.depth + 0.1]} />
           <meshBasicMaterial color={buildActive ? '#7ad27a' : '#ffd34a'} transparent opacity={0.4} />
         </mesh>
       ) : null}
-      <Text position={[0, cfg.height + 0.45, 0]} fontSize={0.18} color="#3a2f24" anchorX="center" anchorY="middle">
+      <Text position={[0, cfg.height + 1.85, -cfg.depth / 2 - 0.1]} fontSize={0.16} color="#3a2f24" anchorX="center" anchorY="middle">
         Workstation
-      </Text>
-    </group>
-  );
-}
-
-function PrinterPiece({ x, color, label }: { x: number; color: string; label: string }) {
-  return (
-    <group position={[0, 0, x]}>
-      <mesh position={[0, 0.95, 0]}>
-        <boxGeometry args={[0.9, 1.0, 0.9]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      <mesh position={[0.46, 0.95, 0]}>
-        <boxGeometry args={[0.04, 0.7, 0.7]} />
-        <meshStandardMaterial color="#202020" transparent opacity={0.7} />
-      </mesh>
-      <Text position={[0, 1.7, 0]} fontSize={0.14} color="#3a2f24" anchorX="center" anchorY="middle" rotation={[0, -Math.PI / 2, 0]}>
-        {label}
       </Text>
     </group>
   );
@@ -237,19 +359,151 @@ function PrinterPiece({ x, color, label }: { x: number; color: string; label: st
 function PrinterTable() {
   const cfg = PRINTER_TABLE_CFG;
   return (
-    <group position={cfg.position} rotation={[0, -Math.PI / 2, 0]}>
-      <mesh position={[0, cfg.height, 0]} castShadow>
-        <boxGeometry args={[cfg.depth, 0.08, cfg.width]} />
-        <meshStandardMaterial color="#cabba0" />
+    <group position={cfg.position}>
+      {/* Tabletop — extends along Z (north-south) */}
+      <mesh position={[0, cfg.height, 0]} castShadow receiveShadow>
+        <boxGeometry args={[cfg.widthX, 0.08, cfg.depthZ]} />
+        <meshStandardMaterial color="#cabba0" roughness={0.7} />
+        <Edges color="#7a6a4a" />
       </mesh>
-      {[[-0.55, 0.42, -1.3], [0.55, 0.42, -1.3], [-0.55, 0.42, 1.3], [0.55, 0.42, 1.3]].map((p, i) => (
+      {/* Legs */}
+      {[
+        [-cfg.widthX / 2 + 0.1, cfg.height / 2, -cfg.depthZ / 2 + 0.1],
+        [cfg.widthX / 2 - 0.1, cfg.height / 2, -cfg.depthZ / 2 + 0.1],
+        [-cfg.widthX / 2 + 0.1, cfg.height / 2, cfg.depthZ / 2 - 0.1],
+        [cfg.widthX / 2 - 0.1, cfg.height / 2, cfg.depthZ / 2 - 0.1]
+      ].map((p, i) => (
         <mesh key={i} position={p as [number, number, number]}>
-          <boxGeometry args={[0.08, 0.85, 0.08]} />
+          <boxGeometry args={[0.08, cfg.height, 0.08]} />
           <meshStandardMaterial color="#4a3a26" />
         </mesh>
       ))}
-      <PrinterPiece x={-0.9} color="#ec6b1a" label="Prusa Core One+" />
-      <PrinterPiece x={0.9} color="#1f8a4a" label="Bambu H2D" />
+      {/* Under-shelf */}
+      <mesh position={[0, cfg.height - 0.7, 0]}>
+        <boxGeometry args={[cfg.widthX - 0.1, 0.05, cfg.depthZ - 0.1]} />
+        <meshStandardMaterial color="#a89776" />
+      </mesh>
+    </group>
+  );
+}
+
+function PrusaPrinter({ highlight, buildActive }: { highlight: boolean; buildActive: boolean }) {
+  return (
+    <group position={PRUSA_POS}>
+      {/* Outer enclosure — orange CoreXY frame */}
+      <mesh position={[0, 0.42, 0]} castShadow>
+        <boxGeometry args={[0.78, 0.84, 0.78]} />
+        <meshStandardMaterial color="#ec6b1a" roughness={0.45} metalness={0.2} />
+        <Edges color="#7a3308" />
+      </mesh>
+      {/* Front clear panel */}
+      <mesh position={[0, 0.42, 0.391]}>
+        <boxGeometry args={[0.66, 0.66, 0.005]} />
+        <meshStandardMaterial color="#101020" transparent opacity={0.55} roughness={0.05} metalness={0.4} />
+      </mesh>
+      {/* Internal build plate (peeking through) */}
+      <mesh position={[0, 0.15, 0]}>
+        <boxGeometry args={[0.55, 0.04, 0.55]} />
+        <meshStandardMaterial color="#c6c6c6" metalness={0.4} roughness={0.5} />
+      </mesh>
+      {/* Top handle */}
+      <mesh position={[0, 0.86, 0]}>
+        <boxGeometry args={[0.5, 0.05, 0.08]} />
+        <meshStandardMaterial color="#2a2a2a" />
+      </mesh>
+      {/* Side spool holder */}
+      <group position={[-0.42, 0.55, 0]}>
+        <mesh rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.02, 0.02, 0.12, 8]} />
+          <meshStandardMaterial color="#3a3a3a" />
+        </mesh>
+        <mesh position={[-0.08, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.14, 0.14, 0.05, 24]} />
+          <meshStandardMaterial color="#1f5fa6" />
+        </mesh>
+      </group>
+      {/* Front display */}
+      <mesh position={[0.2, 0.18, 0.392]}>
+        <boxGeometry args={[0.12, 0.05, 0.005]} />
+        <meshStandardMaterial color="#7aa478" emissive="#7aa478" emissiveIntensity={0.6} />
+      </mesh>
+      {/* Highlight ring on the floor */}
+      {(highlight || buildActive) ? (
+        <mesh position={[0, -0.83, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.5, 0.62, 28]} />
+          <meshBasicMaterial color={buildActive ? '#7ad27a' : '#ffd34a'} transparent opacity={0.7} side={THREE.DoubleSide} />
+        </mesh>
+      ) : null}
+      <Text position={[0, 1.0, 0]} fontSize={0.11} color="#3a2f24" anchorX="center" anchorY="middle">
+        Prusa Core One+
+      </Text>
+    </group>
+  );
+}
+
+function BambuPrinter({ highlight, buildActive }: { highlight: boolean; buildActive: boolean }) {
+  return (
+    <group position={BAMBU_POS}>
+      {/* Main enclosure — dark grey with green accents */}
+      <mesh position={[0, 0.45, 0]} castShadow>
+        <boxGeometry args={[0.78, 0.9, 0.78]} />
+        <meshStandardMaterial color="#262626" roughness={0.35} metalness={0.25} />
+        <Edges color="#0a0a0a" />
+      </mesh>
+      {/* Green logo strip */}
+      <mesh position={[0, 0.85, 0.391]}>
+        <boxGeometry args={[0.6, 0.06, 0.005]} />
+        <meshStandardMaterial color="#1f8a4a" emissive="#1f8a4a" emissiveIntensity={0.3} />
+      </mesh>
+      {/* Front panel — glass */}
+      <mesh position={[0, 0.45, 0.391]}>
+        <boxGeometry args={[0.66, 0.66, 0.005]} />
+        <meshStandardMaterial color="#101020" transparent opacity={0.55} roughness={0.05} metalness={0.4} />
+      </mesh>
+      {/* Internal build plate */}
+      <mesh position={[0, 0.15, 0]}>
+        <boxGeometry args={[0.55, 0.04, 0.55]} />
+        <meshStandardMaterial color="#c6c6c6" metalness={0.4} roughness={0.5} />
+      </mesh>
+      {/* Top with handle */}
+      <mesh position={[0, 0.92, 0]}>
+        <boxGeometry args={[0.4, 0.04, 0.08]} />
+        <meshStandardMaterial color="#444" metalness={0.5} />
+      </mesh>
+      {/* AMS unit on the side */}
+      <group position={[-0.55, 0.35, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.3, 0.4, 0.4]} />
+          <meshStandardMaterial color="#3a3a3a" roughness={0.4} />
+          <Edges color="#0a0a0a" />
+        </mesh>
+        {/* AMS lid stripe */}
+        <mesh position={[0, 0.21, 0]}>
+          <boxGeometry args={[0.3, 0.02, 0.4]} />
+          <meshStandardMaterial color="#1f8a4a" emissive="#1f8a4a" emissiveIntensity={0.4} />
+        </mesh>
+        {/* Spool slots */}
+        {[-0.13, 0, 0.13].map((dz, i) => (
+          <mesh key={i} position={[0.16, 0, dz]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.1, 0.1, 0.04, 18]} />
+            <meshStandardMaterial color={['#1f5fa6', '#0e6b4e', '#e2c200'][i]} />
+          </mesh>
+        ))}
+      </group>
+      {/* Front touchscreen */}
+      <mesh position={[0.18, 0.18, 0.392]}>
+        <boxGeometry args={[0.16, 0.09, 0.005]} />
+        <meshStandardMaterial color="#1f8a4a" emissive="#1f8a4a" emissiveIntensity={0.6} />
+      </mesh>
+      {(highlight || buildActive) ? (
+        <mesh position={[0, -0.83, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.55, 0.68, 28]} />
+          <meshBasicMaterial color={buildActive ? '#7ad27a' : '#ffd34a'} transparent opacity={0.7} side={THREE.DoubleSide} />
+        </mesh>
+      ) : null}
+      <Text position={[0, 1.05, 0]} fontSize={0.11} color="#3a2f24" anchorX="center" anchorY="middle">
+        Bambu H2D
+      </Text>
     </group>
   );
 }
@@ -290,17 +544,29 @@ function Door({ knocking }: { knocking: boolean }) {
 
 // ---- Build animation: the active tool spins above the bench ---------------------------------
 
-function BuildToolAnimation({ buildInProgress }: { buildInProgress: BuildInProgress | null }) {
+function BuildToolAnimation({
+  buildInProgress,
+  location
+}: {
+  buildInProgress: BuildInProgress | null;
+  location: 'workstation' | 'bambu' | 'prusa';
+}) {
   const ref = useRef<THREE.Group>(null);
+  const base =
+    location === 'bambu'
+      ? ([BAMBU_POS[0], BAMBU_POS[1] + 0.85, BAMBU_POS[2]] as [number, number, number])
+      : location === 'prusa'
+        ? ([PRUSA_POS[0], PRUSA_POS[1] + 0.85, PRUSA_POS[2]] as [number, number, number])
+        : ([BENCH_CFG.position[0], BENCH_CFG.height + 0.35, BENCH_CFG.position[2]] as [number, number, number]);
   useFrame(() => {
     if (!ref.current || !buildInProgress) return;
     const t = (Date.now() - buildInProgress.startedAt) / buildInProgress.durationMs;
     ref.current.rotation.y = t * Math.PI * 4;
-    ref.current.position.y = BENCH_CFG.height + 0.35 + Math.sin(t * Math.PI * 6) * 0.05;
+    ref.current.position.y = base[1] + Math.sin(t * Math.PI * 6) * 0.05;
   });
   if (!buildInProgress?.tool) return null;
   return (
-    <group ref={ref} position={[BENCH_CFG.position[0], BENCH_CFG.height + 0.35, BENCH_CFG.position[2]]}>
+    <group ref={ref} position={base}>
       <PartMesh id={buildInProgress.tool} />
     </group>
   );
@@ -471,16 +737,16 @@ function HoverDetector({
   worldItems,
   carrying,
   onHover,
-  onBenchProximity
+  onProximity
 }: {
   worldItems: WorldItem[];
   carrying: ItemId | null;
   onHover: (h: Hover) => void;
-  onBenchProximity: (near: boolean) => void;
+  onProximity: (zone: 'workstation' | 'bambu' | 'prusa' | null) => void;
 }) {
   const { camera } = useThree();
   const lastHoverRef = useRef<string>('');
-  const lastBenchRef = useRef<boolean>(false);
+  const lastZoneRef = useRef<'workstation' | 'bambu' | 'prusa' | null>(null);
 
   useFrame(() => {
     const forward = new THREE.Vector3();
@@ -488,13 +754,28 @@ function HoverDetector({
     forward.y = 0;
     forward.normalize();
 
-    const benchCenter = new THREE.Vector3(BENCH_CFG.position[0], 1.0, BENCH_CFG.position[2] + 0.3);
-    const benchDist = benchCenter.clone().sub(camera.position).length();
-    const nearBench = benchDist < 3.0;
-    if (nearBench !== lastBenchRef.current) {
-      lastBenchRef.current = nearBench;
-      onBenchProximity(nearBench);
+    // Proximity zones — closest one wins
+    const zones: Array<{ name: 'workstation' | 'bambu' | 'prusa'; pos: THREE.Vector3; range: number }> = [
+      { name: 'workstation', pos: new THREE.Vector3(BENCH_CFG.position[0], 1.0, BENCH_CFG.position[2] + 0.3), range: 2.6 },
+      { name: 'bambu', pos: new THREE.Vector3(BAMBU_POS[0], 1.0, BAMBU_POS[2]), range: 2.2 },
+      { name: 'prusa', pos: new THREE.Vector3(PRUSA_POS[0], 1.0, PRUSA_POS[2]), range: 2.2 }
+    ];
+    let bestZone: 'workstation' | 'bambu' | 'prusa' | null = null;
+    let bestDist = Infinity;
+    for (const z of zones) {
+      const d = z.pos.clone().sub(camera.position).length();
+      if (d < z.range && d < bestDist) {
+        bestDist = d;
+        bestZone = z.name;
+      }
     }
+    if (bestZone !== lastZoneRef.current) {
+      lastZoneRef.current = bestZone;
+      onProximity(bestZone);
+    }
+
+    const benchCenter = zones[0].pos;
+    const benchDist = benchCenter.clone().sub(camera.position).length();
 
     let next: Hover = null;
 
@@ -551,10 +832,26 @@ function HoverDetector({
 function Lighting() {
   return (
     <>
-      <ambientLight intensity={0.7} />
-      <hemisphereLight args={['#ffffff', '#cdbfaa', 0.5]} />
-      <directionalLight position={[6, 9, 6]} intensity={0.6} />
-      <directionalLight position={[-5, 8, -4]} intensity={0.35} />
+      <ambientLight intensity={0.55} />
+      <hemisphereLight args={['#fff7ea', '#d8ccb0', 0.55]} />
+      <directionalLight
+        position={[5, 12, 6]}
+        intensity={0.85}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-camera-left={-10}
+        shadow-camera-right={10}
+        shadow-camera-top={10}
+        shadow-camera-bottom={-10}
+        shadow-camera-near={1}
+        shadow-camera-far={30}
+        shadow-bias={-0.0008}
+      />
+      <pointLight position={[-3, 2.9, -2]} intensity={0.35} distance={9} decay={1.5} color="#ffefd0" />
+      <pointLight position={[3, 2.9, -2]} intensity={0.35} distance={9} decay={1.5} color="#ffefd0" />
+      <pointLight position={[-3, 2.9, 3]} intensity={0.35} distance={9} decay={1.5} color="#ffefd0" />
+      <pointLight position={[3, 2.9, 3]} intensity={0.35} distance={9} decay={1.5} color="#ffefd0" />
     </>
   );
 }
@@ -573,8 +870,9 @@ export function WorkshopGame({
   const [submitting, setSubmitting] = useState(false);
   const [pointerLocked, setPointerLocked] = useState(false);
   const [hover, setHover] = useState<Hover>(null);
-  const [nearBench, setNearBench] = useState(false);
+  const [nearZone, setNearZone] = useState<'workstation' | 'bambu' | 'prusa' | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  const nearBench = nearZone === 'workstation';
 
   const round = ROUNDS[state.roundIdx];
   const phase: Phase | undefined = round.phases[state.phaseIdx];
@@ -739,7 +1037,9 @@ export function WorkshopGame({
         handleInteract();
       } else if (e.code === 'KeyB') {
         e.preventDefault();
-        if (!nearBench || !nextBuildAction) return;
+        if (!nextBuildAction) return;
+        const required = nextBuildAction.at || 'workstation';
+        if (nearZone !== required) return;
         startBuildAction(nextBuildAction);
       } else if (e.code === 'Tab') {
         e.preventDefault();
@@ -824,8 +1124,13 @@ export function WorkshopGame({
       if (hover?.kind === 'shelf') return `Press E to return to ${SHELF_LAYOUT[hover.shelfId].label}`;
       return `Carrying ${getItem(state.carrying).label}`;
     }
-    if (phase?.kind === 'build' && nearBench && nextBuildAction) {
-      return `Press B at the workstation to ${nextBuildAction.prompt.toLowerCase()}`;
+    if (phase?.kind === 'build' && nextBuildAction) {
+      const required = nextBuildAction.at || 'workstation';
+      const zoneLabel = required === 'bambu' ? 'Bambu H2D' : required === 'prusa' ? 'Prusa Core One+' : 'workstation';
+      if (nearZone === required) {
+        return `Press B at the ${zoneLabel} to ${nextBuildAction.prompt.toLowerCase()}`;
+      }
+      return `Walk to the ${zoneLabel} to ${nextBuildAction.prompt.toLowerCase()}`;
     }
     if (hover?.kind === 'item') return `Press E to pick up ${getItem(hover.itemId).label}`;
     return null;
@@ -849,7 +1154,7 @@ export function WorkshopGame({
   return (
     <div className="workshop-shell">
       <div className="workshop-stage">
-        <Canvas shadows={false} dpr={[1, 2]} camera={{ fov: 70, near: 0.05, far: 80 }}>
+        <Canvas shadows dpr={[1, 2]} camera={{ fov: 70, near: 0.05, far: 80 }}>
           <color attach="background" args={['#e8e2d4']} />
           <fog attach="fog" args={['#f1ebde', 14, 28]} />
           <Lighting />
@@ -858,10 +1163,28 @@ export function WorkshopGame({
             {(Object.keys(SHELF_LAYOUT) as Shelf[]).map((s) => (
               <ShelfFurniture key={s} shelfId={s} highlight={hover?.kind === 'shelf' && hover.shelfId === s} />
             ))}
-            <Workbench highlight={hover?.kind === 'bench'} buildActive={Boolean(state.buildInProgress)} />
+            <Workbench
+              highlight={hover?.kind === 'bench'}
+              buildActive={Boolean(state.buildInProgress) && (nextBuildAction?.at || 'workstation') === 'workstation'}
+            />
             <PrinterTable />
+            <PrusaPrinter
+              highlight={nearZone === 'prusa' && phase?.kind === 'build' && nextBuildAction?.at === 'prusa'}
+              buildActive={Boolean(state.buildInProgress) && state.buildInProgress?.tool != null && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'prusa')}
+            />
+            <BambuPrinter
+              highlight={nearZone === 'bambu' && phase?.kind === 'build' && nextBuildAction?.at === 'bambu'}
+              buildActive={Boolean(state.buildInProgress) && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'bambu')}
+            />
             <Door knocking={state.visitorPrompted} />
-            <BuildToolAnimation buildInProgress={state.buildInProgress} />
+            <BuildToolAnimation
+              buildInProgress={state.buildInProgress}
+              location={
+                phase?.kind === 'build' && state.buildInProgress
+                  ? (phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at || 'workstation')
+                  : 'workstation'
+              }
+            />
 
             {worldItems.map((w) => (
               <ItemInWorld
@@ -878,7 +1201,7 @@ export function WorkshopGame({
               worldItems={worldItems}
               carrying={state.carrying}
               onHover={setHover}
-              onBenchProximity={setNearBench}
+              onProximity={setNearZone}
             />
 
             {!state.visitorPrompted && !state.finished && !state.failedHard ? (

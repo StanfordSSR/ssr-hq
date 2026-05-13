@@ -96,11 +96,14 @@ export function getItem(id: ItemId): ItemDef {
   return item;
 }
 
+export type BuildLocation = 'workstation' | 'bambu' | 'prusa';
+
 export type BuildAction = {
   id: string;
   prompt: string;
   tool?: ItemId;
   durationMs: number;
+  at?: BuildLocation; // defaults to 'workstation'
 };
 
 export type Phase =
@@ -166,8 +169,8 @@ export const ROUNDS: RoundDef[] = [
         kind: 'build',
         label: 'Load and start the print',
         actions: [
-          { id: 'load-filament', prompt: 'Load the filament into the Bambu H2D', tool: 'spool-pla', durationMs: 2200 },
-          { id: 'start-print', prompt: 'Start the print', durationMs: 1500 }
+          { id: 'load-filament', prompt: 'Load the filament into the Bambu H2D', tool: 'spool-pla', durationMs: 2200, at: 'bambu' },
+          { id: 'start-print', prompt: 'Start the print on the Bambu H2D', durationMs: 1500, at: 'bambu' }
         ]
       },
       { kind: 'return', label: 'Return the spool to its shelf' }
