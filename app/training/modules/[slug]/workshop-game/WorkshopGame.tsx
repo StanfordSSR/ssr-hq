@@ -414,6 +414,106 @@ function Room() {
         </mesh>
       </group>
 
+      {/* Partially-assembled robot mock on the workstation — gives it the
+          "actively in use" look of the real room */}
+      <group position={[-0.5, BENCH_CFG.height + 0.05, BENCH_CFG.position[2] + 0.2]}>
+        {/* Chassis plate */}
+        <mesh position={[0, 0.04, 0]} castShadow>
+          <boxGeometry args={[0.6, 0.04, 0.4]} />
+          <meshStandardMaterial color="#3a3a3a" metalness={0.5} roughness={0.4} />
+        </mesh>
+        {/* Motor blocks */}
+        {[-0.22, 0.22].map((x, i) => (
+          <group key={i} position={[x, 0.1, 0]}>
+            <mesh castShadow>
+              <cylinderGeometry args={[0.05, 0.05, 0.12, 12]} />
+              <meshStandardMaterial color="#1a1a1a" />
+            </mesh>
+            <mesh position={[0, 0, 0.13]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.045, 0.045, 0.05, 12]} />
+              <meshStandardMaterial color="#5a5a5a" metalness={0.7} />
+            </mesh>
+          </group>
+        ))}
+        {/* Wheel hubs */}
+        {[
+          [-0.28, 0.05, 0.18],
+          [0.28, 0.05, 0.18],
+          [-0.28, 0.05, -0.18],
+          [0.28, 0.05, -0.18]
+        ].map((p, i) => (
+          <mesh key={`wh-${i}`} position={p as [number, number, number]} rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.06, 0.06, 0.04, 16]} />
+            <meshStandardMaterial color="#1a1a1a" />
+          </mesh>
+        ))}
+        {/* Yellow bracket halfway attached */}
+        <mesh position={[0, 0.14, 0.1]} rotation={[0.1, 0, 0]} castShadow>
+          <boxGeometry args={[0.18, 0.02, 0.12]} />
+          <meshStandardMaterial color="#e2c200" />
+        </mesh>
+      </group>
+
+      {/* Loose printed parts scattered across the printed-parts shelf */}
+      {[
+        { x: 1.4, z: -4.85, c: '#1f8a4a' },
+        { x: 2.0, z: -4.85, c: '#e2c200' },
+        { x: 2.5, z: -4.85, c: '#a23030' }
+      ].map((p, i) => (
+        <group key={`pp-${i}`} position={[p.x, 1.05, p.z]} rotation={[0, i * 0.4, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.14, 0.06, 0.1]} />
+            <meshStandardMaterial color={p.c} roughness={0.65} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Coiled USB cable on the workstation */}
+      <group position={[1.4, BENCH_CFG.height + 0.04, BENCH_CFG.position[2] + 0.3]}>
+        <mesh>
+          <torusGeometry args={[0.08, 0.012, 8, 24]} />
+          <meshStandardMaterial color="#1a1a1a" />
+        </mesh>
+        <mesh position={[0.06, 0.012, 0]}>
+          <torusGeometry args={[0.07, 0.011, 8, 22]} />
+          <meshStandardMaterial color="#1a1a1a" />
+        </mesh>
+      </group>
+
+      {/* Roll of blue masking tape on the workstation */}
+      <group position={[-1.7, BENCH_CFG.height + 0.04, BENCH_CFG.position[2] + 0.0]}>
+        <mesh castShadow>
+          <torusGeometry args={[0.075, 0.022, 10, 28]} />
+          <meshStandardMaterial color="#1f5fa6" roughness={0.6} />
+        </mesh>
+        <mesh>
+          <cylinderGeometry args={[0.055, 0.055, 0.04, 18]} />
+          <meshStandardMaterial color="#c4b08a" roughness={0.85} />
+        </mesh>
+      </group>
+
+      {/* Soldering-iron-style "drone propeller" + a few loose props near the drone */}
+      {[
+        { x: 5.2, z: -2.4 },
+        { x: 5.4, z: -3.0 }
+      ].map((p, i) => (
+        <mesh key={`prop-${i}`} position={[p.x, 1.31, p.z]} rotation={[0, i * 0.5, 0]}>
+          <boxGeometry args={[0.18, 0.005, 0.018]} />
+          <meshStandardMaterial color="#3a3a3a" />
+        </mesh>
+      ))}
+
+      {/* SSR-branded sticker / logo on the north wall above the bench */}
+      <group position={[-1.0, 2.5, -ROOM_D / 2 + 0.06]}>
+        <mesh>
+          <boxGeometry args={[0.6, 0.18, 0.005]} />
+          <meshStandardMaterial color="#8c1515" />
+        </mesh>
+        <Text position={[0, 0, 0.006]} fontSize={0.09} color="#ffffff" anchorX="center" anchorY="middle" fontWeight={700}>
+          SSR ROBOTICS
+        </Text>
+      </group>
+
       {/* Exposed ceiling ducts and pipes — silver HVAC and black water pipe */}
       <group>
         {/* Main silver duct running east-west */}
@@ -1067,35 +1167,37 @@ function Door({ openAmount, knocking }: { openAmount: number; knocking: boolean 
 
 function CameraOrient({ active }: { active: boolean }) {
   const { camera } = useThree();
-  const targetRef = useRef<number | null>(null);
+  const targetQuat = useRef<THREE.Quaternion | null>(null);
 
   useEffect(() => {
-    if (active) {
-      const targetX = DOOR_CFG.position[0] - 1.8;
-      const targetZ = DOOR_CFG.position[2];
-      const dx = targetX - camera.position.x;
-      const dz = targetZ - camera.position.z;
-      targetRef.current = Math.atan2(dx, dz);
-    } else {
-      targetRef.current = null;
+    if (!active) {
+      targetQuat.current = null;
+      return;
     }
+    const targetX = DOOR_CFG.position[0] - 1.8;
+    const targetZ = DOOR_CFG.position[2];
+    const targetY = camera.position.y; // keep gaze level
+    // Build the quaternion the camera would have if it called lookAt — this
+    // handles three.js's -Z-forward convention automatically.
+    const m = new THREE.Matrix4();
+    m.lookAt(
+      camera.position.clone(),
+      new THREE.Vector3(targetX, targetY, targetZ),
+      new THREE.Vector3(0, 1, 0)
+    );
+    const q = new THREE.Quaternion();
+    q.setFromRotationMatrix(m);
+    targetQuat.current = q;
   }, [active, camera]);
 
   /* eslint-disable react-hooks/immutability */
   useFrame((_, delta) => {
-    if (targetRef.current === null) return;
-    const target = targetRef.current;
-    const current = camera.rotation.y;
-    let diff = target - current;
-    while (diff > Math.PI) diff -= 2 * Math.PI;
-    while (diff < -Math.PI) diff += 2 * Math.PI;
-    if (Math.abs(diff) < 0.01) {
-      targetRef.current = null;
-      return;
+    if (!targetQuat.current) return;
+    const t = Math.min(1, delta * 6);
+    camera.quaternion.slerp(targetQuat.current, t);
+    if (camera.quaternion.angleTo(targetQuat.current) < 0.01) {
+      targetQuat.current = null;
     }
-    const step = Math.sign(diff) * Math.min(Math.abs(diff), delta * 2.6);
-    camera.rotation.y = current + step;
-    camera.rotation.x *= 0.85; // also flatten any pitch toward horizontal
   });
   /* eslint-enable react-hooks/immutability */
 
@@ -1219,7 +1321,10 @@ function Visitor({
       const p = Math.min(1, t / walkDuration);
       posX = outsideX + (insideStandX - outsideX) * p;
       walking = p < 1;
-      facing = Math.PI / 2;
+      // Walking -X (into room). Mixamo front = +Z → rotation π faces -Z, but
+      // we want -X, which is rotation -π/2. With the +π Mixamo offset baked
+      // into facing-the-player calc above, walking-in faces use plain values.
+      facing = -Math.PI / 2 + Math.PI; // = Math.PI / 2 — faces -X with +Z front
       if (p >= 1 && !arrivedFiredRef.current) {
         arrivedFiredRef.current = true;
         onArrivedInside();
@@ -1241,14 +1346,16 @@ function Visitor({
         nextX = curX + pushSpeed * delta;
         pushing = true;
       }
-      // Face the player whenever they're around (continuously turning toward
-      // wherever the camera is).
+      // Face the player whenever they're around. Compute via lookAt so the
+      // result is independent of the FBX's intrinsic forward axis. The +Math.PI
+      // adjusts for Mixamo characters whose model "front" is +Z (i.e. they
+      // face the opposite of three.js's group-lookAt convention).
       const fdx = px - nextX;
       const fdz = pz - z;
       if (Math.abs(fdx) > 0.001 || Math.abs(fdz) > 0.001) {
-        facing = Math.atan2(fdx, fdz);
+        facing = Math.atan2(fdx, fdz) + Math.PI;
       } else {
-        facing = -Math.PI / 2; // default: facing into the room
+        facing = Math.PI; // default: facing into the room from the door
       }
       if (pushing !== beingPushed) setBeingPushed(pushing);
       internalXRef.current = nextX;
@@ -1263,6 +1370,7 @@ function Visitor({
       const startX = internalXRef.current ?? insideStandX;
       posX = startX + (outsideX - startX) * p;
       walking = p < 1;
+      // Walking +X (toward door). Faces +X with +Z front = rotation -π/2.
       facing = -Math.PI / 2;
       if (p >= 1 && !exitedFiredRef.current) {
         exitedFiredRef.current = true;
