@@ -89,12 +89,17 @@ export async function getModuleStartedAt(email: string, moduleSlug: string): Pro
 export async function getCurrentChapter(email: string, moduleSlug: string): Promise<number> {
   const supabase = createAdminClient();
   const normalized = normalizeEmail(email);
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('training_module_starts')
     .select('current_chapter')
     .eq('email', normalized)
     .eq('module_slug', moduleSlug)
     .maybeSingle();
+
+  if (error) {
+    console.error('getCurrentChapter failed', error);
+    throw new Error(`Failed to read training progress: ${error.message}`);
+  }
 
   const raw = data?.current_chapter;
   if (typeof raw === 'number' && raw >= 0) return raw;
@@ -111,18 +116,23 @@ export async function setCurrentChapter(
   const normalized = normalizeEmail(email);
 
   // Only advance forward — never let a client request to a lower chapter rewrite progress.
-  const { data: existing } = await supabase
+  const { data: existing, error: selectError } = await supabase
     .from('training_module_starts')
     .select('current_chapter')
     .eq('email', normalized)
     .eq('module_slug', moduleSlug)
     .maybeSingle();
 
+  if (selectError) {
+    console.error('setCurrentChapter select failed', selectError);
+    throw new Error(`Failed to read training progress: ${selectError.message}`);
+  }
+
   if (existing && typeof existing.current_chapter === 'number' && existing.current_chapter >= chapterIndex) {
     return;
   }
 
-  await supabase
+  const { error: upsertError } = await supabase
     .from('training_module_starts')
     .upsert(
       {
@@ -132,6 +142,11 @@ export async function setCurrentChapter(
       },
       { onConflict: 'email,module_slug' }
     );
+
+  if (upsertError) {
+    console.error('setCurrentChapter upsert failed', upsertError);
+    throw new Error(`Failed to save training progress: ${upsertError.message}`);
+  }
 }
 
 export async function clearModuleStart(email: string, moduleSlug: string): Promise<void> {
