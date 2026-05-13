@@ -60,11 +60,11 @@ const initialState: GameState = {
   failedHard: false
 };
 
-// ---- Room layout ---------------------------------------------------------------------------
+// ---- Room layout — compact industrial workshop (~12m × 10m) -------------------------------
 
-const ROOM_W = 14;
-const ROOM_D = 14;
-const WALL_H = 3.2;
+const ROOM_W = 12;
+const ROOM_D = 10;
+const WALL_H = 3.4;
 
 type ShelfCfg = {
   position: [number, number, number];
@@ -78,21 +78,22 @@ type ShelfCfg = {
 };
 
 const SHELF_LAYOUT: Record<Shelf, ShelfCfg> = {
-  'hand-tools':    { position: [-6.85,  0, -3.3], rotY:  Math.PI / 2, width: 3.4, depth: 0.3, height: 2.4, shelves: 3, label: 'Tool wall' },
-  'filament':      { position: [-6.85,  0,  2.5], rotY:  Math.PI / 2, width: 4.0, depth: 0.5, height: 1.6, shelves: 2, label: 'Filament' },
-  'printed-parts': { position: [ 2.6,  0, -6.85], rotY: 0,             width: 2.6, depth: 0.5, height: 1.6, shelves: 2, label: 'Printed parts' },
-  'measurement':   { position: [ 6.85,  0, -4.0], rotY: -Math.PI / 2, width: 2.4, depth: 0.5, height: 2.0, shelves: 3, label: 'Measurement' },
-  'electronics':   { position: [ 6.85,  0, -1.6], rotY: -Math.PI / 2, width: 2.0, depth: 0.5, height: 1.6, shelves: 2, label: 'Electronics' },
-  'screws':        { position: [-2.8,  0,  6.85], rotY: Math.PI,       width: 2.8, depth: 0.5, height: 1.4, shelves: 2, label: 'Screws' },
-  'forbidden':     { position: [ 0.6,  0,  6.85], rotY: Math.PI,       width: 2.8, depth: 0.5, height: 1.6, shelves: 2, label: 'Misc — NOT for this room', tone: 'forbidden' }
+  'hand-tools':    { position: [-5.85,  0, -2.4], rotY:  Math.PI / 2, width: 3.2, depth: 0.3, height: 2.3, shelves: 3, label: 'Tool wall' },
+  'filament':      { position: [-5.85,  0,  1.8], rotY:  Math.PI / 2, width: 3.4, depth: 0.5, height: 1.6, shelves: 2, label: 'Filament' },
+  'printed-parts': { position: [ 1.8,  0, -4.85], rotY: 0,             width: 2.4, depth: 0.5, height: 1.6, shelves: 2, label: 'Printed parts' },
+  'measurement':   { position: [ 5.85,  0, -2.7], rotY: -Math.PI / 2, width: 2.2, depth: 0.5, height: 2.0, shelves: 3, label: 'Measurement' },
+  'electronics':   { position: [ 5.85,  0, -0.6], rotY: -Math.PI / 2, width: 1.8, depth: 0.5, height: 1.6, shelves: 2, label: 'Electronics' },
+  'screws':        { position: [-2.4,  0,  4.85], rotY: Math.PI,       width: 2.6, depth: 0.5, height: 1.4, shelves: 2, label: 'Screws' },
+  'forbidden':     { position: [ 0.6,  0,  4.85], rotY: Math.PI,       width: 2.6, depth: 0.5, height: 1.6, shelves: 2, label: 'Misc — NOT for this room', tone: 'forbidden' }
 };
 
-const BENCH_CFG = { position: [-2.0, 0, -6.3] as [number, number, number], width: 4.5, depth: 1.2, height: 0.95 };
-// Printer table sits clearly inside the room, away from the east wall.
-const PRINTER_TABLE_CFG = { position: [5.7, 0, 1.5] as [number, number, number], widthX: 1.3, depthZ: 3.0, height: 0.85 };
-const PRUSA_POS: [number, number, number] = [5.7, PRINTER_TABLE_CFG.height, 0.5];
-const BAMBU_POS: [number, number, number] = [5.7, PRINTER_TABLE_CFG.height, 2.5];
-const DOOR_CFG = { position: [6.99, 0, 5.0] as [number, number, number] };
+const BENCH_CFG = { position: [-1.8, 0, -4.4] as [number, number, number], width: 4.2, depth: 1.2, height: 0.95 };
+const PRINTER_TABLE_CFG = { position: [4.85, 0, 1.6] as [number, number, number], widthX: 1.3, depthZ: 2.6, height: 0.85 };
+const PRUSA_POS: [number, number, number] = [4.85, PRINTER_TABLE_CFG.height, 0.6];
+const BAMBU_POS: [number, number, number] = [4.85, PRINTER_TABLE_CFG.height, 2.6];
+const DOOR_CFG = { position: [5.99, 0, 3.6] as [number, number, number] };
+const DOOR_W = 1.0;
+const DOOR_H = 2.1;
 
 const FLOOR_COLOR = '#dcd2c2';
 const WALL_COLOR = '#f5f1ec';
@@ -142,10 +143,36 @@ function Room() {
         <boxGeometry args={[0.1, WALL_H, ROOM_D]} />
         <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
       </mesh>
-      <mesh position={[ROOM_W / 2, WALL_H / 2, 0]} receiveShadow>
-        <boxGeometry args={[0.1, WALL_H, ROOM_D]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
-      </mesh>
+      {/* East wall — split around the door opening so the glass shows through */}
+      {(() => {
+        const doorZStart = DOOR_CFG.position[2] - DOOR_W / 2;
+        const doorZEnd = DOOR_CFG.position[2] + DOOR_W / 2;
+        const southZStart = -ROOM_D / 2;
+        const southLen = doorZStart - southZStart;
+        const northLen = ROOM_D / 2 - doorZEnd;
+        const transomY = DOOR_H + 0.7;
+        const lintelHeight = WALL_H - transomY;
+        return (
+          <>
+            <mesh position={[ROOM_W / 2, WALL_H / 2, southZStart + southLen / 2]} receiveShadow>
+              <boxGeometry args={[0.1, WALL_H, southLen]} />
+              <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
+            </mesh>
+            <mesh position={[ROOM_W / 2, WALL_H / 2, doorZEnd + northLen / 2]} receiveShadow>
+              <boxGeometry args={[0.1, WALL_H, northLen]} />
+              <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
+            </mesh>
+            {/* Lintel above the door / transom */}
+            <mesh
+              position={[ROOM_W / 2, transomY + lintelHeight / 2, DOOR_CFG.position[2]]}
+              receiveShadow
+            >
+              <boxGeometry args={[0.1, lintelHeight, DOOR_W]} />
+              <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
+            </mesh>
+          </>
+        );
+      })()}
       <mesh position={[0, WALL_H / 2, ROOM_D / 2]} receiveShadow>
         <boxGeometry args={[ROOM_W, WALL_H, 0.1]} />
         <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
@@ -183,7 +210,7 @@ function Room() {
       ))}
 
       {/* Safety poster on north wall */}
-      <group position={[5.0, 1.7, -6.95]}>
+      <group position={[3.6, 1.8, -4.95]}>
         <mesh>
           <boxGeometry args={[0.8, 1.0, 0.02]} />
           <meshStandardMaterial color="#8c1515" />
@@ -204,7 +231,7 @@ function Room() {
       </group>
 
       {/* Fire extinguisher near the door */}
-      <group position={[6.6, 0, 5.8]}>
+      <group position={[5.6, 0, 4.5]}>
         <mesh position={[0, 0.55, 0]}>
           <cylinderGeometry args={[0.09, 0.11, 0.45, 16]} />
           <meshStandardMaterial color="#b03a1f" roughness={0.55} metalness={0.1} />
@@ -220,7 +247,7 @@ function Room() {
       </group>
 
       {/* Trash bin in the corner */}
-      <group position={[-6.3, 0, 5.8]}>
+      <group position={[-5.3, 0, 4.6]}>
         <mesh position={[0, 0.32, 0]}>
           <cylinderGeometry args={[0.2, 0.22, 0.6, 14]} />
           <meshStandardMaterial color="#5a5a5a" roughness={0.7} />
@@ -228,6 +255,86 @@ function Room() {
         <mesh position={[0, 0.625, 0]}>
           <cylinderGeometry args={[0.21, 0.21, 0.04, 14]} />
           <meshStandardMaterial color="#2a2a2a" />
+        </mesh>
+      </group>
+
+      {/* Recycle bin next to trash */}
+      <group position={[-4.7, 0, 4.6]}>
+        <mesh position={[0, 0.32, 0]}>
+          <cylinderGeometry args={[0.2, 0.22, 0.6, 14]} />
+          <meshStandardMaterial color="#1f5fa6" roughness={0.7} />
+        </mesh>
+        <mesh position={[0, 0.625, 0]}>
+          <cylinderGeometry args={[0.21, 0.21, 0.04, 14]} />
+          <meshStandardMaterial color="#14365f" />
+        </mesh>
+      </group>
+
+      {/* Red tool chest on wheels (Snap-on style) */}
+      <group position={[-5.2, 0, -1.0]}>
+        <mesh position={[0, 0.55, 0]} castShadow>
+          <boxGeometry args={[0.7, 1.0, 0.5]} />
+          <meshStandardMaterial color="#a01a1a" roughness={0.4} metalness={0.2} />
+          <Edges color="#3a0808" />
+        </mesh>
+        {/* Drawer fronts */}
+        {[0.15, 0.4, 0.65, 0.9].map((y, i) => (
+          <group key={i} position={[0, y, 0.26]}>
+            <mesh>
+              <boxGeometry args={[0.66, 0.18, 0.01]} />
+              <meshStandardMaterial color="#8a1414" />
+              <Edges color="#3a0808" />
+            </mesh>
+            <mesh position={[0, 0, 0.008]}>
+              <boxGeometry args={[0.4, 0.025, 0.02]} />
+              <meshStandardMaterial color="#1a1a1a" metalness={0.7} />
+            </mesh>
+          </group>
+        ))}
+        {/* Casters */}
+        {[[-0.28, 0.04, -0.20], [0.28, 0.04, -0.20], [-0.28, 0.04, 0.20], [0.28, 0.04, 0.20]].map((p, i) => (
+          <mesh key={i} position={p as [number, number, number]}>
+            <sphereGeometry args={[0.05, 12, 8]} />
+            <meshStandardMaterial color="#1a1a1a" />
+          </mesh>
+        ))}
+        {/* Top tray label */}
+        <Text position={[0, 1.1, 0]} fontSize={0.08} color="#ffffff" anchorX="center" anchorY="middle">
+          Tool chest
+        </Text>
+      </group>
+
+      {/* Exposed ceiling ducts and pipes — silver HVAC and black water pipe */}
+      <group>
+        {/* Main silver duct running east-west */}
+        <mesh position={[1.0, WALL_H - 0.35, -2.0]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.18, 0.18, ROOM_W - 1.0, 18]} />
+          <meshStandardMaterial color="#d8d4cb" roughness={0.45} metalness={0.5} />
+        </mesh>
+        {/* Branching duct */}
+        <mesh position={[1.6, WALL_H - 0.6, 0.6]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.14, 0.14, 1.4, 16]} />
+          <meshStandardMaterial color="#d8d4cb" roughness={0.45} metalness={0.5} />
+        </mesh>
+        {/* Black water pipe */}
+        <mesh position={[-2.0, WALL_H - 0.22, 1.0]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.06, 0.06, ROOM_W - 2.0, 14]} />
+          <meshStandardMaterial color="#101010" roughness={0.6} metalness={0.4} />
+        </mesh>
+        {/* Yellow caution tape strip on a pipe */}
+        <mesh position={[1.5, WALL_H - 0.22, 1.0]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.062, 0.062, 0.12, 14]} />
+          <meshStandardMaterial color="#e8b500" />
+        </mesh>
+        {/* Conduit cables along the south-east */}
+        <mesh position={[3.5, WALL_H - 0.5, -0.5]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.025, 0.025, 4.0, 8]} />
+          <meshStandardMaterial color="#5a4a3a" />
+        </mesh>
+        {/* Vent grille on the ceiling */}
+        <mesh position={[2.0, WALL_H - 0.02, -0.5]} rotation={[Math.PI / 2, 0, 0]}>
+          <boxGeometry args={[0.6, 0.6, 0.02]} />
+          <meshStandardMaterial color="#cccccc" metalness={0.4} roughness={0.5} />
         </mesh>
       </group>
     </group>
@@ -513,35 +620,243 @@ function BambuPrinter({ highlight, buildActive }: { highlight: boolean; buildAct
 }
 
 function Door({ knocking }: { knocking: boolean }) {
-  const ref = useRef<THREE.Group>(null);
+  // Tempered-glass door with a metal frame, like the actual robotics-room door.
+  // Sits flush in the east wall.
+  const doorRef = useRef<THREE.Group>(null);
   useFrame((state) => {
-    if (!ref.current) return;
+    if (!doorRef.current) return;
     if (knocking) {
-      ref.current.position.z = DOOR_CFG.position[2] + Math.sin(state.clock.elapsedTime * 8) * 0.05;
+      doorRef.current.position.z = DOOR_CFG.position[2] + Math.sin(state.clock.elapsedTime * 9) * 0.025;
     } else {
-      ref.current.position.z = DOOR_CFG.position[2];
+      doorRef.current.position.z = DOOR_CFG.position[2];
     }
   });
+  const frameColor = '#9a9a9a';
+  const handleZSide = -DOOR_W / 2 + 0.12; // handle near the open edge
   return (
     <group>
-      <group ref={ref} position={DOOR_CFG.position}>
-        <mesh position={[0, 1.0, 0]}>
-          <boxGeometry args={[0.06, 2.0, 1.0]} />
-          <meshStandardMaterial color={knocking ? '#b03a1f' : '#3a2515'} />
+      {/* Frame — slightly outside the wall plane so the door reads as a real opening */}
+      <group position={[DOOR_CFG.position[0], 0, DOOR_CFG.position[2]]}>
+        {/* Top header */}
+        <mesh position={[0, DOOR_H + 0.04, 0]}>
+          <boxGeometry args={[0.12, 0.08, DOOR_W + 0.12]} />
+          <meshStandardMaterial color={frameColor} metalness={0.6} roughness={0.4} />
         </mesh>
-        <mesh position={[-0.06, 1.0, -0.35]}>
-          <sphereGeometry args={[0.05, 8, 8]} />
-          <meshStandardMaterial color="#7d6a44" metalness={0.6} roughness={0.4} />
+        {/* Side jambs */}
+        <mesh position={[0, DOOR_H / 2, DOOR_W / 2 + 0.06]}>
+          <boxGeometry args={[0.12, DOOR_H + 0.08, 0.06]} />
+          <meshStandardMaterial color={frameColor} metalness={0.6} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, DOOR_H / 2, -DOOR_W / 2 - 0.06]}>
+          <boxGeometry args={[0.12, DOOR_H + 0.08, 0.06]} />
+          <meshStandardMaterial color={frameColor} metalness={0.6} roughness={0.4} />
+        </mesh>
+        {/* Transom (window above the door) */}
+        <mesh position={[0, DOOR_H + 0.35, 0]}>
+          <boxGeometry args={[0.02, 0.6, DOOR_W]} />
+          <meshPhysicalMaterial
+            color="#dfe8ef"
+            transparent
+            opacity={0.32}
+            transmission={0.7}
+            roughness={0.05}
+            metalness={0.0}
+            ior={1.5}
+            thickness={0.05}
+          />
         </mesh>
       </group>
-      <Text position={[DOOR_CFG.position[0] - 0.05, 2.4, DOOR_CFG.position[2]]} fontSize={0.16} color="#3a2f24" anchorX="center" anchorY="middle" rotation={[0, -Math.PI / 2, 0]}>
+
+      {/* Door slab — swings slightly when knocking */}
+      <group ref={doorRef}>
+        {/* Bottom solid metal panel */}
+        <mesh position={[0, 0.5, 0]}>
+          <boxGeometry args={[0.04, 1.0, DOOR_W]} />
+          <meshStandardMaterial color="#e8e4dc" metalness={0.4} roughness={0.45} />
+        </mesh>
+        {/* Top glass panel */}
+        <mesh position={[0, 1.55, 0]}>
+          <boxGeometry args={[0.02, 1.1, DOOR_W - 0.18]} />
+          <meshPhysicalMaterial
+            color="#dfe8ef"
+            transparent
+            opacity={0.28}
+            transmission={0.78}
+            roughness={0.04}
+            metalness={0.0}
+            ior={1.5}
+            thickness={0.05}
+          />
+        </mesh>
+        {/* Glass mounting frame (thin metal around the window) */}
+        <mesh position={[0, 2.1, 0]}>
+          <boxGeometry args={[0.03, 0.04, DOOR_W - 0.18]} />
+          <meshStandardMaterial color={frameColor} metalness={0.7} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, 1.0, 0]}>
+          <boxGeometry args={[0.03, 0.04, DOOR_W - 0.18]} />
+          <meshStandardMaterial color={frameColor} metalness={0.7} roughness={0.4} />
+        </mesh>
+        {/* Door closer at top */}
+        <mesh position={[-0.06, DOOR_H - 0.05, 0]}>
+          <boxGeometry args={[0.1, 0.06, 0.4]} />
+          <meshStandardMaterial color="#5a5a5a" metalness={0.5} roughness={0.5} />
+        </mesh>
+        {/* Lever handle on the inside */}
+        <mesh position={[-0.05, 1.05, handleZSide]}>
+          <boxGeometry args={[0.06, 0.025, 0.13]} />
+          <meshStandardMaterial color="#a8a8a8" metalness={0.8} roughness={0.25} />
+        </mesh>
+        <mesh position={[-0.05, 1.05, handleZSide + 0.04]}>
+          <sphereGeometry args={[0.03, 12, 8]} />
+          <meshStandardMaterial color="#a8a8a8" metalness={0.8} roughness={0.25} />
+        </mesh>
+        {/* Skull sticker (taped square) on the glass */}
+        <group position={[0.012, 1.55, 0]}>
+          <mesh>
+            <boxGeometry args={[0.001, 0.2, 0.2]} />
+            <meshStandardMaterial color="#ffffff" />
+          </mesh>
+          <Text position={[0.01, 0, 0]} fontSize={0.14} color="#ec6b1a" anchorX="center" anchorY="middle" rotation={[0, -Math.PI / 2, 0]}>
+            ☠
+          </Text>
+        </group>
+      </group>
+
+      {/* "Door" label above */}
+      <Text
+        position={[DOOR_CFG.position[0] - 0.05, DOOR_H + 0.95, DOOR_CFG.position[2]]}
+        fontSize={0.14}
+        color="#3a2f24"
+        anchorX="center"
+        anchorY="middle"
+        rotation={[0, -Math.PI / 2, 0]}
+      >
         Door
       </Text>
-      {knocking ? (
-        <Text position={[DOOR_CFG.position[0] - 0.05, 2.62, DOOR_CFG.position[2]]} fontSize={0.18} color="#b03a1f" anchorX="center" anchorY="middle" rotation={[0, -Math.PI / 2, 0]}>
-          ⚠ Knock knock
-        </Text>
-      ) : null}
+    </group>
+  );
+}
+
+// ---- Visitor character (Roblox-style humanoid) ---------------------------------------------
+//
+// Lives OUTSIDE the room (positive X past the east wall). When the visitor event
+// triggers, walks from off-screen toward the door, knocks twice, and stays put
+// until the player decides.
+
+function Visitor({ active }: { active: boolean }) {
+  const ref = useRef<THREE.Group>(null);
+  const armRef = useRef<THREE.Group>(null);
+  const leftLegRef = useRef<THREE.Group>(null);
+  const rightLegRef = useRef<THREE.Group>(null);
+  const startedAt = useRef<number>(0);
+  const stopX = DOOR_CFG.position[0] + 1.0; // stand ~1m outside the door
+  const spawnX = DOOR_CFG.position[0] + 3.5; // come from further out
+
+  useEffect(() => {
+    if (active) {
+      startedAt.current = Date.now();
+    }
+  }, [active]);
+
+  useFrame((state) => {
+    if (!ref.current) return;
+    if (!active) {
+      ref.current.position.x = spawnX + 4; // hide far away
+      return;
+    }
+    const t = (Date.now() - startedAt.current) / 1000;
+    // Walk: lerp from spawnX to stopX over 2.4s
+    const walkT = Math.min(1, t / 2.4);
+    const x = spawnX + (stopX - spawnX) * walkT;
+    ref.current.position.x = x;
+    ref.current.position.z = DOOR_CFG.position[2];
+
+    // Slight bob during walk
+    if (walkT < 1) {
+      ref.current.position.y = Math.abs(Math.sin(state.clock.elapsedTime * 8)) * 0.04;
+      if (leftLegRef.current && rightLegRef.current) {
+        leftLegRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 8) * 0.5;
+        rightLegRef.current.rotation.x = -Math.sin(state.clock.elapsedTime * 8) * 0.5;
+      }
+    } else {
+      ref.current.position.y = 0;
+      if (leftLegRef.current && rightLegRef.current) {
+        leftLegRef.current.rotation.x = 0;
+        rightLegRef.current.rotation.x = 0;
+      }
+      // Knock animation: arm raises and taps rhythmically
+      if (armRef.current) {
+        armRef.current.rotation.z = -1.2 + Math.abs(Math.sin((t - 2.4) * 6)) * 0.5;
+      }
+    }
+    // Face toward the door (-X direction)
+    ref.current.rotation.y = Math.PI / 2;
+  });
+
+  // Roblox-y proportions: chunky boxy limbs, big block head, dark skin tone.
+  const skin = '#5e3a1f';
+  const shirt = '#2a7adb';
+  const pants = '#1a1a1a';
+  return (
+    <group ref={ref} position={[spawnX + 4, 0, DOOR_CFG.position[2]]}>
+      {/* Head */}
+      <mesh position={[0, 1.65, 0]} castShadow>
+        <boxGeometry args={[0.4, 0.4, 0.4]} />
+        <meshStandardMaterial color={skin} roughness={0.7} />
+      </mesh>
+      {/* Face — simple eyes + mouth painted on */}
+      <group position={[0, 1.65, 0]}>
+        <mesh position={[-0.085, 0.04, 0.201]}>
+          <boxGeometry args={[0.05, 0.05, 0.005]} />
+          <meshStandardMaterial color="#0a0a0a" />
+        </mesh>
+        <mesh position={[0.085, 0.04, 0.201]}>
+          <boxGeometry args={[0.05, 0.05, 0.005]} />
+          <meshStandardMaterial color="#0a0a0a" />
+        </mesh>
+        <mesh position={[0, -0.07, 0.201]}>
+          <boxGeometry args={[0.12, 0.02, 0.005]} />
+          <meshStandardMaterial color="#0a0a0a" />
+        </mesh>
+      </group>
+      {/* Hair on top */}
+      <mesh position={[0, 1.88, 0]} castShadow>
+        <boxGeometry args={[0.42, 0.08, 0.42]} />
+        <meshStandardMaterial color="#1a1410" roughness={0.85} />
+      </mesh>
+      {/* Torso — blue T-shirt */}
+      <mesh position={[0, 1.15, 0]} castShadow>
+        <boxGeometry args={[0.6, 0.6, 0.32]} />
+        <meshStandardMaterial color={shirt} roughness={0.6} />
+      </mesh>
+      {/* Left arm (knocking arm) — anchored at shoulder so it pivots */}
+      <group ref={armRef} position={[-0.32, 1.4, 0]}>
+        <mesh position={[0, -0.27, 0]} castShadow>
+          <boxGeometry args={[0.16, 0.6, 0.16]} />
+          <meshStandardMaterial color={skin} roughness={0.7} />
+        </mesh>
+      </group>
+      {/* Right arm — relaxed */}
+      <group position={[0.32, 1.4, 0]}>
+        <mesh position={[0, -0.27, 0]} castShadow>
+          <boxGeometry args={[0.16, 0.6, 0.16]} />
+          <meshStandardMaterial color={skin} roughness={0.7} />
+        </mesh>
+      </group>
+      {/* Legs — anchored at hips for walk pivot */}
+      <group ref={leftLegRef} position={[-0.16, 0.85, 0]}>
+        <mesh position={[0, -0.42, 0]} castShadow>
+          <boxGeometry args={[0.18, 0.84, 0.18]} />
+          <meshStandardMaterial color={pants} roughness={0.7} />
+        </mesh>
+      </group>
+      <group ref={rightLegRef} position={[0.16, 0.85, 0]}>
+        <mesh position={[0, -0.42, 0]} castShadow>
+          <boxGeometry args={[0.18, 0.84, 0.18]} />
+          <meshStandardMaterial color={pants} roughness={0.7} />
+        </mesh>
+      </group>
     </group>
   );
 }
@@ -1234,6 +1549,7 @@ export function WorkshopGame({
               buildActive={Boolean(state.buildInProgress) && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'bambu')}
             />
             <Door knocking={state.visitorPrompted} />
+            <Visitor active={state.visitorPrompted} />
             <BuildToolAnimation
               buildInProgress={state.buildInProgress}
               location={
