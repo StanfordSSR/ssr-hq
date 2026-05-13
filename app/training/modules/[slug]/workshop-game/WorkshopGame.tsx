@@ -1,7 +1,7 @@
 'use client';
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { PointerLockControls, Text, Edges } from '@react-three/drei';
+import { PointerLockControls, Text, Edges, Environment } from '@react-three/drei';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
@@ -39,6 +39,8 @@ type GameState = {
   activeMinigameActionId: string | null;
   visitorMode: 'idle' | 'entering' | 'inside' | 'exiting';
   visitorPromptedAt: number | null;
+  visitorTurn: number;
+  visitorPlayerLine: string | null;
   visitorWalking: boolean;
   visitorPrompted: boolean;
   visitorHandled: boolean;
@@ -58,6 +60,8 @@ const initialState: GameState = {
   activeMinigameActionId: null,
   visitorMode: 'idle',
   visitorPromptedAt: null,
+  visitorTurn: 0,
+  visitorPlayerLine: null,
   visitorWalking: false,
   visitorPrompted: false,
   visitorHandled: false,
@@ -71,6 +75,27 @@ const initialState: GameState = {
 const ROOM_W = 12;
 const ROOM_D = 10;
 const WALL_H = 3.4;
+
+// ---- Visitor dialogue script -------------------------------------------------------------
+
+const VISITOR_LINES = [
+  "Yo, sup! I'm tryna get some batteries — Anish told me I could grab some. Mind if I look around?",
+  "Pls bro, just two AAs. Anish literally said it's chill. I'll be in and out in like 30 seconds.",
+  "Bruh c'mon. Tell you what — I'll Venmo you twenty bucks right now. For two batteries. Nobody has to know.",
+  "Aight aight, my bad bro. I'll just text Anish to come down himself. Peace."
+];
+
+const DECLINE_LABELS = [
+  "Sorry man, you can't be in here — you haven't done the training.",
+  "I really can't, pls just have Anish come down and let you in.",
+  "Bro, that's literally bribery. No. Out."
+];
+
+const BAD_OPTION_LABELS = [
+  "Let them grab the batteries",
+  'Fine, ONE quick look — but be fast',
+  'Take the $20 and let them in (bribery)'
+];
 
 type ShelfCfg = {
   position: [number, number, number];
@@ -309,6 +334,77 @@ function Room() {
         <Text position={[0, 1.1, 0]} fontSize={0.08} color="#ffffff" anchorX="center" anchorY="middle">
           Tool chest
         </Text>
+      </group>
+
+      {/* Floor clutter — cardboard boxes (industrial mess realism) */}
+      <group position={[-3.8, 0, 3.7]} rotation={[0, 0.4, 0]}>
+        <mesh position={[0, 0.18, 0]} castShadow receiveShadow>
+          <boxGeometry args={[0.45, 0.36, 0.4]} />
+          <meshStandardMaterial color="#a17a4b" roughness={0.85} />
+          <Edges color="#6a4a26" />
+        </mesh>
+        <mesh position={[0, 0.37, 0]}>
+          <boxGeometry args={[0.46, 0.005, 0.41]} />
+          <meshStandardMaterial color="#7a5a32" />
+        </mesh>
+      </group>
+      <group position={[-3.3, 0, 4.0]} rotation={[0, -0.2, 0]}>
+        <mesh position={[0, 0.14, 0]} castShadow receiveShadow>
+          <boxGeometry args={[0.32, 0.28, 0.32]} />
+          <meshStandardMaterial color="#9c734a" roughness={0.85} />
+          <Edges color="#5a3f1a" />
+        </mesh>
+      </group>
+      <group position={[3.6, 0, -3.2]} rotation={[0, 0.6, 0]}>
+        <mesh position={[0, 0.22, 0]} castShadow receiveShadow>
+          <boxGeometry args={[0.55, 0.44, 0.35]} />
+          <meshStandardMaterial color="#a8804f" roughness={0.85} />
+          <Edges color="#6a4a26" />
+        </mesh>
+      </group>
+
+      {/* Water bottle on the printer table */}
+      <group position={[5.0, 0.85, 1.6]}>
+        <mesh position={[0, 0.12, 0]} castShadow>
+          <cylinderGeometry args={[0.035, 0.035, 0.24, 16]} />
+          <meshStandardMaterial color="#5db0d8" transparent opacity={0.55} roughness={0.1} metalness={0.0} />
+        </mesh>
+        <mesh position={[0, 0.255, 0]}>
+          <cylinderGeometry args={[0.015, 0.015, 0.02, 10]} />
+          <meshStandardMaterial color="#1a5070" />
+        </mesh>
+      </group>
+
+      {/* Coffee cup on the workstation */}
+      <group position={[-3.5, 1.0, -4.2]}>
+        <mesh position={[0, 0.04, 0]} castShadow>
+          <cylinderGeometry args={[0.04, 0.035, 0.08, 14]} />
+          <meshStandardMaterial color="#ffffff" roughness={0.4} />
+        </mesh>
+        <mesh position={[0.045, 0.04, 0]}>
+          <torusGeometry args={[0.02, 0.006, 6, 12]} />
+          <meshStandardMaterial color="#ffffff" />
+        </mesh>
+      </group>
+
+      {/* Notebook on the workstation */}
+      <group position={[-2.0, 0.955, -4.2]}>
+        <mesh position={[0, 0.008, 0]} castShadow>
+          <boxGeometry args={[0.22, 0.015, 0.28]} />
+          <meshStandardMaterial color="#3a3a3a" roughness={0.7} />
+        </mesh>
+        <mesh position={[0, 0.02, 0]}>
+          <boxGeometry args={[0.21, 0.001, 0.27]} />
+          <meshStandardMaterial color="#fdfbf6" />
+        </mesh>
+      </group>
+
+      {/* Loose papers on the workstation */}
+      <group position={[-0.6, 0.955, -4.2]} rotation={[0, 0.3, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.16, 0.001, 0.22]} />
+          <meshStandardMaterial color="#fdfbf6" />
+        </mesh>
       </group>
 
       {/* Exposed ceiling ducts and pipes — silver HVAC and black water pipe */}
@@ -1542,10 +1638,44 @@ export function WorkshopGame({
       return {
         ...prev,
         visitorMode: 'exiting',
+        visitorPlayerLine: "Sorry man, can't do it. Have Anish come down himself.",
         scoreRaw: prev.scoreRaw + POINTS.visitorDeclined
       };
     });
     pushToast('✓ Politely walked them back out', 'good');
+  };
+
+  const declineVisitor = () => {
+    setState((prev) => {
+      if (prev.visitorMode !== 'inside') return prev;
+      const nextTurn = prev.visitorTurn + 1;
+      const playerLine = DECLINE_LABELS[prev.visitorTurn] || DECLINE_LABELS[DECLINE_LABELS.length - 1];
+      // Turn 3 (final visitor line) — visitor backs off and walks out on their own.
+      if (nextTurn >= VISITOR_LINES.length - 1) {
+        // Show final visitor line briefly, then auto-exit.
+        window.setTimeout(() => {
+          setState((p) => {
+            if (p.visitorMode !== 'inside') return p;
+            return {
+              ...p,
+              visitorMode: 'exiting',
+              visitorPlayerLine: null,
+              scoreRaw: p.scoreRaw + POINTS.visitorDeclined
+            };
+          });
+        }, 2200);
+        return {
+          ...prev,
+          visitorTurn: VISITOR_LINES.length - 1,
+          visitorPlayerLine: playerLine
+        };
+      }
+      return {
+        ...prev,
+        visitorTurn: nextTurn,
+        visitorPlayerLine: playerLine
+      };
+    });
   };
 
   const letVisitorStay = () => {
@@ -1554,6 +1684,7 @@ export function WorkshopGame({
       visitorMode: 'idle',
       visitorHandled: true,
       visitorPromptedAt: null,
+      visitorPlayerLine: null,
       scoreRaw: prev.scoreRaw + POINTS.letVisitorIn,
       failedHard: true
     }));
@@ -1579,6 +1710,10 @@ export function WorkshopGame({
       carrying: null,
       buildActionsDone: {},
       buildInProgress: null,
+      visitorMode: 'idle',
+      visitorPromptedAt: null,
+      visitorTurn: 0,
+      visitorPlayerLine: null,
       visitorWalking: false,
       visitorPrompted: false,
       visitorHandled: false
@@ -1643,11 +1778,21 @@ export function WorkshopGame({
   return (
     <div className="workshop-shell">
       <div className="workshop-stage">
-        <Canvas shadows dpr={[1, 2]} camera={{ fov: 70, near: 0.05, far: 80 }}>
+        <Canvas
+          shadows
+          dpr={[1, 2]}
+          camera={{ fov: 70, near: 0.05, far: 80 }}
+          gl={{
+            antialias: true,
+            toneMapping: THREE.ACESFilmicToneMapping,
+            toneMappingExposure: 1.05
+          }}
+        >
           <color attach="background" args={['#e8e2d4']} />
           <fog attach="fog" args={['#f1ebde', 14, 28]} />
           <Lighting />
           <Suspense fallback={null}>
+            <Environment preset="warehouse" background={false} environmentIntensity={0.55} />
             <Room />
             {(Object.keys(SHELF_LAYOUT) as Shelf[]).map((s) => (
               <ShelfFurniture key={s} shelfId={s} highlight={hover?.kind === 'shelf' && hover.shelfId === s} />
@@ -1878,27 +2023,44 @@ export function WorkshopGame({
               <p className="workshop-subtitle-text">
                 {state.visitorMode === 'entering'
                   ? '*pushes the door open and walks in, waving*'
-                  : '“Yo, sup! I’m tryna get some batteries — Anish told me I could grab some. Mind if I look around?”'}
+                  : `“${VISITOR_LINES[state.visitorTurn] || VISITOR_LINES[0]}”`}
               </p>
             </div>
-            {state.visitorMode === 'inside' ? (
-              <div className="workshop-subtitle-prompts">
-                <span className={`workshop-subtitle-prompt ${playerNearVisitor ? 'is-active' : ''}`}>
-                  {playerNearVisitor ? (
-                    <>
-                      <kbd>E</kbd> Walk them back out
-                    </>
-                  ) : (
-                    <>Walk over to ask them to leave</>
-                  )}
-                </span>
+            {state.visitorPlayerLine && state.visitorMode === 'inside' ? (
+              <div className="workshop-subtitle-row workshop-subtitle-row-player">
+                <div className="workshop-subtitle-speaker workshop-subtitle-speaker-you">You</div>
+                <p className="workshop-subtitle-text">“{state.visitorPlayerLine}”</p>
+              </div>
+            ) : null}
+            {state.visitorMode === 'inside' && state.visitorTurn < VISITOR_LINES.length - 1 ? (
+              <div className="workshop-subtitle-options">
                 <button
                   type="button"
-                  className="workshop-subtitle-bad-option"
+                  className="workshop-subtitle-option"
+                  onClick={declineVisitor}
+                >
+                  <span className="workshop-subtitle-option-marker">1.</span>
+                  <span>“{DECLINE_LABELS[state.visitorTurn]}”</span>
+                </button>
+                <button
+                  type="button"
+                  className="workshop-subtitle-option workshop-subtitle-option-bad"
                   onClick={letVisitorStay}
                 >
-                  Let them grab the batteries
+                  <span className="workshop-subtitle-option-marker">2.</span>
+                  <span>{BAD_OPTION_LABELS[state.visitorTurn] || BAD_OPTION_LABELS[0]}</span>
                 </button>
+                <span className={`workshop-subtitle-prompt-inline ${playerNearVisitor ? 'is-active' : ''}`}>
+                  {playerNearVisitor ? (
+                    <>
+                      <kbd>E</kbd> Walk them back out now
+                    </>
+                  ) : (
+                    <>
+                      Or walk up to them and press <kbd>E</kbd> to physically escort them out
+                    </>
+                  )}
+                </span>
               </div>
             ) : null}
           </div>
@@ -1909,7 +2071,7 @@ export function WorkshopGame({
             <div className="workshop-subtitle-row">
               <div className="workshop-subtitle-speaker">You</div>
               <p className="workshop-subtitle-text">
-                “Sorry man, can&apos;t do it. Have Anish come let you in himself.”
+                “{state.visitorPlayerLine || "Sorry man, can't do it. Have Anish come down himself."}”
               </p>
             </div>
           </div>
