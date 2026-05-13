@@ -5260,3 +5260,100 @@ tr:last-child td {
   background: #fbe9e3;
   color: #b03a1f;
 }
+
+/* Visitor subtitle */
+
+.workshop-subtitle {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 48px));
+  background: rgba(10, 8, 6, 0.78);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 16px 20px 14px;
+  color: #fdf6e6;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: workshopToastIn 220ms ease-out;
+}
+
+.workshop-subtitle-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workshop-subtitle-speaker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #ffb070;
+}
+
+.workshop-subtitle-text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #fdf6e6;
+}
+
+.workshop-subtitle-prompts {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  flex-wrap: wrap;
+}
+
+.workshop-subtitle-prompt {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workshop-subtitle-prompt.is-active {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.workshop-subtitle-prompt kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  background: #ffffff;
+  color: #1a1410;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.workshop-subtitle-bad-option {
+  background: rgba(176, 58, 31, 0.2);
+  border: 1px dashed rgba(255, 130, 110, 0.6);
+  color: #ffb0a0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.workshop-subtitle-bad-option:hover {
+  background: rgba(176, 58, 31, 0.4);
+  color: #ffffff;
+}
