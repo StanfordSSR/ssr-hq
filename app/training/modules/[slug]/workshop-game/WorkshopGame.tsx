@@ -5,24 +5,35 @@ import { PointerLockControls, Text, Edges } from '@react-three/drei';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
-  ITEMS,
   POINTS,
   ROUNDS,
   TOTAL_MAX,
   getItem,
   normalizeScore,
-  type ItemDef,
+  type BuildAction,
   type ItemId,
+  type Phase,
   type Shelf
 } from './game-logic';
+import { PartMesh } from './parts';
 
 type Toast = { id: number; text: string; tone: 'good' | 'bad' };
 
+type BuildInProgress = {
+  actionId: string;
+  startedAt: number;
+  durationMs: number;
+  tool?: ItemId;
+};
+
 type GameState = {
   roundIdx: number;
+  phaseIdx: number;
   scoreRaw: number;
   benchItems: ItemId[];
   carrying: ItemId | null;
+  buildActionsDone: Record<string, boolean>;
+  buildInProgress: BuildInProgress | null;
   visitorPrompted: boolean;
   visitorHandled: boolean;
   toasts: Toast[];
@@ -32,9 +43,12 @@ type GameState = {
 
 const initialState: GameState = {
   roundIdx: 0,
+  phaseIdx: 0,
   scoreRaw: 0,
   benchItems: [],
   carrying: null,
+  buildActionsDone: {},
+  buildInProgress: null,
   visitorPrompted: false,
   visitorHandled: false,
   toasts: [],
@@ -42,7 +56,7 @@ const initialState: GameState = {
   failedHard: false
 };
 
-// ---- Room layout (matches the user's sketch) ----------------------------------------------
+// ---- Room layout ---------------------------------------------------------------------------
 
 const ROOM_W = 14;
 const ROOM_D = 14;
@@ -53,39 +67,25 @@ type ShelfCfg = {
   rotY: number;
   width: number;
   depth: number;
-  height: number; // total cabinet height
+  height: number;
   shelves: number;
   label: string;
   tone?: 'normal' | 'forbidden';
 };
 
 const SHELF_LAYOUT: Record<Shelf, ShelfCfg> = {
-  // West wall, upper: peg-board "tool wall"
   'hand-tools':    { position: [-6.85,  0, -3.3], rotY:  Math.PI / 2, width: 3.4, depth: 0.3, height: 2.4, shelves: 3, label: 'Tool wall' },
-  // West wall, lower: long shelf for filament
   'filament':      { position: [-6.85,  0,  2.5], rotY:  Math.PI / 2, width: 4.0, depth: 0.5, height: 1.6, shelves: 2, label: 'Filament' },
-  // North wall, right side: small shelf
   'printed-parts': { position: [ 2.6,  0, -6.85], rotY: 0,             width: 2.6, depth: 0.5, height: 1.6, shelves: 2, label: 'Printed parts' },
-  // East wall, upper: tall shelf for measurement tools
   'measurement':   { position: [ 6.85,  0, -4.0], rotY: -Math.PI / 2, width: 2.4, depth: 0.5, height: 2.0, shelves: 3, label: 'Measurement' },
-  // East wall, upper-mid: electronics shelf
   'electronics':   { position: [ 6.85,  0, -1.6], rotY: -Math.PI / 2, width: 2.0, depth: 0.5, height: 1.6, shelves: 2, label: 'Electronics' },
-  // South wall, left half: screws bins
   'screws':        { position: [-2.8,  0,  6.85], rotY: Math.PI,       width: 2.8, depth: 0.5, height: 1.4, shelves: 2, label: 'Screws' },
-  // South wall, middle: forbidden shelf (the trap zone)
   'forbidden':     { position: [ 0.6,  0,  6.85], rotY: Math.PI,       width: 2.8, depth: 0.5, height: 1.6, shelves: 2, label: 'Misc — NOT for this room', tone: 'forbidden' }
 };
 
-// Workstation (assembly bench) against the NORTH wall
 const BENCH_CFG = { position: [-2.0, 0, -6.5] as [number, number, number], width: 4.5, depth: 1.2, height: 0.95 };
-
-// 3D printers on a table against the EAST wall
 const PRINTER_TABLE_CFG = { position: [6.5, 0, 1.5] as [number, number, number], width: 1.4, depth: 3.0, height: 0.85 };
-
-// Door is on the EAST wall toward the south corner
 const DOOR_CFG = { position: [6.99, 0, 5.0] as [number, number, number] };
-
-// ---- Helpers -------------------------------------------------------------------------------
 
 const FLOOR_COLOR = '#dcd2c2';
 const WALL_COLOR = '#f5f1ec';
@@ -103,17 +103,14 @@ function clamp(value: number, lo: number, hi: number) {
 function Room() {
   return (
     <group>
-      {/* Floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[ROOM_W, ROOM_D]} />
         <meshStandardMaterial color={FLOOR_COLOR} />
       </mesh>
-      {/* Ceiling */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, WALL_H, 0]}>
         <planeGeometry args={[ROOM_W, ROOM_D]} />
         <meshStandardMaterial color="#fdfbf6" />
       </mesh>
-      {/* Walls (interior-facing) */}
       <mesh position={[0, WALL_H / 2, -ROOM_D / 2]}>
         <boxGeometry args={[ROOM_W, WALL_H, 0.1]} />
         <meshStandardMaterial color={WALL_COLOR} />
@@ -130,7 +127,6 @@ function Room() {
         <boxGeometry args={[ROOM_W, WALL_H, 0.1]} />
         <meshStandardMaterial color={WALL_COLOR} />
       </mesh>
-      {/* Baseboard trim around the perimeter */}
       {[
         { pos: [0, 0.05, -ROOM_D / 2 + 0.06], size: [ROOM_W, 0.1, 0.04] },
         { pos: [0, 0.05, ROOM_D / 2 - 0.06], size: [ROOM_W, 0.1, 0.04] },
@@ -152,12 +148,10 @@ function ShelfFurniture({ shelfId, highlight }: { shelfId: Shelf; highlight: boo
   const shelfStep = cfg.height / (cfg.shelves + 0.5);
   return (
     <group position={cfg.position} rotation={[0, cfg.rotY, 0]}>
-      {/* Back panel */}
       <mesh position={[0, cfg.height / 2, -cfg.depth / 2 - 0.02]}>
         <boxGeometry args={[cfg.width, cfg.height, 0.04]} />
         <meshStandardMaterial color={color} />
       </mesh>
-      {/* Sides */}
       <mesh position={[-cfg.width / 2 + 0.04, cfg.height / 2, 0]}>
         <boxGeometry args={[0.08, cfg.height, cfg.depth]} />
         <meshStandardMaterial color={color} />
@@ -166,21 +160,18 @@ function ShelfFurniture({ shelfId, highlight }: { shelfId: Shelf; highlight: boo
         <boxGeometry args={[0.08, cfg.height, cfg.depth]} />
         <meshStandardMaterial color={color} />
       </mesh>
-      {/* Shelves */}
       {Array.from({ length: cfg.shelves }).map((_, i) => (
         <mesh key={i} position={[0, shelfStep * (i + 0.5), 0]}>
           <boxGeometry args={[cfg.width - 0.16, 0.04, cfg.depth - 0.04]} />
           <meshStandardMaterial color="#ece3d3" />
         </mesh>
       ))}
-      {/* Highlight outline */}
       {highlight ? (
         <mesh position={[0, cfg.height / 2, 0.02]}>
           <boxGeometry args={[cfg.width + 0.1, cfg.height + 0.1, cfg.depth + 0.4]} />
           <meshBasicMaterial color="#ffd34a" transparent opacity={0.18} />
         </mesh>
       ) : null}
-      {/* Label above */}
       <Text position={[0, cfg.height + 0.15, 0.05]} fontSize={0.16} color={cfg.tone === 'forbidden' ? '#8c1515' : '#3a2f24'} anchorX="center" anchorY="middle">
         {cfg.label}
       </Text>
@@ -188,17 +179,15 @@ function ShelfFurniture({ shelfId, highlight }: { shelfId: Shelf; highlight: boo
   );
 }
 
-function Workbench({ highlight }: { highlight: boolean }) {
+function Workbench({ highlight, buildActive }: { highlight: boolean; buildActive: boolean }) {
   const cfg = BENCH_CFG;
   return (
     <group position={cfg.position}>
-      {/* Top */}
       <mesh position={[0, cfg.height, 0]} castShadow>
         <boxGeometry args={[cfg.width, 0.08, cfg.depth]} />
         <meshStandardMaterial color={BENCH_TOP_COLOR} />
         <Edges color="#6a4a26" />
       </mesh>
-      {/* Legs */}
       {[
         [-cfg.width / 2 + 0.1, cfg.height / 2, -cfg.depth / 2 + 0.1],
         [cfg.width / 2 - 0.1, cfg.height / 2, -cfg.depth / 2 + 0.1],
@@ -210,15 +199,14 @@ function Workbench({ highlight }: { highlight: boolean }) {
           <meshStandardMaterial color={BENCH_LEG_COLOR} />
         </mesh>
       ))}
-      {/* Front rail */}
       <mesh position={[0, cfg.height - 0.18, cfg.depth / 2 - 0.05]}>
         <boxGeometry args={[cfg.width - 0.18, 0.08, 0.04]} />
         <meshStandardMaterial color={BENCH_LEG_COLOR} />
       </mesh>
-      {highlight ? (
+      {highlight || buildActive ? (
         <mesh position={[0, cfg.height + 0.05, 0]}>
           <boxGeometry args={[cfg.width + 0.1, 0.08, cfg.depth + 0.1]} />
-          <meshBasicMaterial color="#ffd34a" transparent opacity={0.35} />
+          <meshBasicMaterial color={buildActive ? '#7ad27a' : '#ffd34a'} transparent opacity={0.4} />
         </mesh>
       ) : null}
       <Text position={[0, cfg.height + 0.45, 0]} fontSize={0.18} color="#3a2f24" anchorX="center" anchorY="middle">
@@ -279,12 +267,10 @@ function Door({ knocking }: { knocking: boolean }) {
   return (
     <group>
       <group ref={ref} position={DOOR_CFG.position}>
-        {/* Door slab */}
         <mesh position={[0, 1.0, 0]}>
           <boxGeometry args={[0.06, 2.0, 1.0]} />
           <meshStandardMaterial color={knocking ? '#b03a1f' : '#3a2515'} />
         </mesh>
-        {/* Handle */}
         <mesh position={[-0.06, 1.0, -0.35]}>
           <sphereGeometry args={[0.05, 8, 8]} />
           <meshStandardMaterial color="#7d6a44" metalness={0.6} roughness={0.4} />
@@ -302,6 +288,24 @@ function Door({ knocking }: { knocking: boolean }) {
   );
 }
 
+// ---- Build animation: the active tool spins above the bench ---------------------------------
+
+function BuildToolAnimation({ buildInProgress }: { buildInProgress: BuildInProgress | null }) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (!ref.current || !buildInProgress) return;
+    const t = (Date.now() - buildInProgress.startedAt) / buildInProgress.durationMs;
+    ref.current.rotation.y = t * Math.PI * 4;
+    ref.current.position.y = BENCH_CFG.height + 0.35 + Math.sin(t * Math.PI * 6) * 0.05;
+  });
+  if (!buildInProgress?.tool) return null;
+  return (
+    <group ref={ref} position={[BENCH_CFG.position[0], BENCH_CFG.height + 0.35, BENCH_CFG.position[2]]}>
+      <PartMesh id={buildInProgress.tool} />
+    </group>
+  );
+}
+
 // ---- Item placement ------------------------------------------------------------------------
 
 function getShelfWorldPos(shelfId: Shelf, slotIndex: number, slotCount: number): [number, number, number] {
@@ -311,11 +315,9 @@ function getShelfWorldPos(shelfId: Shelf, slotIndex: number, slotCount: number):
   const localX = slotCount > 1 ? -spacing / 2 + step * slotIndex : 0;
   const cos = Math.cos(cfg.rotY);
   const sin = Math.sin(cfg.rotY);
-  // Items sit on the lowest shelf in front of the cabinet
-  const localY = cfg.height / (cfg.shelves + 0.5) * 0.5 + 0.16;
-  const localZ = 0;
-  const worldX = cfg.position[0] + cos * localX + sin * localZ;
-  const worldZ = cfg.position[2] - sin * localX + cos * localZ;
+  const localY = (cfg.height / (cfg.shelves + 0.5)) * 0.5 + 0.16;
+  const worldX = cfg.position[0] + cos * localX;
+  const worldZ = cfg.position[2] - sin * localX;
   return [worldX, localY, worldZ];
 }
 
@@ -324,7 +326,6 @@ function getBenchSlotPos(slotIndex: number, slotCount: number): [number, number,
   const spread = BENCH_CFG.width - 0.6;
   const step = slotCount > 1 ? spread / (slotCount - 1) : 0;
   const localX = slotCount > 1 ? -spread / 2 + step * slotIndex : 0;
-  // Bench is along the north wall, facing south; players stand south of it
   return [BENCH_CFG.position[0] + localX, benchTop, BENCH_CFG.position[2] + 0.3];
 }
 
@@ -333,65 +334,25 @@ function getBenchSlotPos(slotIndex: number, slotCount: number): [number, number,
 type WorldItem = {
   id: ItemId;
   position: THREE.Vector3;
-  def: ItemDef;
 };
-
-function ItemMeshLite({ def }: { def: ItemDef }) {
-  switch (def.shape) {
-    case 'rod':
-      return (
-        <mesh>
-          <cylinderGeometry args={[0.045, 0.045, 0.34, 10]} />
-          <meshStandardMaterial color={def.color} />
-        </mesh>
-      );
-    case 'cyl':
-      return (
-        <mesh>
-          <cylinderGeometry args={[0.16, 0.16, 0.22, 16]} />
-          <meshStandardMaterial color={def.color} />
-        </mesh>
-      );
-    case 'plate':
-      return (
-        <mesh>
-          <boxGeometry args={[0.3, 0.05, 0.18]} />
-          <meshStandardMaterial color={def.color} />
-        </mesh>
-      );
-    case 'bin':
-      return (
-        <mesh>
-          <boxGeometry args={[0.34, 0.18, 0.22]} />
-          <meshStandardMaterial color={def.color} />
-        </mesh>
-      );
-    default:
-      return (
-        <mesh>
-          <boxGeometry args={[0.22, 0.18, 0.18]} />
-          <meshStandardMaterial color={def.color} />
-        </mesh>
-      );
-  }
-}
 
 function ItemInWorld({ item, hovered }: { item: WorldItem; hovered: boolean }) {
   const ref = useRef<THREE.Group>(null);
   useFrame((state) => {
     if (!ref.current) return;
     const wobble = hovered ? Math.sin(state.clock.elapsedTime * 6) * 0.04 : 0;
-    ref.current.position.set(item.position.x, item.position.y + 0.18 + wobble, item.position.z);
+    ref.current.position.set(item.position.x, item.position.y + 0.05 + wobble, item.position.z);
   });
+  const def = getItem(item.id);
   return (
     <group ref={ref}>
-      <ItemMeshLite def={item.def} />
+      <PartMesh id={item.id} />
       <Text position={[0, 0.32, 0]} fontSize={0.085} color={hovered ? '#000000' : '#3a2f24'} anchorX="center" anchorY="middle">
-        {item.def.label}
+        {def.label}
       </Text>
       {hovered ? (
-        <mesh position={[0, -0.05, 0]}>
-          <ringGeometry args={[0.22, 0.28, 24]} />
+        <mesh position={[0, -0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.18, 0.24, 24]} />
           <meshBasicMaterial color="#ffd34a" side={THREE.DoubleSide} />
         </mesh>
       ) : null}
@@ -419,12 +380,12 @@ function CarriedItem({ itemId }: { itemId: ItemId }) {
   });
   return (
     <group ref={ref}>
-      <ItemMeshLite def={getItem(itemId)} />
+      <PartMesh id={itemId} />
     </group>
   );
 }
 
-// ---- Player + interaction --------------------------------------------------------------------
+// ---- Player + interaction -------------------------------------------------------------------
 
 function Player({
   enabled,
@@ -509,14 +470,17 @@ type Hover =
 function HoverDetector({
   worldItems,
   carrying,
-  onHover
+  onHover,
+  onBenchProximity
 }: {
   worldItems: WorldItem[];
   carrying: ItemId | null;
   onHover: (h: Hover) => void;
+  onBenchProximity: (near: boolean) => void;
 }) {
   const { camera } = useThree();
-  const lastRef = useRef<Hover>(null);
+  const lastHoverRef = useRef<string>('');
+  const lastBenchRef = useRef<boolean>(false);
 
   useFrame(() => {
     const forward = new THREE.Vector3();
@@ -524,56 +488,59 @@ function HoverDetector({
     forward.y = 0;
     forward.normalize();
 
+    const benchCenter = new THREE.Vector3(BENCH_CFG.position[0], 1.0, BENCH_CFG.position[2] + 0.3);
+    const benchDist = benchCenter.clone().sub(camera.position).length();
+    const nearBench = benchDist < 3.0;
+    if (nearBench !== lastBenchRef.current) {
+      lastBenchRef.current = nearBench;
+      onBenchProximity(nearBench);
+    }
+
+    let next: Hover = null;
+
     if (carrying) {
-      // Looking for placement targets: bench or matching shelf
-      const benchCenter = new THREE.Vector3(BENCH_CFG.position[0], 1.0, BENCH_CFG.position[2] + 0.3);
       const toBench = benchCenter.clone().sub(camera.position);
-      const benchDist = toBench.length();
-      let best: Hover = null;
-      if (benchDist < 3.2) {
-        const dot = forward.dot(toBench.clone().normalize());
-        if (dot > 0.6) {
-          best = { kind: 'bench', distance: benchDist };
-        }
+      const benchDot = forward.dot(toBench.clone().normalize());
+      if (benchDist < 3.2 && benchDot > 0.55) {
+        next = { kind: 'bench', distance: benchDist };
       }
-      // Check correct shelf for carried item
       const carriedItem = getItem(carrying);
       const cfg = SHELF_LAYOUT[carriedItem.shelf];
       const shelfCenter = new THREE.Vector3(cfg.position[0], cfg.height / 2, cfg.position[2]);
       const toShelf = shelfCenter.clone().sub(camera.position);
       const shelfDist = toShelf.length();
-      if (shelfDist < 3.0) {
-        const dot = forward.dot(toShelf.clone().normalize());
-        if (dot > 0.55 && (!best || shelfDist < best.distance)) {
-          best = { kind: 'shelf', shelfId: carriedItem.shelf, distance: shelfDist };
+      const shelfDot = forward.dot(toShelf.clone().normalize());
+      if (shelfDist < 3.0 && shelfDot > 0.5 && (!next || shelfDist < next.distance)) {
+        next = { kind: 'shelf', shelfId: carriedItem.shelf, distance: shelfDist };
+      }
+    } else {
+      let bestDist = Infinity;
+      let bestItem: WorldItem | null = null;
+      for (const w of worldItems) {
+        const toItem = w.position.clone().sub(camera.position);
+        const dist = toItem.length();
+        if (dist > 2.8) continue;
+        toItem.y = 0;
+        toItem.normalize();
+        const dot = forward.dot(toItem);
+        if (dot < 0.55) continue;
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestItem = w;
         }
       }
-      if (JSON.stringify(best) !== JSON.stringify(lastRef.current)) {
-        lastRef.current = best;
-        onHover(best);
-      }
-      return;
+      if (bestItem) next = { kind: 'item', itemId: bestItem.id, distance: bestDist };
     }
 
-    // Looking for items to pick up
-    let bestDist = Infinity;
-    let bestItem: WorldItem | null = null;
-    for (const w of worldItems) {
-      const toItem = w.position.clone().sub(camera.position);
-      const dist = toItem.length();
-      if (dist > 2.8) continue;
-      toItem.y = 0;
-      toItem.normalize();
-      const dot = forward.dot(toItem);
-      if (dot < 0.55) continue;
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestItem = w;
-      }
-    }
-    const next: Hover = bestItem ? { kind: 'item', itemId: bestItem.id, distance: bestDist } : null;
-    if (JSON.stringify(next) !== JSON.stringify(lastRef.current)) {
-      lastRef.current = next;
+    const key = next
+      ? next.kind === 'item'
+        ? `item-${next.itemId}`
+        : next.kind === 'shelf'
+          ? `shelf-${next.shelfId}`
+          : 'bench'
+      : '';
+    if (key !== lastHoverRef.current) {
+      lastHoverRef.current = key;
       onHover(next);
     }
   });
@@ -606,10 +573,12 @@ export function WorkshopGame({
   const [submitting, setSubmitting] = useState(false);
   const [pointerLocked, setPointerLocked] = useState(false);
   const [hover, setHover] = useState<Hover>(null);
+  const [nearBench, setNearBench] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
-  const stageRef = useRef<HTMLDivElement>(null);
 
   const round = ROUNDS[state.roundIdx];
+  const phase: Phase | undefined = round.phases[state.phaseIdx];
+  const roundComplete = state.phaseIdx >= round.phases.length;
 
   const worldItems: WorldItem[] = useMemo(() => {
     const shelfCounts: Record<Shelf, ItemId[]> = {
@@ -631,15 +600,12 @@ export function WorkshopGame({
     (Object.keys(shelfCounts) as Shelf[]).forEach((s) => {
       shelfCounts[s].forEach((id, idx) => {
         const pos = getShelfWorldPos(s, idx, shelfCounts[s].length);
-        const def = getItem(id);
-        result.push({ id, def, position: new THREE.Vector3(pos[0], pos[1], pos[2]) });
+        result.push({ id, position: new THREE.Vector3(pos[0], pos[1], pos[2]) });
       });
     });
-    // Bench items
     state.benchItems.forEach((id, idx) => {
       const pos = getBenchSlotPos(idx, state.benchItems.length);
-      const def = getItem(id);
-      result.push({ id, def, position: new THREE.Vector3(pos[0], pos[1], pos[2]) });
+      result.push({ id, position: new THREE.Vector3(pos[0], pos[1], pos[2]) });
     });
     return result;
   }, [round, state.benchItems, state.carrying]);
@@ -652,6 +618,43 @@ export function WorkshopGame({
     }, 3500);
   };
 
+  // --- Phase auto-advance: detects when a phase is complete and bumps phaseIdx
+  useEffect(() => {
+    if (!phase) return;
+    let shouldAdvance = false;
+    if (phase.kind === 'gather') {
+      shouldAdvance = phase.needs.every((id) => state.benchItems.includes(id));
+    } else if (phase.kind === 'visitor') {
+      shouldAdvance = state.visitorHandled;
+    } else if (phase.kind === 'build') {
+      shouldAdvance = phase.actions.every((a) => state.buildActionsDone[a.id]);
+    } else if (phase.kind === 'return') {
+      shouldAdvance = state.benchItems.length === 0;
+    }
+    if (shouldAdvance) {
+      const t = window.setTimeout(() => {
+        setState((prev) => {
+          if (prev.phaseIdx !== state.phaseIdx) return prev;
+          return { ...prev, phaseIdx: prev.phaseIdx + 1 };
+        });
+      }, 350);
+      return () => window.clearTimeout(t);
+    }
+  }, [phase, state.benchItems, state.visitorHandled, state.buildActionsDone, state.phaseIdx]);
+
+  // --- Trigger visitor modal when we enter the visitor phase
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (phase?.kind === 'visitor' && !state.visitorPrompted && !state.visitorHandled) {
+      setState((prev) => ({ ...prev, visitorPrompted: true }));
+      if (document.pointerLockElement) {
+        (document as unknown as { exitPointerLock?: () => void }).exitPointerLock?.();
+      }
+    }
+  }, [phase, state.visitorPrompted, state.visitorHandled]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // --- Pickup / place / return
   const pickupItem = (id: ItemId) => {
     if (state.carrying || state.finished || state.failedHard) return;
     const item = getItem(id);
@@ -661,7 +664,6 @@ export function WorkshopGame({
       return;
     }
     setState((prev) => {
-      // Determine if we're picking off the bench
       const fromBench = prev.benchItems.includes(id);
       return {
         ...prev,
@@ -675,20 +677,7 @@ export function WorkshopGame({
 
   const placeOnBench = () => {
     if (!state.carrying) return;
-    setState((prev) => {
-      const benchItems = [...prev.benchItems, prev.carrying!];
-      let score = prev.scoreRaw;
-      for (const step of round.steps) {
-        if (step.needs.length === 0) continue;
-        const ok = step.needs.every((id) => benchItems.includes(id));
-        const wasOk = step.needs.every((id) => prev.benchItems.includes(id));
-        if (ok && !wasOk) {
-          score += POINTS.correctStep;
-          break;
-        }
-      }
-      return { ...prev, carrying: null, benchItems, scoreRaw: score };
-    });
+    setState((prev) => ({ ...prev, carrying: null, benchItems: [...prev.benchItems, prev.carrying!] }));
     pushToast('✓ Placed on workstation', 'good');
   };
 
@@ -704,20 +693,54 @@ export function WorkshopGame({
   };
 
   const handleInteract = () => {
-    if (hover?.kind === 'item') {
-      pickupItem(hover.itemId);
-    } else if (hover?.kind === 'bench') {
-      placeOnBench();
-    } else if (hover?.kind === 'shelf') {
-      returnToShelf(hover.shelfId);
-    }
+    if (hover?.kind === 'item') pickupItem(hover.itemId);
+    else if (hover?.kind === 'bench') placeOnBench();
+    else if (hover?.kind === 'shelf') returnToShelf(hover.shelfId);
   };
 
+  // --- Build action: B at bench
+  const nextBuildAction: BuildAction | null = (() => {
+    if (phase?.kind !== 'build') return null;
+    return phase.actions.find((a) => !state.buildActionsDone[a.id]) || null;
+  })();
+
+  const startBuildAction = (action: BuildAction) => {
+    if (state.buildInProgress) return;
+    setState((prev) => ({
+      ...prev,
+      buildInProgress: {
+        actionId: action.id,
+        startedAt: Date.now(),
+        durationMs: action.durationMs,
+        tool: action.tool
+      }
+    }));
+    pushToast(`… ${action.prompt}`, 'good');
+    window.setTimeout(() => {
+      setState((prev) => {
+        if (!prev.buildInProgress || prev.buildInProgress.actionId !== action.id) return prev;
+        return {
+          ...prev,
+          buildInProgress: null,
+          buildActionsDone: { ...prev.buildActionsDone, [action.id]: true },
+          scoreRaw: prev.scoreRaw + POINTS.buildAction
+        };
+      });
+      pushToast(`✓ ${action.prompt}`, 'good');
+    }, action.durationMs);
+  };
+
+  // --- Keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (state.visitorPrompted) return;
       if (e.code === 'KeyE') {
+        e.preventDefault();
         handleInteract();
+      } else if (e.code === 'KeyB') {
+        e.preventDefault();
+        if (!nearBench || !nextBuildAction) return;
+        startBuildAction(nextBuildAction);
       } else if (e.code === 'Tab') {
         e.preventDefault();
         setPanelOpen((p) => !p);
@@ -727,26 +750,14 @@ export function WorkshopGame({
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  // Visitor event in round 3 after the gather step
-  const gatherDoneRound3 =
-    round.visitorEvent &&
-    round.steps[0].needs.every((id) => state.benchItems.includes(id)) &&
-    !state.visitorPrompted &&
-    !state.visitorHandled;
-  useEffect(() => {
-    if (gatherDoneRound3) {
-      const t = window.setTimeout(() => {
-        setState((prev) => ({ ...prev, visitorPrompted: true }));
-        if (document.pointerLockElement) {
-          (document as any).exitPointerLock?.();
-        }
-      }, 250);
-      return () => window.clearTimeout(t);
-    }
-  }, [gatherDoneRound3]);
-
+  // --- Visitor handling
   const handleVisitorDecline = () => {
-    setState((prev) => ({ ...prev, visitorPrompted: false, visitorHandled: true, scoreRaw: prev.scoreRaw + 2 }));
+    setState((prev) => ({
+      ...prev,
+      visitorPrompted: false,
+      visitorHandled: true,
+      scoreRaw: prev.scoreRaw + POINTS.visitorDeclined
+    }));
     pushToast('✓ Declined politely', 'good');
   };
 
@@ -761,12 +772,7 @@ export function WorkshopGame({
     pushToast('✗ Letting an unauthorized visitor in is an immediate fail.', 'bad');
   };
 
-  const allStepsDone = round.steps.every((step) =>
-    step.needs.length === 0
-      ? state.benchItems.length === 0 && (!round.visitorEvent || state.visitorHandled)
-      : step.needs.every((id) => state.benchItems.includes(id))
-  );
-
+  // --- Round complete → advance or finish
   const advanceRound = () => {
     if (state.roundIdx === ROUNDS.length - 1) {
       let finalScore = state.scoreRaw;
@@ -780,8 +786,11 @@ export function WorkshopGame({
     setState((prev) => ({
       ...prev,
       roundIdx: prev.roundIdx + 1,
+      phaseIdx: 0,
       benchItems: [],
       carrying: null,
+      buildActionsDone: {},
+      buildInProgress: null,
       visitorPrompted: false,
       visitorHandled: false
     }));
@@ -804,19 +813,42 @@ export function WorkshopGame({
   const normalizedScore = normalizeScore(state.scoreRaw);
   const passed = normalizedScore >= passingScore;
 
+  // --- HUD prompt
   const interactPrompt = (() => {
+    if (state.buildInProgress) {
+      const action = phase?.kind === 'build' ? phase.actions.find((a) => a.id === state.buildInProgress?.actionId) : null;
+      return action ? `${action.prompt}…` : 'Building…';
+    }
     if (state.carrying) {
-      if (hover?.kind === 'bench') return 'Press E to place on workstation';
+      if (hover?.kind === 'bench') return 'Press E to place on the workstation';
       if (hover?.kind === 'shelf') return `Press E to return to ${SHELF_LAYOUT[hover.shelfId].label}`;
-      return `Carrying ${getItem(state.carrying).label} — look at the workstation or its shelf`;
+      return `Carrying ${getItem(state.carrying).label}`;
+    }
+    if (phase?.kind === 'build' && nearBench && nextBuildAction) {
+      return `Press B at the workstation to ${nextBuildAction.prompt.toLowerCase()}`;
     }
     if (hover?.kind === 'item') return `Press E to pick up ${getItem(hover.itemId).label}`;
     return null;
   })();
 
+  // --- Phase progress visualization for the objective panel
+  const phaseSummaries = round.phases.map((p, idx) => {
+    const isCurrent = idx === state.phaseIdx;
+    const isDone = idx < state.phaseIdx;
+    let label = p.label;
+    if (p.kind === 'gather') {
+      const have = p.needs.filter((id) => state.benchItems.includes(id)).length;
+      label = `${p.label} (${have}/${p.needs.length})`;
+    } else if (p.kind === 'build') {
+      const have = p.actions.filter((a) => state.buildActionsDone[a.id]).length;
+      label = `${p.label} (${have}/${p.actions.length})`;
+    }
+    return { idx, label, isCurrent, isDone };
+  });
+
   return (
     <div className="workshop-shell">
-      <div className="workshop-stage" ref={stageRef}>
+      <div className="workshop-stage">
         <Canvas shadows={false} dpr={[1, 2]} camera={{ fov: 70, near: 0.05, far: 80 }}>
           <color attach="background" args={['#e8e2d4']} />
           <fog attach="fog" args={['#f1ebde', 14, 28]} />
@@ -824,15 +856,12 @@ export function WorkshopGame({
           <Suspense fallback={null}>
             <Room />
             {(Object.keys(SHELF_LAYOUT) as Shelf[]).map((s) => (
-              <ShelfFurniture
-                key={s}
-                shelfId={s}
-                highlight={hover?.kind === 'shelf' && hover.shelfId === s}
-              />
+              <ShelfFurniture key={s} shelfId={s} highlight={hover?.kind === 'shelf' && hover.shelfId === s} />
             ))}
-            <Workbench highlight={hover?.kind === 'bench'} />
+            <Workbench highlight={hover?.kind === 'bench'} buildActive={Boolean(state.buildInProgress)} />
             <PrinterTable />
             <Door knocking={state.visitorPrompted} />
+            <BuildToolAnimation buildInProgress={state.buildInProgress} />
 
             {worldItems.map((w) => (
               <ItemInWorld
@@ -845,7 +874,12 @@ export function WorkshopGame({
             {state.carrying ? <CarriedItem itemId={state.carrying} /> : null}
 
             <Player enabled={pointerLocked && !state.visitorPrompted && !state.finished && !state.failedHard} />
-            <HoverDetector worldItems={worldItems} carrying={state.carrying} onHover={setHover} />
+            <HoverDetector
+              worldItems={worldItems}
+              carrying={state.carrying}
+              onHover={setHover}
+              onBenchProximity={setNearBench}
+            />
 
             {!state.visitorPrompted && !state.finished && !state.failedHard ? (
               <PointerLockControls
@@ -856,7 +890,6 @@ export function WorkshopGame({
           </Suspense>
         </Canvas>
 
-        {/* Crosshair */}
         {pointerLocked ? <div className="workshop-crosshair" aria-hidden>+</div> : null}
 
         {/* Top bar */}
@@ -877,29 +910,38 @@ export function WorkshopGame({
           </div>
         </div>
 
-        {/* Side objective panel */}
+        {/* Objective panel */}
         {panelOpen ? (
           <div className="workshop-hud-objective">
             <div className="workshop-hud-objective-head">
               <span>Objective</span>
-              <button type="button" className="workshop-hud-collapse" onClick={() => setPanelOpen(false)} aria-label="Hide objectives">
+              <button type="button" className="workshop-hud-collapse" onClick={() => setPanelOpen(false)} aria-label="Hide">
                 ×
               </button>
             </div>
             <p className="workshop-hud-brief">{round.brief}</p>
             <ol className="workshop-hud-steps">
-              {round.steps.map((step) => {
-                const ok =
-                  step.needs.length === 0
-                    ? state.benchItems.length === 0 && (!round.visitorEvent || state.visitorHandled)
-                    : step.needs.every((id) => state.benchItems.includes(id));
-                return (
-                  <li key={step.id} className={ok ? 'is-done' : ''}>
-                    <span>{ok ? '✓' : '○'}</span> {step.label}
-                  </li>
-                );
-              })}
+              {phaseSummaries.map((p) => (
+                <li key={p.idx} className={p.isDone ? 'is-done' : p.isCurrent ? 'is-current' : ''}>
+                  <span>{p.isDone ? '✓' : p.isCurrent ? '▸' : '○'}</span> {p.label}
+                </li>
+              ))}
             </ol>
+            {phase?.kind === 'build' ? (
+              <div className="workshop-hud-build">
+                <strong>Build steps:</strong>
+                <ul>
+                  {phase.actions.map((a) => (
+                    <li key={a.id} className={state.buildActionsDone[a.id] ? 'is-done' : ''}>
+                      <span>{state.buildActionsDone[a.id] ? '✓' : '○'}</span> {a.prompt}
+                    </li>
+                  ))}
+                </ul>
+                <p className="workshop-hud-build-hint">
+                  Walk up to the workstation and press <kbd>B</kbd> to perform the next step.
+                </p>
+              </div>
+            ) : null}
           </div>
         ) : (
           <button type="button" className="workshop-hud-objective-toggle" onClick={() => setPanelOpen(true)}>
@@ -907,14 +949,10 @@ export function WorkshopGame({
           </button>
         )}
 
-        {/* Bottom interact prompt */}
         {interactPrompt && pointerLocked ? (
-          <div className="workshop-hud-prompt">
-            <kbd>E</kbd> {interactPrompt}
-          </div>
+          <div className="workshop-hud-prompt">{interactPrompt}</div>
         ) : null}
 
-        {/* Toasts */}
         <div className="workshop-hud-toasts">
           {state.toasts.map((t) => (
             <div key={t.id} className={`workshop-toast workshop-toast-${t.tone}`}>
@@ -923,21 +961,19 @@ export function WorkshopGame({
           ))}
         </div>
 
-        {/* Click-to-play overlay */}
         {!pointerLocked && !state.visitorPrompted && !state.finished && !state.failedHard ? (
           <div className="workshop-hud-start">
             <div className="workshop-hud-start-card">
               <p className="workshop-hud-start-eyebrow">Workshop simulation</p>
               <h3>Click to enter the room</h3>
               <p className="workshop-hud-start-body">
-                Use <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> to walk. Move the mouse to look. Press <kbd>E</kbd> to pick up tools and place them on the workstation. Press <kbd>Esc</kbd> to release the cursor. <kbd>Tab</kbd> toggles the objective panel.
+                <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> walk · mouse looks · <kbd>E</kbd> pick up / place / return · <kbd>B</kbd> build at the workstation · <kbd>Tab</kbd> toggle objectives · <kbd>Esc</kbd> release cursor.
               </p>
             </div>
           </div>
         ) : null}
 
-        {/* Round nav */}
-        {pointerLocked && allStepsDone && !state.finished && !state.failedHard ? (
+        {pointerLocked && roundComplete && !state.finished && !state.failedHard ? (
           <div className="workshop-hud-advance">
             <button type="button" className="button-primary" onClick={advanceRound}>
               {state.roundIdx === ROUNDS.length - 1 ? 'Finish simulation →' : 'Next round →'}
@@ -945,7 +981,6 @@ export function WorkshopGame({
           </div>
         ) : null}
 
-        {/* Failure modal */}
         {state.failedHard ? (
           <div className="workshop-modal-backdrop">
             <div className="workshop-modal">
@@ -953,22 +988,17 @@ export function WorkshopGame({
               <h3 className="workshop-modal-title">Hard safety violation.</h3>
               <p className="workshop-modal-body">The simulation ended early. Restart to try again.</p>
               <div className="workshop-modal-actions">
-                <button type="button" className="button" onClick={restartGame}>
-                  Restart simulation
-                </button>
+                <button type="button" className="button" onClick={restartGame}>Restart simulation</button>
               </div>
             </div>
           </div>
         ) : null}
 
-        {/* Pass / fail summary */}
         {state.finished ? (
           <div className="workshop-modal-backdrop">
             <div className="workshop-modal">
               <p className="workshop-modal-eyebrow">{passed ? 'Passed' : 'Did not pass'}</p>
-              <h3 className="workshop-modal-title">
-                Final score: {Math.round(normalizedScore * 100)}%
-              </h3>
+              <h3 className="workshop-modal-title">Final score: {Math.round(normalizedScore * 100)}%</h3>
               <p className="workshop-modal-body">
                 You need at least {Math.round(passingScore * 100)}% to complete the training.
               </p>
@@ -978,9 +1008,7 @@ export function WorkshopGame({
                     {submitting ? 'Recording…' : 'Record completion'}
                   </button>
                 ) : (
-                  <button type="button" className="button" onClick={restartGame}>
-                    Restart simulation
-                  </button>
+                  <button type="button" className="button" onClick={restartGame}>Restart simulation</button>
                 )}
               </div>
               {submitError ? <p className="helper" style={{ color: '#8c1515' }}>{submitError}</p> : null}
@@ -988,15 +1016,12 @@ export function WorkshopGame({
           </div>
         ) : null}
 
-        {/* Visitor modal */}
         {state.visitorPrompted ? (
           <div className="workshop-modal-backdrop">
             <div className="workshop-modal">
               <p className="workshop-modal-eyebrow">Door event</p>
               <h3 className="workshop-modal-title">Someone is knocking.</h3>
-              <p>
-                <em>“Hey, I’m a friend of someone in the club. Can I come in to borrow a tool real quick?”</em>
-              </p>
+              <p><em>“Hey, I’m a friend of someone in the club. Can I come in to borrow a tool real quick?”</em></p>
               <p className="workshop-modal-body">
                 You do not recognize this person. They have not done the training. What do you do?
               </p>
