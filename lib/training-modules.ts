@@ -120,14 +120,57 @@ export async function recordCompletion(
   }
 }
 
+export async function recordOptIn(email: string, moduleSlug: string): Promise<void> {
+  const supabase = createAdminClient();
+  const normalized = normalizeEmail(email);
+  const { error } = await supabase
+    .from('training_module_opt_ins')
+    .upsert({ email: normalized, module_slug: moduleSlug }, { onConflict: 'email,module_slug' });
+  if (error) {
+    throw new Error(`Failed to record opt-in: ${error.message}`);
+  }
+}
+
+export async function hasOptedIn(email: string, moduleSlug: string): Promise<boolean> {
+  const supabase = createAdminClient();
+  const normalized = normalizeEmail(email);
+  const { data, error } = await supabase
+    .from('training_module_opt_ins')
+    .select('module_slug')
+    .ilike('email', normalized)
+    .eq('module_slug', moduleSlug)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to read opt-in: ${error.message}`);
+  }
+  return Boolean(data);
+}
+
+export async function getOptInsForEmail(email: string): Promise<string[]> {
+  const supabase = createAdminClient();
+  const normalized = normalizeEmail(email);
+  const { data, error } = await supabase
+    .from('training_module_opt_ins')
+    .select('module_slug')
+    .ilike('email', normalized);
+  if (error) {
+    throw new Error(`Failed to read opt-ins: ${error.message}`);
+  }
+  return (data || []).map((row) => row.module_slug);
+}
+
 export async function getRequiredOutstanding(email: string): Promise<TrainingModule | null> {
-  const completions = await getCompletionsForEmail(email);
+  const [completions, optIns] = await Promise.all([
+    getCompletionsForEmail(email),
+    getOptInsForEmail(email)
+  ]);
   const completedSlugs = new Set(completions.map((c) => c.moduleSlug));
+  const optInSlugs = new Set(optIns);
 
   for (const mod of listModules()) {
-    if (mod.required && !completedSlugs.has(mod.slug)) {
-      return mod;
-    }
+    if (completedSlugs.has(mod.slug)) continue;
+    if (mod.required) return mod;
+    if (mod.gatedByOptIn && optInSlugs.has(mod.slug)) return mod;
   }
   return null;
 }

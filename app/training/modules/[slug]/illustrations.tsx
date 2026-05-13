@@ -1,4 +1,4 @@
-type Kind = 'circuit' | 'gear' | 'shield' | 'ledger' | 'broadcast' | 'compass';
+type Kind = 'circuit' | 'gear' | 'shield' | 'ledger' | 'broadcast' | 'compass' | 'workshop';
 
 export function ChapterIllustration({ kind }: { kind: Kind }) {
   switch (kind) {
@@ -14,9 +14,32 @@ export function ChapterIllustration({ kind }: { kind: Kind }) {
       return <BroadcastIllustration />;
     case 'compass':
       return <CompassIllustration />;
+    case 'workshop':
+      return <WorkshopIllustration />;
     default:
       return null;
   }
+}
+
+function WorkshopIllustration() {
+  return (
+    <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="40" y="80" width="160" height="100" rx="6" fill={FILL} stroke={STROKE} strokeWidth="1.6" />
+      <rect x="55" y="110" width="48" height="58" rx="3" fill="none" stroke={STROKE} strokeWidth="1.2" />
+      <rect x="115" y="110" width="48" height="58" rx="3" fill="none" stroke={STROKE} strokeWidth="1.2" />
+      <line x1="55" y1="135" x2="103" y2="135" stroke={STROKE_FAINT} strokeWidth="1" />
+      <line x1="55" y1="155" x2="103" y2="155" stroke={STROKE_FAINT} strokeWidth="1" />
+      <line x1="115" y1="135" x2="163" y2="135" stroke={STROKE_FAINT} strokeWidth="1" />
+      <line x1="115" y1="155" x2="163" y2="155" stroke={STROKE_FAINT} strokeWidth="1" />
+      <rect x="60" y="120" width="14" height="8" fill={STROKE} />
+      <rect x="120" y="120" width="14" height="8" fill={STROKE} />
+      <circle cx="170" cy="65" r="14" fill={STROKE} />
+      <rect x="158" y="60" width="24" height="14" fill="none" stroke={STROKE_FAINT} strokeWidth="1" />
+      <text x="50" y="72" fontSize="9" fontFamily="system-ui" fill={STROKE} fontWeight="700">
+        WORKSHOP
+      </text>
+    </svg>
+  );
 }
 
 const STROKE = 'rgba(255,255,255,0.85)';

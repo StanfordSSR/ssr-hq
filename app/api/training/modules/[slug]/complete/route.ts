@@ -46,6 +46,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const score = typeof payload.score === 'number' ? payload.score : 1.0;
   const attempts = typeof payload.attempts === 'number' && payload.attempts >= 1 ? Math.floor(payload.attempts) : 1;
 
+  const passingScore = typeof mod.passingScore === 'number' ? mod.passingScore : 1.0;
+  if (score < passingScore) {
+    const pct = Math.round(passingScore * 100);
+    return NextResponse.json(
+      { error: `You need to score at least ${pct}% to complete this training.`, passingScore },
+      { status: 400 }
+    );
+  }
+
   await recordCompletion(session.email, slug, score, attempts);
   await clearModuleStart(session.email, slug);
 

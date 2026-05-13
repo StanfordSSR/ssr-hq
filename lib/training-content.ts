@@ -26,6 +26,8 @@ export type Question = {
   explanation: string;
 };
 
+export type SimulationKind = 'workshop';
+
 export type Chapter = {
   number: number;
   slug: string;
@@ -33,10 +35,11 @@ export type Chapter = {
   title: string;
   intro: string;
   accent: string;
-  illustration: 'circuit' | 'gear' | 'shield' | 'ledger' | 'broadcast' | 'compass';
+  illustration: 'circuit' | 'gear' | 'shield' | 'ledger' | 'broadcast' | 'compass' | 'workshop';
   minSeconds: number;
   blocks: ContentBlock[];
   questions: Question[];
+  simulation?: { kind: SimulationKind };
 };
 
 export type TrainingModule = {
@@ -44,6 +47,7 @@ export type TrainingModule = {
   title: string;
   subtitle: string;
   required: boolean;
+  gatedByOptIn?: boolean;
   estimatedMinutes: number;
   passingScore: number;
   chapters: Chapter[];
@@ -799,7 +803,444 @@ const initiation: TrainingModule = {
   ]
 };
 
-const modules: TrainingModule[] = [initiation];
+const roomAccess: TrainingModule = {
+  slug: 'room-access',
+  title: 'Robotics Room Access',
+  subtitle:
+    'Required for any member who wants physical access to the SSR robotics room. Covers door policy, forbidden activities, 3D printers, and cleanup — and ends with a 3D workshop simulation.',
+  required: false,
+  gatedByOptIn: true,
+  estimatedMinutes: 14,
+  passingScore: 0.8,
+  chapters: [
+    {
+      number: 1,
+      slug: 'access-and-door',
+      eyebrow: 'Chapter 1',
+      title: 'Access, the door, and visitors',
+      intro:
+        'Access to the robotics room is a privilege you keep by following a small set of rules. The most important one is the door.',
+      accent: '#8c1515',
+      illustration: 'shield',
+      minSeconds: 60,
+      blocks: [
+        {
+          type: 'paragraph',
+          text:
+            'Stanford granted SSR a dedicated room for engineering. That access is contingent on us keeping the space safe, organized, and used only by people who have been trained.'
+        },
+        {
+          type: 'heading',
+          text: 'The door rule'
+        },
+        {
+          type: 'list',
+          items: [
+            'Do not prop the door open and leave it unattended',
+            'Do not let anyone you do not personally recognize into the room',
+            'Do not let a friend, partner, classmate, or other non-member in just to "hang out" — they have not done this training',
+            'If someone you do not know asks to come in, tell them to email an Executive Board officer to request access. Do not let them in yourself.'
+          ]
+        },
+        {
+          type: 'callout',
+          variant: 'warn',
+          title: 'You are personally responsible',
+          text:
+            'If you let someone in who damages equipment, takes property, or gets hurt, that is on you. Card-based access is logged. We can tell who unlocked the door.'
+        },
+        {
+          type: 'heading',
+          text: 'When you leave'
+        },
+        {
+          type: 'list',
+          items: [
+            'Make sure the door latches behind you',
+            'If you are the last one out, confirm the door is locked',
+            'Lights off and printers / equipment in a safe state'
+          ]
+        },
+        {
+          type: 'principle',
+          text: '"Access is a privilege you keep by guarding the door."'
+        }
+      ],
+      questions: [
+        {
+          prompt:
+            'You are working in the robotics room. A friend texts asking if they can come in for 15 minutes to "see the robots". They have never been to SSR. The right answer is:',
+          kind: 'single',
+          options: [
+            'Yes — quick visits are fine',
+            'No — they must email an Exec Board officer to request access; non-members do not enter without training',
+            'Yes, as long as you stay with them',
+            'Only if they sign a paper waiver at the door'
+          ],
+          correctIndices: [1],
+          explanation:
+            'The door rule does not have a "quick visit" exception. Everyone in the room needs to have done the training. Direct them to an Exec Board officer.'
+        },
+        {
+          prompt: 'Which of the following are door / access mistakes you should NOT make? (Select all that apply.)',
+          kind: 'multi',
+          options: [
+            'Propping the door open while you step out for a snack',
+            'Letting a stranger in because they say a Team Lead invited them',
+            'Locking up and confirming the door latched when you are the last one out',
+            'Letting a non-member partner sit in the corner and study while you work'
+          ],
+          correctIndices: [0, 1, 3],
+          explanation:
+            'Propping the door, taking unverified claims of invitation, and letting non-members "just hang out" are all violations. Locking up on the way out is exactly what you should do.'
+        },
+        {
+          prompt:
+            'You unlocked the door this morning. Later, equipment goes missing. Who is the first point of accountability?',
+          kind: 'single',
+          options: [
+            'Whoever happens to be in the room when staff arrive',
+            'The member whose card opened the door',
+            'The Outreach Lead',
+            'No one — it is impossible to tell'
+          ],
+          correctIndices: [1],
+          explanation:
+            'Card access is logged. We can tell who opened the door. That is why letting unverified people in is a serious problem.'
+        }
+      ]
+    },
+    {
+      number: 2,
+      slug: 'forbidden-activities',
+      eyebrow: 'Chapter 2',
+      title: 'What you cannot do in this room',
+      intro:
+        'The robotics room is not a wet lab, not a machine shop, and not a paint booth. A short list of activities is forbidden here because the room is not ventilated for them.',
+      accent: '#b03a1f',
+      illustration: 'shield',
+      minSeconds: 70,
+      blocks: [
+        {
+          type: 'paragraph',
+          text:
+            'The reason these activities are forbidden is simple: the room does not have the ventilation, filtration, or safety infrastructure for them. Doing them in here puts everyone — and our access to the room — at risk.'
+        },
+        {
+          type: 'heading',
+          text: 'Forbidden'
+        },
+        {
+          type: 'list',
+          items: [
+            'Machining of any kind: mill, lathe, grinder, bandsaw, drill press, Dremel/rotary tool, hacksaw on metal — metal chips and dust',
+            'Soldering and rework — lead and flux fumes',
+            'Spray painting, aerosols, primers — VOC-heavy',
+            'Solvents and adhesive work with strong fumes: acetone, MEK, two-part epoxies that off-gas',
+            'Open-flame anything — butane torches, lighters held to materials',
+            'Hot plates, cooking equipment, food prep'
+          ]
+        },
+        {
+          type: 'callout',
+          variant: 'info',
+          title: 'Where these things belong',
+          text:
+            'Use Stanford makerspaces with proper ventilation for the above: the Product Realization Lab (PRL), the Skilling Auditorium shops, or the maker spaces with hoods. Most of them have free undergraduate access after a quick orientation.'
+        },
+        {
+          type: 'heading',
+          text: 'Allowed (with common sense)'
+        },
+        {
+          type: 'list',
+          items: [
+            'Hand assembly with screwdrivers, hex keys, wrenches',
+            'Crimping and connectorizing — no soldering',
+            'Programming, testing, debugging, electronics with battery / bench supply',
+            '3D printing of low-fume materials only (see next chapter)',
+            'CAD, design review, documentation'
+          ]
+        },
+        {
+          type: 'principle',
+          text: '"If it makes smoke, fumes, sparks, or chips — it does not happen in this room."'
+        }
+      ],
+      questions: [
+        {
+          prompt: 'Which of the following activities are forbidden inside the robotics room? (Select all that apply.)',
+          kind: 'multi',
+          options: [
+            'Soldering a wire harness',
+            'Hand-assembling a robot with screwdrivers and hex keys',
+            'Dremel-cutting a metal bracket',
+            'Spray painting a printed enclosure',
+            'Testing code on a robot powered by a bench supply',
+            'Heating a hot plate to cure an epoxy'
+          ],
+          correctIndices: [0, 2, 3, 5],
+          explanation:
+            'Soldering, machining/cutting, spray painting, and any heating / curing activity are forbidden here. Hand assembly and bench-supply electronics are fine.'
+        },
+        {
+          prompt:
+            'You need to cut a piece of aluminum stock to length for the chassis. Where should you do it?',
+          kind: 'single',
+          options: [
+            'In the robotics room with a hacksaw, near the door',
+            'In a Stanford makerspace with proper ventilation and machining tools — PRL or similar',
+            'Outside on a bench in front of the building',
+            'At your dorm room desk'
+          ],
+          correctIndices: [1],
+          explanation:
+            'Machining belongs in a ventilated shop. Use the Product Realization Lab or another Stanford makerspace equipped for it.'
+        },
+        {
+          prompt:
+            'A teammate says "I just need to do a quick solder on this connector — five minutes." The right response is:',
+          kind: 'single',
+          options: [
+            'Sure, just open the window',
+            'No — soldering is not done in this room regardless of duration. Take it to a space with a fume extractor.',
+            'OK if you turn on a desk fan',
+            'Only if you wear a dust mask'
+          ],
+          correctIndices: [1],
+          explanation:
+            'Time-limited soldering is still soldering, and the room is not ventilated for it. A window or fan does not solve flux fumes. Go to a properly equipped space.'
+        }
+      ]
+    },
+    {
+      number: 3,
+      slug: 'printers',
+      eyebrow: 'Chapter 3',
+      title: '3D printers: Prusa Core One+ and Bambu H2D',
+      intro:
+        'The room has two 3D printers. Both are enclosed, but enclosed does not mean fume-proof — and a few simple rules keep us out of trouble.',
+      accent: '#5b3a8a',
+      illustration: 'workshop',
+      minSeconds: 80,
+      blocks: [
+        {
+          type: 'stat-row',
+          stats: [
+            { value: 'PLA · PETG', label: 'Allowed materials', sub: 'Low-fume only' },
+            { value: 'ABS · ASA · PC · Nylon', label: 'Forbidden', sub: 'Off-gas VOCs / particulate' },
+            { value: 'Trained leads', label: 'Start prints', sub: 'Members may submit jobs' }
+          ]
+        },
+        {
+          type: 'heading',
+          text: 'Material policy'
+        },
+        {
+          type: 'paragraph',
+          text:
+            'Both printers technically support high-temperature materials. We do not use them in this room. ABS, ASA, polycarbonate, and most nylons release volatile organic compounds and ultrafine particles, and the room is not ventilated for that. PLA and PETG are the allowed materials. PLA-CF and PETG-CF are case-by-case — ask your Team Lead.'
+        },
+        {
+          type: 'heading',
+          text: 'Operating rules'
+        },
+        {
+          type: 'list',
+          items: [
+            'Only trained Team Leads (or other members the Board has signed off on) start prints — you can submit jobs, but you do not press Start unless you have been trained',
+            'Do not open the printer enclosure during a print. Enclosure exists to contain heat, particulate, and (with the Bambu H2D) the AMS material flow',
+            'Do not modify the slicer profiles for materials you have not been trained on',
+            'Long prints that will run past close-time: only if the printer has remote monitoring AND a trained member is responsible. Otherwise stop the print before you leave.',
+            'When changing filament, route the unloaded spool back to its labeled storage shelf — do not leave it on the floor or workbench'
+          ]
+        },
+        {
+          type: 'callout',
+          variant: 'warn',
+          title: 'When something goes wrong',
+          text:
+            'If you see smoke, smell something burning, or hear an unusual sound — stop the printer (the front-panel button is enough), step back, and tell a Team Lead immediately. Do not try to fix it yourself.'
+        },
+        {
+          type: 'heading',
+          text: 'Specific to each printer'
+        },
+        {
+          type: 'paragraph',
+          text:
+            'Prusa Core One+: enclosed CoreXY. Treat the chamber as warm — let it cool before reaching in. Bambu H2D: dual nozzle, AMS-fed; the AMS picks the spool for you, so make sure no forbidden material is loaded into any of its slots.'
+        },
+        {
+          type: 'principle',
+          text: '"If it is not PLA or PETG, it does not print here."'
+        }
+      ],
+      questions: [
+        {
+          prompt: 'You need to print a structural bracket that requires high stiffness, and you find a spool of nylon on the rack. Can you load it into the Bambu H2D?',
+          kind: 'single',
+          options: [
+            'Yes — the H2D supports nylon',
+            'No — nylon off-gasses and the room is not ventilated for it; use PLA, PETG, or take the job to a ventilated space',
+            'Yes, but only if you open the enclosure to vent it',
+            'Only on weekends'
+          ],
+          correctIndices: [1],
+          explanation:
+            'The H2D can mechanically print nylon, but the room cannot ventilate the fumes. Allowed materials are PLA and PETG. PLA-CF / PETG-CF are case-by-case via your Team Lead.'
+        },
+        {
+          prompt: 'Which of the following are required practice for the room\'s 3D printers? (Select all that apply.)',
+          kind: 'multi',
+          options: [
+            'Only trained members start prints',
+            'Keep the enclosure closed during a print',
+            'Submit print jobs through your Team Lead if you have not been trained',
+            'Leave the printer running overnight any time you want',
+            'Smelling something odd is a stop-the-print event — alert a Team Lead'
+          ],
+          correctIndices: [0, 1, 2, 4],
+          explanation:
+            'Trained-only operation, enclosure closed, jobs submitted through a lead if you have not been trained, and stopping on unusual smell/sound are all required. Overnight prints require remote monitoring AND a responsible trained member.'
+        },
+        {
+          prompt:
+            'It is 11pm and your print has six hours left. You have not done overnight-print training. The correct action is:',
+          kind: 'single',
+          options: [
+            'Leave it running — overnight prints are normal',
+            'Stop the print before you leave; restart tomorrow with a trained member responsible',
+            'Ask another member nearby to "keep an eye on it" overnight',
+            'Open the enclosure so the print finishes faster'
+          ],
+          correctIndices: [1],
+          explanation:
+            'Overnight prints require remote monitoring and a trained member who has signed off as responsible. Without that, stop the print.'
+        }
+      ]
+    },
+    {
+      number: 4,
+      slug: 'cleanup-and-tools',
+      eyebrow: 'Chapter 4',
+      title: 'Tool care, cleanup, and overnight rules',
+      intro:
+        'The room is shared. The condition you leave it in is the condition the next person finds it in.',
+      accent: '#0e6b4e',
+      illustration: 'shield',
+      minSeconds: 60,
+      blocks: [
+        {
+          type: 'heading',
+          text: 'Tools'
+        },
+        {
+          type: 'list',
+          items: [
+            'Every tool has a labeled spot on a shelf. Return it to that spot when you are done — not to the workbench, not to a random shelf, not to "I\'ll deal with it later"',
+            'Tools out of place is the single most common complaint about the room. Do not be the reason',
+            'Damaged or missing tools: report to your Team Lead immediately so it can be logged and replaced',
+            'Do not take tools off-site without explicit lead approval'
+          ]
+        },
+        {
+          type: 'heading',
+          text: 'Workbench and floor'
+        },
+        {
+          type: 'list',
+          items: [
+            'Clear your workbench at the end of every session',
+            'In-progress projects go on a labeled shelf with your name and a return date — not left on the workbench overnight',
+            'Nothing on the floor overnight. Boxes, parts, prints, and trash all get put away'
+          ]
+        },
+        {
+          type: 'callout',
+          variant: 'warn',
+          title: 'No overnight dumping',
+          text:
+            'Leaving your stuff on a shared workbench or on the floor overnight is one of the fastest ways to lose access. It blocks other Teams from working and signals that the room is not respected.'
+        },
+        {
+          type: 'heading',
+          text: 'Trash and consumables'
+        },
+        {
+          type: 'list',
+          items: [
+            'Trash in the trash bin; recyclables in the recycling. Not in a pile next to it',
+            'Cardboard boxes that fit in the bin go in the bin',
+            'Empty filament spools: into recycling once dry / non-functional, not piled in a corner'
+          ]
+        },
+        {
+          type: 'principle',
+          text: '"Leave the room cleaner than you found it. Every time."'
+        }
+      ],
+      questions: [
+        {
+          prompt:
+            'You are partway through a build but it is 1am and you have class in the morning. The right way to leave the workbench is:',
+          kind: 'single',
+          options: [
+            'Leave everything as it is so you can pick up where you left off',
+            'Move the in-progress assembly to a labeled shelf with your name and a return date; return tools; clear the workbench',
+            'Push everything to one side of the workbench',
+            'Throw your work in progress in the trash to save space'
+          ],
+          correctIndices: [1],
+          explanation:
+            'In-progress projects belong on a labeled shelf with name + return date, not on a shared workbench overnight. Tools always return to their labeled spots.'
+        },
+        {
+          prompt: 'Which of these are overnight rules for the robotics room? (Select all that apply.)',
+          kind: 'multi',
+          options: [
+            'Nothing on the workbench',
+            'Nothing on the floor',
+            'In-progress work on a labeled shelf with name and return date',
+            'Tools left out wherever they were last used — you will put them away next time'
+          ],
+          correctIndices: [0, 1, 2],
+          explanation:
+            'Workbench and floor are clear overnight; in-progress projects live on a labeled shelf. Tools always go back to their labeled spots, never "later".'
+        },
+        {
+          prompt: 'You finish using a 4mm hex key. The right next step is:',
+          kind: 'single',
+          options: [
+            'Leave it on the workbench so it is handy for the next person',
+            'Put it in any open slot on the nearest shelf',
+            'Return it to its labeled spot on the hand-tools shelf',
+            'Take it back to your dorm in case you need it later'
+          ],
+          correctIndices: [2],
+          explanation:
+            'Every tool has a labeled home. Returning tools to their labeled spots is the single most-broken rule in the room — do not break it.'
+        }
+      ]
+    },
+    {
+      number: 5,
+      slug: 'simulation',
+      eyebrow: 'Final',
+      title: 'Workshop simulation',
+      intro:
+        'Step into the simulated robotics room. Follow the work orders, avoid the safety violations, and keep the room clean. Score 80% or higher to complete this training.',
+      accent: '#171414',
+      illustration: 'workshop',
+      minSeconds: 0,
+      simulation: { kind: 'workshop' },
+      blocks: [],
+      questions: []
+    }
+  ]
+};
+
+const modules: TrainingModule[] = [initiation, roomAccess];
 
 export function getModule(slug: string): TrainingModule | undefined {
   return modules.find((m) => m.slug === slug);
