@@ -37,6 +37,8 @@ type GameState = {
   buildActionsDone: Record<string, boolean>;
   buildInProgress: BuildInProgress | null;
   activeMinigameActionId: string | null;
+  visitorMode: 'idle' | 'entering' | 'inside' | 'exiting';
+  visitorPromptedAt: number | null;
   visitorWalking: boolean;
   visitorPrompted: boolean;
   visitorHandled: boolean;
@@ -54,6 +56,8 @@ const initialState: GameState = {
   buildActionsDone: {},
   buildInProgress: null,
   activeMinigameActionId: null,
+  visitorMode: 'idle',
+  visitorPromptedAt: null,
   visitorWalking: false,
   visitorPrompted: false,
   visitorHandled: false,
@@ -622,20 +626,26 @@ function BambuPrinter({ highlight, buildActive }: { highlight: boolean; buildAct
   );
 }
 
-function Door({ knocking }: { knocking: boolean }) {
-  // Tempered-glass door with a metal frame, like the actual robotics-room door.
-  // Sits flush in the east wall.
-  const doorRef = useRef<THREE.Group>(null);
+function Door({ openAmount, knocking }: { openAmount: number; knocking: boolean }) {
+  // Glass door that swings inward on its hinge. The hinge sits at the south edge
+  // of the doorway (the +Z edge for our east-wall orientation). openAmount: 0 = closed,
+  // 1 = fully open (~95° inward).
+  const swingRef = useRef<THREE.Group>(null);
+  const knockOffset = useRef(0);
   useFrame((state) => {
-    if (!doorRef.current) return;
-    if (knocking) {
-      doorRef.current.position.z = DOOR_CFG.position[2] + Math.sin(state.clock.elapsedTime * 9) * 0.025;
+    if (!swingRef.current) return;
+    const target = -openAmount * (Math.PI / 1.9); // swing inward (-X side)
+    // Smoothly approach target
+    swingRef.current.rotation.y += (target - swingRef.current.rotation.y) * 0.18;
+    // Knocking wiggle only when fully closed
+    if (knocking && openAmount < 0.05) {
+      knockOffset.current = Math.sin(state.clock.elapsedTime * 9) * 0.03;
     } else {
-      doorRef.current.position.z = DOOR_CFG.position[2];
+      knockOffset.current *= 0.85;
     }
+    swingRef.current.position.x = knockOffset.current;
   });
   const frameColor = '#9a9a9a';
-  const handleZSide = -DOOR_W / 2 + 0.12; // handle near the open edge
   return (
     <group>
       {/* Frame — flush against the door, no floating transom */}
@@ -656,59 +666,77 @@ function Door({ knocking }: { knocking: boolean }) {
         </mesh>
       </group>
 
-      {/* Door slab — swings slightly when knocking */}
-      <group ref={doorRef} position={DOOR_CFG.position}>
-        {/* Bottom solid metal panel */}
-        <mesh position={[0, 0.5, 0]}>
-          <boxGeometry args={[0.04, 1.0, DOOR_W]} />
-          <meshStandardMaterial color="#e8e4dc" metalness={0.4} roughness={0.45} />
-        </mesh>
-        {/* Top glass panel */}
-        <mesh position={[0, 1.55, 0]}>
-          <boxGeometry args={[0.02, 1.1, DOOR_W - 0.18]} />
-          <meshPhysicalMaterial
-            color="#dfe8ef"
-            transparent
-            opacity={0.28}
-            transmission={0.78}
-            roughness={0.04}
-            metalness={0.0}
-            ior={1.5}
-            thickness={0.05}
-          />
-        </mesh>
-        {/* Glass mounting frame (thin metal around the window) */}
-        <mesh position={[0, 2.1, 0]}>
-          <boxGeometry args={[0.03, 0.04, DOOR_W - 0.18]} />
-          <meshStandardMaterial color={frameColor} metalness={0.7} roughness={0.4} />
-        </mesh>
-        <mesh position={[0, 1.0, 0]}>
-          <boxGeometry args={[0.03, 0.04, DOOR_W - 0.18]} />
-          <meshStandardMaterial color={frameColor} metalness={0.7} roughness={0.4} />
-        </mesh>
-        {/* Door closer at top */}
-        <mesh position={[-0.06, DOOR_H - 0.05, 0]}>
-          <boxGeometry args={[0.1, 0.06, 0.4]} />
-          <meshStandardMaterial color="#5a5a5a" metalness={0.5} roughness={0.5} />
-        </mesh>
-        {/* Lever handle on the inside */}
-        <mesh position={[-0.05, 1.05, handleZSide]}>
-          <boxGeometry args={[0.06, 0.025, 0.13]} />
-          <meshStandardMaterial color="#a8a8a8" metalness={0.8} roughness={0.25} />
-        </mesh>
-        <mesh position={[-0.05, 1.05, handleZSide + 0.04]}>
-          <sphereGeometry args={[0.03, 12, 8]} />
-          <meshStandardMaterial color="#a8a8a8" metalness={0.8} roughness={0.25} />
-        </mesh>
-        {/* Skull sticker (taped square) on the glass */}
-        <group position={[0.012, 1.55, 0]}>
-          <mesh>
-            <boxGeometry args={[0.001, 0.2, 0.2]} />
-            <meshStandardMaterial color="#ffffff" />
+      {/* Door slab — hinged at the +Z (south) edge of the doorway so the swing
+          group rotates around the hinge instead of the door center. The inner
+          group offsets the slab by -DOOR_W/2 so its geometry is centered. */}
+      <group position={[DOOR_CFG.position[0], 0, DOOR_CFG.position[2] + DOOR_W / 2]}>
+        <group ref={swingRef}>
+          {/* Hinge cylinder */}
+          <mesh position={[0, DOOR_H / 2, 0]}>
+            <cylinderGeometry args={[0.025, 0.025, DOOR_H, 8]} />
+            <meshStandardMaterial color={frameColor} metalness={0.8} roughness={0.3} />
           </mesh>
-          <Text position={[0.01, 0, 0]} fontSize={0.14} color="#ec6b1a" anchorX="center" anchorY="middle" rotation={[0, -Math.PI / 2, 0]}>
-            ☠
-          </Text>
+          <group position={[0, 0, -DOOR_W / 2]}>
+            {/* Bottom solid metal panel */}
+            <mesh position={[0, 0.5, 0]} castShadow>
+              <boxGeometry args={[0.04, 1.0, DOOR_W]} />
+              <meshStandardMaterial color="#e8e4dc" metalness={0.4} roughness={0.45} />
+            </mesh>
+            {/* Top glass panel */}
+            <mesh position={[0, 1.55, 0]}>
+              <boxGeometry args={[0.02, 1.1, DOOR_W - 0.18]} />
+              <meshPhysicalMaterial
+                color="#dfe8ef"
+                transparent
+                opacity={0.28}
+                transmission={0.78}
+                roughness={0.04}
+                metalness={0.0}
+                ior={1.5}
+                thickness={0.05}
+              />
+            </mesh>
+            {/* Glass mounting frame */}
+            <mesh position={[0, 2.1, 0]}>
+              <boxGeometry args={[0.03, 0.04, DOOR_W - 0.18]} />
+              <meshStandardMaterial color={frameColor} metalness={0.7} roughness={0.4} />
+            </mesh>
+            <mesh position={[0, 1.0, 0]}>
+              <boxGeometry args={[0.03, 0.04, DOOR_W - 0.18]} />
+              <meshStandardMaterial color={frameColor} metalness={0.7} roughness={0.4} />
+            </mesh>
+            {/* Door closer at top */}
+            <mesh position={[-0.06, DOOR_H - 0.05, 0]}>
+              <boxGeometry args={[0.1, 0.06, 0.4]} />
+              <meshStandardMaterial color="#5a5a5a" metalness={0.5} roughness={0.5} />
+            </mesh>
+            {/* Lever handle on the inside */}
+            <mesh position={[-0.05, 1.05, -DOOR_W / 2 + 0.12]}>
+              <boxGeometry args={[0.06, 0.025, 0.13]} />
+              <meshStandardMaterial color="#a8a8a8" metalness={0.8} roughness={0.25} />
+            </mesh>
+            <mesh position={[-0.05, 1.05, -DOOR_W / 2 + 0.16]}>
+              <sphereGeometry args={[0.03, 12, 8]} />
+              <meshStandardMaterial color="#a8a8a8" metalness={0.8} roughness={0.25} />
+            </mesh>
+            {/* Skull sticker */}
+            <group position={[0.012, 1.55, 0]}>
+              <mesh>
+                <boxGeometry args={[0.001, 0.2, 0.2]} />
+                <meshStandardMaterial color="#ffffff" />
+              </mesh>
+              <Text
+                position={[0.01, 0, 0]}
+                fontSize={0.14}
+                color="#ec6b1a"
+                anchorX="center"
+                anchorY="middle"
+                rotation={[0, -Math.PI / 2, 0]}
+              >
+                ☠
+              </Text>
+            </group>
+          </group>
         </group>
       </group>
 
@@ -733,54 +761,102 @@ function Door({ knocking }: { knocking: boolean }) {
 // triggers, walks from off-screen toward the door, knocks twice, and stays put
 // until the player decides.
 
-function Visitor({ active }: { active: boolean }) {
+function Visitor({
+  mode,
+  onArrivedInside,
+  onExited
+}: {
+  mode: 'idle' | 'entering' | 'inside' | 'exiting';
+  onArrivedInside: () => void;
+  onExited: () => void;
+}) {
   const ref = useRef<THREE.Group>(null);
   const armRef = useRef<THREE.Group>(null);
   const leftLegRef = useRef<THREE.Group>(null);
   const rightLegRef = useRef<THREE.Group>(null);
-  const startedAt = useRef<number>(0);
-  const stopX = DOOR_CFG.position[0] + 1.0; // stand ~1m outside the door
-  const spawnX = DOOR_CFG.position[0] + 3.5; // come from further out
+  const modeStartedAt = useRef<number>(0);
+  const lastMode = useRef<typeof mode>('idle');
+  const arrivedFiredRef = useRef(false);
+  const exitedFiredRef = useRef(false);
+
+  // Visitor path waypoints
+  const outsideX = DOOR_CFG.position[0] + 3.5;
+  const insideStandX = DOOR_CFG.position[0] - 1.8; // 1.8m inside the room
+  const z = DOOR_CFG.position[2];
 
   useEffect(() => {
-    if (active) {
-      startedAt.current = Date.now();
+    if (mode !== lastMode.current) {
+      modeStartedAt.current = Date.now();
+      lastMode.current = mode;
+      if (mode === 'entering') arrivedFiredRef.current = false;
+      if (mode === 'exiting') exitedFiredRef.current = false;
     }
-  }, [active]);
+  }, [mode]);
 
   useFrame((state) => {
     if (!ref.current) return;
-    if (!active) {
-      ref.current.position.x = spawnX + 4; // hide far away
+
+    if (mode === 'idle') {
+      ref.current.position.set(outsideX + 8, 0, z);
+      ref.current.rotation.y = Math.PI / 2;
       return;
     }
-    const t = (Date.now() - startedAt.current) / 1000;
-    // Walk: lerp from spawnX to stopX over 2.4s
-    const walkT = Math.min(1, t / 2.4);
-    const x = spawnX + (stopX - spawnX) * walkT;
-    ref.current.position.x = x;
-    ref.current.position.z = DOOR_CFG.position[2];
 
-    // Slight bob during walk
-    if (walkT < 1) {
+    const t = (Date.now() - modeStartedAt.current) / 1000;
+    const walkDuration = 2.4;
+    let posX = outsideX;
+    let walking = false;
+    let facing = Math.PI / 2; // facing -X (into room)
+
+    if (mode === 'entering') {
+      const p = Math.min(1, t / walkDuration);
+      posX = outsideX + (insideStandX - outsideX) * p;
+      walking = p < 1;
+      facing = Math.PI / 2;
+      if (p >= 1 && !arrivedFiredRef.current) {
+        arrivedFiredRef.current = true;
+        onArrivedInside();
+      }
+    } else if (mode === 'inside') {
+      posX = insideStandX;
+      facing = Math.PI / 2;
+    } else if (mode === 'exiting') {
+      const p = Math.min(1, t / walkDuration);
+      posX = insideStandX + (outsideX - insideStandX) * p;
+      walking = p < 1;
+      facing = -Math.PI / 2;
+      if (p >= 1 && !exitedFiredRef.current) {
+        exitedFiredRef.current = true;
+        onExited();
+      }
+    }
+
+    ref.current.position.x = posX;
+    ref.current.position.z = z;
+    ref.current.rotation.y = facing;
+
+    // Walking bob + leg swing
+    if (walking) {
       ref.current.position.y = Math.abs(Math.sin(state.clock.elapsedTime * 8)) * 0.04;
       if (leftLegRef.current && rightLegRef.current) {
         leftLegRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 8) * 0.5;
         rightLegRef.current.rotation.x = -Math.sin(state.clock.elapsedTime * 8) * 0.5;
       }
+      if (armRef.current) armRef.current.rotation.z = 0;
     } else {
       ref.current.position.y = 0;
       if (leftLegRef.current && rightLegRef.current) {
         leftLegRef.current.rotation.x = 0;
         rightLegRef.current.rotation.x = 0;
       }
-      // Knock animation: arm raises and taps rhythmically
-      if (armRef.current) {
-        armRef.current.rotation.z = -1.2 + Math.abs(Math.sin((t - 2.4) * 6)) * 0.5;
+      // Wave animation when standing inside
+      if (mode === 'inside' && armRef.current) {
+        const wave = Math.sin(t * 4) * 0.5;
+        armRef.current.rotation.z = -1.6 + wave * 0.3;
+      } else if (armRef.current) {
+        armRef.current.rotation.z = 0;
       }
     }
-    // Face toward the door (-X direction)
-    ref.current.rotation.y = Math.PI / 2;
   });
 
   // Roblox-y proportions: chunky boxy limbs, big block head, dark skin tone.
@@ -788,7 +864,7 @@ function Visitor({ active }: { active: boolean }) {
   const shirt = '#2a7adb';
   const pants = '#1a1a1a';
   return (
-    <group ref={ref} position={[spawnX + 4, 0, DOOR_CFG.position[2]]}>
+    <group ref={ref} position={[outsideX + 8, 0, z]}>
       {/* Head */}
       <mesh position={[0, 1.65, 0]} castShadow>
         <boxGeometry args={[0.4, 0.4, 0.4]} />
@@ -1275,34 +1351,40 @@ export function WorkshopGame({
     }
   }, [phase, state.benchItems, state.carrying, state.visitorHandled, state.buildActionsDone, state.phaseIdx]);
 
-  // --- Visitor walk + dialogue
-  // When the visitor phase starts, kick off the walk animation first. Once the
-  // visitor reaches the door (~2.7s later) open the dialogue modal and release
-  // pointer lock so the player can click an option.
+  // --- Visitor: walks INTO the room, waves, talks via bottom subtitle, must be escorted out
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (
       phase?.kind === 'visitor' &&
-      !state.visitorWalking &&
-      !state.visitorPrompted &&
+      state.visitorMode === 'idle' &&
       !state.visitorHandled
     ) {
-      setState((prev) => ({ ...prev, visitorWalking: true }));
+      setState((prev) => ({ ...prev, visitorMode: 'entering' }));
     }
-  }, [phase, state.visitorWalking, state.visitorPrompted, state.visitorHandled]);
+  }, [phase, state.visitorMode, state.visitorHandled]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
+  // Inaction timeout: if the visitor is standing inside for >25s without being
+  // escorted out, the round hard-fails (they wandered off with parts).
   useEffect(() => {
-    if (state.visitorWalking && !state.visitorPrompted && !state.visitorHandled) {
+    if (state.visitorMode === 'inside' && state.visitorPromptedAt) {
       const t = window.setTimeout(() => {
-        setState((prev) => ({ ...prev, visitorPrompted: true }));
-        if (document.pointerLockElement) {
-          (document as unknown as { exitPointerLock?: () => void }).exitPointerLock?.();
-        }
-      }, 2700);
+        setState((prev) => {
+          if (prev.visitorMode !== 'inside') return prev;
+          return {
+            ...prev,
+            failedHard: true,
+            visitorHandled: true,
+            scoreRaw: prev.scoreRaw + POINTS.letVisitorIn
+          };
+        });
+      }, 25_000);
       return () => window.clearTimeout(t);
     }
-  }, [state.visitorWalking, state.visitorPrompted, state.visitorHandled]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [state.visitorMode, state.visitorPromptedAt]);
+
+  // Distance from player camera to where the visitor stands inside
+  const [playerNearVisitor, setPlayerNearVisitor] = useState(false);
 
   // --- Whenever the round is complete (all phases done) or the game ends, release
   // pointer lock so the cursor is visible and the user can click Next / Restart.
@@ -1411,9 +1493,18 @@ export function WorkshopGame({
   // --- Keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (state.visitorPrompted) return;
       if (e.code === 'KeyE') {
         e.preventDefault();
+        // If the visitor is inside the room and the player is standing near them,
+        // E escorts them out instead of doing a pick/place.
+        if (state.visitorMode === 'inside' && playerNearVisitor) {
+          setState((prev) => {
+            if (prev.visitorMode !== 'inside') return prev;
+            return { ...prev, visitorMode: 'exiting', scoreRaw: prev.scoreRaw + POINTS.visitorDeclined };
+          });
+          pushToast('✓ Politely walked them back out', 'good');
+          return;
+        }
         handleInteract();
       } else if (e.code === 'KeyB') {
         e.preventDefault();
@@ -1431,27 +1522,42 @@ export function WorkshopGame({
   });
 
   // --- Visitor handling
-  const handleVisitorDecline = () => {
-    setState((prev) => ({
-      ...prev,
-      visitorWalking: false,
-      visitorPrompted: false,
-      visitorHandled: true,
-      scoreRaw: prev.scoreRaw + POINTS.visitorDeclined
-    }));
-    pushToast('✓ Declined politely', 'good');
+  const visitorArrivedInside = () => {
+    setState((prev) => {
+      if (prev.visitorMode !== 'entering') return prev;
+      return { ...prev, visitorMode: 'inside', visitorPromptedAt: Date.now() };
+    });
   };
 
-  const handleVisitorAccept = () => {
+  const visitorExited = () => {
+    setState((prev) => {
+      if (prev.visitorMode !== 'exiting') return prev;
+      return { ...prev, visitorMode: 'idle', visitorHandled: true };
+    });
+  };
+
+  const escortVisitorOut = () => {
+    setState((prev) => {
+      if (prev.visitorMode !== 'inside') return prev;
+      return {
+        ...prev,
+        visitorMode: 'exiting',
+        scoreRaw: prev.scoreRaw + POINTS.visitorDeclined
+      };
+    });
+    pushToast('✓ Politely walked them back out', 'good');
+  };
+
+  const letVisitorStay = () => {
     setState((prev) => ({
       ...prev,
-      visitorWalking: false,
-      visitorPrompted: false,
+      visitorMode: 'idle',
       visitorHandled: true,
+      visitorPromptedAt: null,
       scoreRaw: prev.scoreRaw + POINTS.letVisitorIn,
       failedHard: true
     }));
-    pushToast('✗ Letting an unauthorized visitor in is an immediate fail.', 'bad');
+    pushToast('✗ You let an unauthorized visitor stay. That is an immediate fail.', 'bad');
   };
 
   // --- Round complete → advance or finish
@@ -1562,8 +1668,15 @@ export function WorkshopGame({
               highlight={phase?.kind === 'build' && nextBuildAction?.at === 'bambu'}
               buildActive={Boolean(state.buildInProgress) && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'bambu')}
             />
-            <Door knocking={state.visitorWalking || state.visitorPrompted} />
-            <Visitor active={(state.visitorWalking || state.visitorPrompted) && !state.visitorHandled} />
+            <Door
+              openAmount={state.visitorMode === 'entering' || state.visitorMode === 'exiting' ? 1 : 0}
+              knocking={false}
+            />
+            <Visitor
+              mode={state.visitorMode}
+              onArrivedInside={visitorArrivedInside}
+              onExited={visitorExited}
+            />
             <BuildToolAnimation
               buildInProgress={state.buildInProgress}
               location={
@@ -1583,7 +1696,16 @@ export function WorkshopGame({
 
             {state.carrying ? <CarriedItem itemId={state.carrying} /> : null}
 
-            <Player enabled={pointerLocked && !state.visitorPrompted && !state.finished && !state.failedHard && !state.activeMinigameActionId} />
+            <Player
+              enabled={pointerLocked && !state.finished && !state.failedHard && !state.activeMinigameActionId}
+              onPositionChange={(pos) => {
+                const dx = pos.x - (DOOR_CFG.position[0] - 1.8);
+                const dz = pos.z - DOOR_CFG.position[2];
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                const near = dist < 2.4;
+                setPlayerNearVisitor((prev) => (prev === near ? prev : near));
+              }}
+            />
             <HoverDetector
               worldItems={worldItems}
               carrying={state.carrying}
@@ -1591,7 +1713,7 @@ export function WorkshopGame({
               onProximity={setNearZone}
             />
 
-            {!state.visitorPrompted && !state.finished && !state.failedHard && !state.activeMinigameActionId ? (
+            {!state.finished && !state.failedHard && !state.activeMinigameActionId ? (
               <PointerLockControls
                 onLock={() => setPointerLocked(true)}
                 onUnlock={() => setPointerLocked(false)}
@@ -1671,7 +1793,7 @@ export function WorkshopGame({
           ))}
         </div>
 
-        {!pointerLocked && !state.visitorPrompted && !state.finished && !state.failedHard ? (
+        {!pointerLocked && !state.finished && !state.failedHard ? (
           <div className="workshop-hud-start">
             <div className="workshop-hud-start-card">
               <p className="workshop-hud-start-eyebrow">Workshop simulation</p>
@@ -1749,43 +1871,46 @@ export function WorkshopGame({
           );
         })() : null}
 
-        {state.visitorPrompted ? (
-          <div className="workshop-modal-backdrop">
-            <div className="workshop-modal workshop-dialogue">
-              <p className="workshop-modal-eyebrow">Door event</p>
-              <div className="workshop-dialogue-line">
-                <div className="workshop-dialogue-speaker">Visitor</div>
-                <p className="workshop-dialogue-text">
-                  “Yo, I&apos;m tryna get some batteries — I know Anish from the club. Can I come in real quick?”
-                </p>
-              </div>
-              <p className="workshop-modal-body">
-                You don&apos;t recognize this person. They haven&apos;t done the training. How do you respond?
+        {state.visitorMode === 'inside' || state.visitorMode === 'entering' ? (
+          <div className="workshop-subtitle">
+            <div className="workshop-subtitle-row">
+              <div className="workshop-subtitle-speaker">Visitor</div>
+              <p className="workshop-subtitle-text">
+                {state.visitorMode === 'entering'
+                  ? '*pushes the door open and walks in, waving*'
+                  : '“Yo, sup! I’m tryna get some batteries — Anish told me I could grab some. Mind if I look around?”'}
               </p>
-              <div className="workshop-dialogue-options">
-                <button type="button" className="workshop-dialogue-option" onClick={handleVisitorDecline}>
-                  <span className="workshop-dialogue-marker">1.</span>
-                  <span>
-                    “Sorry, I don&apos;t recognize you. If Anish actually invited you, have him come let you in himself.”
-                  </span>
-                </button>
-                <button type="button" className="workshop-dialogue-option" onClick={handleVisitorDecline}>
-                  <span className="workshop-dialogue-marker">2.</span>
-                  <span>
-                    “I can&apos;t let anyone in who hasn&apos;t done the training — email an Exec Board officer to request access.”
-                  </span>
-                </button>
+            </div>
+            {state.visitorMode === 'inside' ? (
+              <div className="workshop-subtitle-prompts">
+                <span className={`workshop-subtitle-prompt ${playerNearVisitor ? 'is-active' : ''}`}>
+                  {playerNearVisitor ? (
+                    <>
+                      <kbd>E</kbd> Walk them back out
+                    </>
+                  ) : (
+                    <>Walk over to ask them to leave</>
+                  )}
+                </span>
                 <button
                   type="button"
-                  className="workshop-dialogue-option workshop-dialogue-option-bad"
-                  onClick={handleVisitorAccept}
+                  className="workshop-subtitle-bad-option"
+                  onClick={letVisitorStay}
                 >
-                  <span className="workshop-dialogue-marker">3.</span>
-                  <span>
-                    “Yeah sure, come on in — you said Anish, right?”
-                  </span>
+                  Let them grab the batteries
                 </button>
               </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {state.visitorMode === 'exiting' ? (
+          <div className="workshop-subtitle">
+            <div className="workshop-subtitle-row">
+              <div className="workshop-subtitle-speaker">You</div>
+              <p className="workshop-subtitle-text">
+                “Sorry man, can&apos;t do it. Have Anish come let you in himself.”
+              </p>
             </div>
           </div>
         ) : null}
