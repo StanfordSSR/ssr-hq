@@ -360,7 +360,10 @@ export function ModulePlayer({
   };
 
   const goToChapter = (idx: number) => {
-    if (idx > chapterIndex) return;
+    // First-time playthrough is gated to chapters you've reached. Review mode
+    // (alreadyCompleted) is fully free — jump anywhere, including straight to
+    // the final workshop simulation.
+    if (!alreadyCompleted && idx > chapterIndex) return;
     setChapterIndex(idx);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -401,10 +404,12 @@ export function ModulePlayer({
                   <button
                     type="button"
                     onClick={() => goToChapter(idx)}
-                    disabled={idx > chapterIndex}
+                    disabled={!alreadyCompleted && idx > chapterIndex}
                     className="training-rail-button"
                   >
-                    <span className="training-rail-number">{isDone ? '✓' : c.number}</span>
+                    <span className="training-rail-number">
+                      {alreadyCompleted ? c.number : isDone ? '✓' : c.number}
+                    </span>
                     <span className="training-rail-text">{c.title}</span>
                   </button>
                 </li>
@@ -412,7 +417,9 @@ export function ModulePlayer({
             })}
           </ol>
           {alreadyCompleted ? (
-            <p className="training-rail-note">You&apos;ve already completed this training. You can review freely.</p>
+            <p className="training-rail-note">
+              Review mode — jump to any chapter (including the final workshop simulation) by clicking it.
+            </p>
           ) : null}
         </aside>
 
