@@ -53,35 +53,33 @@ function PhillipsDriver({
   tipColor?: string;
   emissive?: boolean;
 }) {
-  // Lay the screwdriver horizontally with the handle behind and tip forward.
-  // Total length ~0.42m. Origin sits roughly at the bolster.
+  // Horizontal screwdriver. Smooth tapered handle (no slat-like grip rings),
+  // hex bolster, steel shaft, conical Phillips tip.
   return (
     <group rotation={[0, 0, -Math.PI / 2]}>
-      {/* Dome end-cap on the back of the handle */}
-      <mesh position={[0, -0.24, 0]} castShadow>
-        <sphereGeometry args={[0.046, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshStandardMaterial color={handleColor} roughness={0.55} />
+      {/* Domed back cap */}
+      <mesh position={[0, -0.25, 0]} castShadow>
+        <sphereGeometry args={[0.046, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial color={handleColor} roughness={0.5} />
       </mesh>
-      {/* Handle barrel — slightly tapered, ergonomic */}
-      <mesh position={[0, -0.13, 0]} castShadow>
-        <cylinderGeometry args={[0.046, 0.05, 0.22, 28]} />
-        <meshStandardMaterial color={handleColor} roughness={0.55} metalness={0.05} />
+      {/* Single smooth handle, slight ergonomic taper toward the tip */}
+      <mesh position={[0, -0.12, 0]} castShadow>
+        <cylinderGeometry args={[0.047, 0.051, 0.26, 36]} />
+        <meshStandardMaterial color={handleColor} roughness={0.5} metalness={0.05} />
       </mesh>
-      {/* Three darker grip ribs around the handle */}
-      {[-0.06, -0.12, -0.18].map((y, i) => (
-        <mesh key={i} position={[0, y, 0]}>
-          <cylinderGeometry args={[0.052, 0.052, 0.012, 28]} />
-          <meshStandardMaterial color="#1f1f1f" roughness={0.5} />
-        </mesh>
-      ))}
-      {/* Hex bolster between handle and shaft */}
-      <mesh position={[0, 0.0, 0]} castShadow>
+      {/* One subtle finger groove near the front */}
+      <mesh position={[0, 0.01, 0]}>
+        <torusGeometry args={[0.043, 0.005, 8, 24]} />
+        <meshStandardMaterial color={handleColor} roughness={0.65} />
+      </mesh>
+      {/* Hex bolster */}
+      <mesh position={[0, 0.04, 0]} castShadow>
         <cylinderGeometry args={[0.026, 0.026, 0.04, 6]} />
-        <meshStandardMaterial color="#4a4a4a" metalness={0.85} roughness={0.3} />
+        <meshStandardMaterial color="#4a4a4a" metalness={0.85} roughness={0.28} />
       </mesh>
       {/* Steel shaft */}
-      <mesh position={[0, 0.14, 0]} castShadow>
-        <cylinderGeometry args={[0.0125, 0.0125, 0.22, 18]} />
+      <mesh position={[0, 0.18, 0]} castShadow>
+        <cylinderGeometry args={[0.0125, 0.0125, 0.22, 20]} />
         <meshStandardMaterial
           color={tipColor}
           metalness={0.9}
@@ -90,13 +88,12 @@ function PhillipsDriver({
           emissiveIntensity={emissive ? 0.6 : 0}
         />
       </mesh>
-      {/* Tip — a proper Phillips cross machined into a small cone */}
-      <group position={[0, 0.255, 0]}>
+      {/* Conical Phillips tip with cross slots */}
+      <group position={[0, 0.30, 0]}>
         <mesh castShadow>
-          <coneGeometry args={[0.014, 0.024, 12]} />
+          <coneGeometry args={[0.014, 0.024, 14]} />
           <meshStandardMaterial color={tipColor} metalness={0.9} roughness={0.2} />
         </mesh>
-        {/* Phillips cut: two thin perpendicular slots */}
         <mesh position={[0, -0.005, 0]}>
           <boxGeometry args={[0.028, 0.01, 0.005]} />
           <meshStandardMaterial color="#0a0a0a" />
