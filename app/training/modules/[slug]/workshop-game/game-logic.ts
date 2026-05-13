@@ -126,7 +126,7 @@ export const ROUNDS: RoundDef[] = [
     number: 1,
     title: 'Round 1 · Bumper subassembly',
     brief:
-      'Gather the Phillips driver, an M3 screw bin, and a printed bracket on the workstation. Drive the screw to seat the bracket, then return every tool to its shelf.',
+      'Gather the Phillips driver, an M3 screw bin, and a printed bracket on the workstation. Drive the screws to seat the bracket, then return every tool to its shelf.',
     itemsOnShelves: [
       'phillips-small',
       'hex-set',
@@ -146,8 +146,7 @@ export const ROUNDS: RoundDef[] = [
         kind: 'build',
         label: 'Assemble the subassembly',
         actions: [
-          { id: 'drive-m3', prompt: 'Drive the M3 screw with the Phillips driver', tool: 'phillips-small', durationMs: 2000 },
-          { id: 'seat-bracket', prompt: 'Seat the printed bracket', tool: 'bracket-printed', durationMs: 1600 }
+          { id: 'assemble', prompt: 'Drive the M3 screws and seat the printed bracket', tool: 'phillips-small', durationMs: 2000 }
         ]
       },
       { kind: 'return', label: 'Return every tool to its shelf' }
@@ -169,8 +168,7 @@ export const ROUNDS: RoundDef[] = [
         kind: 'build',
         label: 'Load and start the print',
         actions: [
-          { id: 'load-filament', prompt: 'Load the filament into the Bambu H2D', tool: 'spool-pla', durationMs: 2200, at: 'bambu' },
-          { id: 'start-print', prompt: 'Start the print on the Bambu H2D', durationMs: 1500, at: 'bambu' }
+          { id: 'load-start', prompt: 'Load the filament into the Bambu H2D and start the print', tool: 'spool-pla', durationMs: 2200, at: 'bambu' }
         ]
       },
       { kind: 'return', label: 'Return the spool to its shelf' }
@@ -204,9 +202,8 @@ export const ROUNDS: RoundDef[] = [
         kind: 'build',
         label: 'Assemble and measure',
         actions: [
-          { id: 'drive', prompt: 'Drive the M3 screw with the Phillips driver', tool: 'phillips-small', durationMs: 2000 },
-          { id: 'measure', prompt: 'Take a measurement with the calipers', tool: 'caliper', durationMs: 1800 },
-          { id: 'tighten', prompt: 'Tighten the assembly', tool: 'phillips-small', durationMs: 1600 }
+          { id: 'assemble', prompt: 'Drive the M3 screws and seat the bracket', tool: 'phillips-small', durationMs: 2000 },
+          { id: 'measure', prompt: 'Take a final measurement with the calipers', tool: 'caliper', durationMs: 1800 }
         ]
       },
       { kind: 'return', label: 'Return every tool to its shelf' }
@@ -228,12 +225,12 @@ export const POINTS = {
 
 // Max points per round, used to normalize
 export const MAX_SCORE_PER_ROUND = [
-  // Round 1: 3 pickups (6) + 2 build actions (8) + 3 returns (6) = 20
-  20,
-  // Round 2: 1 pickup (2) + 2 build actions (8) + 1 return (2) = 12
-  12,
-  // Round 3: 4 pickups (8) + visitor decline (2) + 3 build actions (12) + 4 returns (8) = 30
-  30
+  // Round 1: 3 pickups (6) + 1 build action (4) + 3 returns (6) = 16
+  16,
+  // Round 2: 1 pickup (2) + 1 build action (4) + 1 return (2) = 8
+  8,
+  // Round 3: 4 pickups (8) + visitor decline (2) + 2 build actions (8) + 4 returns (8) = 26
+  26
 ];
 
 export const TOTAL_MAX = MAX_SCORE_PER_ROUND.reduce((a, b) => a + b, 0);
