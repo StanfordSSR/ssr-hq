@@ -1,7 +1,8 @@
 'use client';
 
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
-import { PointerLockControls, Text, Edges, Environment } from '@react-three/drei';
+import { PointerLockControls, Text, Edges, Environment, useFBX } from '@react-three/drei';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
@@ -1060,6 +1061,57 @@ function Door({ openAmount, knocking }: { openAmount: number; knocking: boolean 
 // triggers, walks from off-screen toward the door, knocks twice, and stays put
 // until the player decides.
 
+// ---- Rigged Mixamo-style FBX character used as the visitor --------------------------------
+
+function VisitorRig({ mode, beingPushed }: { mode: 'idle' | 'entering' | 'inside' | 'exiting'; beingPushed: boolean }) {
+  const idleFBX = useFBX('/standing-idle.fbx');
+  const walkFBX = useFBX('/walking.fbx');
+  const backFBX = useFBX('/walking-back.fbx');
+
+  // Clone each FBX scene so the three mounted instances have independent
+  // skeletons and animation mixers.
+  const idleScene = useMemo(() => SkeletonUtils.clone(idleFBX), [idleFBX]);
+  const walkScene = useMemo(() => SkeletonUtils.clone(walkFBX), [walkFBX]);
+  const backScene = useMemo(() => SkeletonUtils.clone(backFBX), [backFBX]);
+
+  const idleMixer = useMemo(() => new THREE.AnimationMixer(idleScene), [idleScene]);
+  const walkMixer = useMemo(() => new THREE.AnimationMixer(walkScene), [walkScene]);
+  const backMixer = useMemo(() => new THREE.AnimationMixer(backScene), [backScene]);
+
+  useEffect(() => {
+    const ai = idleFBX.animations[0];
+    const aw = walkFBX.animations[0];
+    const ab = backFBX.animations[0];
+    if (ai) idleMixer.clipAction(ai).play();
+    if (aw) walkMixer.clipAction(aw).play();
+    if (ab) backMixer.clipAction(ab).play();
+    return () => {
+      idleMixer.stopAllAction();
+      walkMixer.stopAllAction();
+      backMixer.stopAllAction();
+    };
+  }, [idleFBX, walkFBX, backFBX, idleMixer, walkMixer, backMixer]);
+
+  useFrame((_, delta) => {
+    idleMixer.update(delta);
+    walkMixer.update(delta);
+    backMixer.update(delta);
+  });
+
+  const showWalk = mode === 'entering' || mode === 'exiting';
+  const showBack = mode === 'inside' && beingPushed;
+  const showIdle = mode === 'inside' && !beingPushed;
+
+  // Mixamo characters export in cm — scale 0.011 reads ~1.8m tall.
+  return (
+    <group scale={0.011}>
+      <primitive object={idleScene} visible={showIdle} />
+      <primitive object={walkScene} visible={showWalk} />
+      <primitive object={backScene} visible={showBack} />
+    </group>
+  );
+}
+
 function Visitor({
   mode,
   playerPosRef,
@@ -1074,10 +1126,8 @@ function Visitor({
   onExited: () => void;
 }) {
   const ref = useRef<THREE.Group>(null);
-  const armRef = useRef<THREE.Group>(null);
-  const leftLegRef = useRef<THREE.Group>(null);
-  const rightLegRef = useRef<THREE.Group>(null);
   const modeStartedAt = useRef<number>(0);
+  const [beingPushed, setBeingPushed] = useState(false);
   const lastMode = useRef<typeof mode>('idle');
   const arrivedFiredRef = useRef(false);
   const exitedFiredRef = useRef(false);
@@ -1139,16 +1189,16 @@ function Visitor({
       const inZBand = Math.abs(dzToPlayer) < 0.55;
       let nextX = curX;
       // Player must be west of the visitor AND well inside the contact radius.
+      let pushing = false;
       if (inZBand && dxToPlayer > 0 && dxToPlayer < 0.55) {
         const pushSpeed = (0.55 - dxToPlayer) * 3.6;
         nextX = curX + pushSpeed * delta;
-        if (armRef.current) {
-          armRef.current.rotation.z = -1.0 + Math.sin(state.clock.elapsedTime * 14) * 0.25;
-        }
         facing = Math.PI / 2 + 0.3;
+        pushing = true;
       } else {
         facing = Math.PI / 2;
       }
+      if (pushing !== beingPushed) setBeingPushed(pushing);
       internalXRef.current = nextX;
       posX = nextX;
 
@@ -1172,119 +1222,18 @@ function Visitor({
     ref.current.position.z = z;
     ref.current.rotation.y = facing;
 
-    // Walking bob + leg swing
-    if (walking) {
-      ref.current.position.y = Math.abs(Math.sin(state.clock.elapsedTime * 8)) * 0.04;
-      if (leftLegRef.current && rightLegRef.current) {
-        leftLegRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 8) * 0.5;
-        rightLegRef.current.rotation.x = -Math.sin(state.clock.elapsedTime * 8) * 0.5;
-      }
-      if (armRef.current) armRef.current.rotation.z = 0;
-    } else {
-      ref.current.position.y = 0;
-      if (leftLegRef.current && rightLegRef.current) {
-        leftLegRef.current.rotation.x = 0;
-        rightLegRef.current.rotation.x = 0;
-      }
-      // Wave animation when standing inside
-      if (mode === 'inside' && armRef.current) {
-        const wave = Math.sin(t * 4) * 0.5;
-        armRef.current.rotation.z = -1.6 + wave * 0.3;
-      } else if (armRef.current) {
-        armRef.current.rotation.z = 0;
-      }
-    }
+    // Bob from walking is now driven by the FBX animation itself; just keep the
+    // group on the floor.
+    ref.current.position.y = 0;
+    // walking flag is unused with rigged animations — silence the unused-var lint
+    void walking;
+    // t is only used for procedural bob; the FBX clip handles that
+    void t;
   });
 
-  // Roblox-y proportions: chunky boxy limbs, big block head, dark skin tone.
-  const skin = '#5e3a1f';
-  const shirt = '#2a7adb';
-  const pants = '#1a1a1a';
   return (
     <group ref={ref} position={[outsideX + 8, 0, z]}>
-      {/* Head */}
-      <mesh position={[0, 1.65, 0]} castShadow>
-        <boxGeometry args={[0.4, 0.4, 0.4]} />
-        <meshStandardMaterial color={skin} roughness={0.7} />
-      </mesh>
-      {/* Face — white-of-eye + pupil, plus a real curved smile */}
-      <group position={[0, 1.65, 0]}>
-        {/* Left eye white */}
-        <mesh position={[-0.085, 0.05, 0.201]}>
-          <boxGeometry args={[0.075, 0.075, 0.005]} />
-          <meshStandardMaterial color="#fdfbf6" />
-        </mesh>
-        {/* Left pupil */}
-        <mesh position={[-0.085, 0.05, 0.205]}>
-          <boxGeometry args={[0.03, 0.03, 0.004]} />
-          <meshStandardMaterial color="#0a0a0a" />
-        </mesh>
-        {/* Left highlight */}
-        <mesh position={[-0.076, 0.058, 0.208]}>
-          <boxGeometry args={[0.012, 0.012, 0.002]} />
-          <meshStandardMaterial color="#ffffff" />
-        </mesh>
-        {/* Right eye white */}
-        <mesh position={[0.085, 0.05, 0.201]}>
-          <boxGeometry args={[0.075, 0.075, 0.005]} />
-          <meshStandardMaterial color="#fdfbf6" />
-        </mesh>
-        <mesh position={[0.085, 0.05, 0.205]}>
-          <boxGeometry args={[0.03, 0.03, 0.004]} />
-          <meshStandardMaterial color="#0a0a0a" />
-        </mesh>
-        <mesh position={[0.094, 0.058, 0.208]}>
-          <boxGeometry args={[0.012, 0.012, 0.002]} />
-          <meshStandardMaterial color="#ffffff" />
-        </mesh>
-        {/* Smile — half-torus curving downward like a U */}
-        <mesh position={[0, -0.06, 0.201]} rotation={[Math.PI, 0, 0]}>
-          <torusGeometry args={[0.07, 0.012, 8, 18, Math.PI]} />
-          <meshStandardMaterial color="#0a0a0a" />
-        </mesh>
-        {/* Tooth highlight in the smile */}
-        <mesh position={[0, -0.045, 0.202]}>
-          <boxGeometry args={[0.09, 0.02, 0.003]} />
-          <meshStandardMaterial color="#fdfbf6" />
-        </mesh>
-      </group>
-      {/* Hair on top */}
-      <mesh position={[0, 1.88, 0]} castShadow>
-        <boxGeometry args={[0.42, 0.08, 0.42]} />
-        <meshStandardMaterial color="#1a1410" roughness={0.85} />
-      </mesh>
-      {/* Torso — blue T-shirt */}
-      <mesh position={[0, 1.15, 0]} castShadow>
-        <boxGeometry args={[0.6, 0.6, 0.32]} />
-        <meshStandardMaterial color={shirt} roughness={0.6} />
-      </mesh>
-      {/* Left arm (knocking arm) — anchored at shoulder so it pivots */}
-      <group ref={armRef} position={[-0.32, 1.4, 0]}>
-        <mesh position={[0, -0.27, 0]} castShadow>
-          <boxGeometry args={[0.16, 0.6, 0.16]} />
-          <meshStandardMaterial color={skin} roughness={0.7} />
-        </mesh>
-      </group>
-      {/* Right arm — relaxed */}
-      <group position={[0.32, 1.4, 0]}>
-        <mesh position={[0, -0.27, 0]} castShadow>
-          <boxGeometry args={[0.16, 0.6, 0.16]} />
-          <meshStandardMaterial color={skin} roughness={0.7} />
-        </mesh>
-      </group>
-      {/* Legs — anchored at hips for walk pivot */}
-      <group ref={leftLegRef} position={[-0.16, 0.85, 0]}>
-        <mesh position={[0, -0.42, 0]} castShadow>
-          <boxGeometry args={[0.18, 0.84, 0.18]} />
-          <meshStandardMaterial color={pants} roughness={0.7} />
-        </mesh>
-      </group>
-      <group ref={rightLegRef} position={[0.16, 0.85, 0]}>
-        <mesh position={[0, -0.42, 0]} castShadow>
-          <boxGeometry args={[0.18, 0.84, 0.18]} />
-          <meshStandardMaterial color={pants} roughness={0.7} />
-        </mesh>
-      </group>
+      <VisitorRig mode={mode} beingPushed={beingPushed} />
     </group>
   );
 }
