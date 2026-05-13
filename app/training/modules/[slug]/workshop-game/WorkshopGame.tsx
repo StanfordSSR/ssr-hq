@@ -656,6 +656,10 @@ function CarriedItem({ itemId }: { itemId: ItemId }) {
 
 // ---- Player + interaction -------------------------------------------------------------------
 
+const EYE_HEIGHT = 1.65;
+const JUMP_SPEED = 4.6;
+const GRAVITY = 16;
+
 function Player({
   enabled,
   onPositionChange
@@ -665,9 +669,11 @@ function Player({
 }) {
   const { camera } = useThree();
   const move = useRef({ forward: 0, right: 0 });
+  const yVel = useRef(0);
+
   useEffect(() => {
-    camera.position.set(0, 1.65, 4.5);
-    camera.lookAt(0, 1.65, -1);
+    camera.position.set(0, EYE_HEIGHT, 4.5);
+    camera.lookAt(0, EYE_HEIGHT, -1);
   }, [camera]);
 
   useEffect(() => {
@@ -691,6 +697,14 @@ function Player({
         case 'ArrowRight':
           move.current.right = down ? 1 : 0;
           break;
+        case 'Space':
+          if (down) {
+            e.preventDefault();
+            if (enabled && camera.position.y - EYE_HEIGHT < 0.02) {
+              yVel.current = JUMP_SPEED;
+            }
+          }
+          break;
       }
     };
     const downH = (e: KeyboardEvent) => handle(e, true);
@@ -703,7 +717,7 @@ function Player({
       move.current.forward = 0;
       move.current.right = 0;
     };
-  }, []);
+  }, [enabled, camera]);
 
   /* eslint-disable react-hooks/immutability */
   useFrame((_, delta) => {
@@ -722,7 +736,15 @@ function Player({
     const dz = forward.z * move.current.forward + right.z * move.current.right;
     camera.position.x = clamp(camera.position.x + dx * speed * delta, -ROOM_W / 2 + 0.6, ROOM_W / 2 - 0.6);
     camera.position.z = clamp(camera.position.z + dz * speed * delta, -ROOM_D / 2 + 0.6, ROOM_D / 2 - 0.6);
-    camera.position.y = 1.65;
+
+    // Vertical physics — gravity + jump
+    yVel.current -= GRAVITY * delta;
+    camera.position.y += yVel.current * delta;
+    if (camera.position.y <= EYE_HEIGHT) {
+      camera.position.y = EYE_HEIGHT;
+      yVel.current = 0;
+    }
+
     if (onPositionChange) onPositionChange(camera.position);
   });
   /* eslint-enable react-hooks/immutability */
@@ -759,9 +781,9 @@ function HoverDetector({
 
     // Proximity zones — closest one wins
     const zones: Array<{ name: 'workstation' | 'bambu' | 'prusa'; pos: THREE.Vector3; range: number }> = [
-      { name: 'workstation', pos: new THREE.Vector3(BENCH_CFG.position[0], 1.0, BENCH_CFG.position[2] + 0.3), range: 2.6 },
-      { name: 'bambu', pos: new THREE.Vector3(BAMBU_POS[0], 1.0, BAMBU_POS[2]), range: 2.2 },
-      { name: 'prusa', pos: new THREE.Vector3(PRUSA_POS[0], 1.0, PRUSA_POS[2]), range: 2.2 }
+      { name: 'workstation', pos: new THREE.Vector3(BENCH_CFG.position[0], 1.0, BENCH_CFG.position[2] + 0.3), range: 2.8 },
+      { name: 'bambu', pos: new THREE.Vector3(BAMBU_POS[0], 1.0, BAMBU_POS[2]), range: 3.0 },
+      { name: 'prusa', pos: new THREE.Vector3(PRUSA_POS[0], 1.0, PRUSA_POS[2]), range: 3.0 }
     ];
     let bestZone: 'workstation' | 'bambu' | 'prusa' | null = null;
     let bestDist = Infinity;
@@ -1195,16 +1217,19 @@ export function WorkshopGame({
               <ShelfFurniture key={s} shelfId={s} highlight={hover?.kind === 'shelf' && hover.shelfId === s} />
             ))}
             <Workbench
-              highlight={hover?.kind === 'bench'}
+              highlight={
+                hover?.kind === 'bench' ||
+                (phase?.kind === 'build' && (nextBuildAction?.at || 'workstation') === 'workstation')
+              }
               buildActive={Boolean(state.buildInProgress) && (nextBuildAction?.at || 'workstation') === 'workstation'}
             />
             <PrinterTable />
             <PrusaPrinter
-              highlight={nearZone === 'prusa' && phase?.kind === 'build' && nextBuildAction?.at === 'prusa'}
+              highlight={phase?.kind === 'build' && nextBuildAction?.at === 'prusa'}
               buildActive={Boolean(state.buildInProgress) && state.buildInProgress?.tool != null && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'prusa')}
             />
             <BambuPrinter
-              highlight={nearZone === 'bambu' && phase?.kind === 'build' && nextBuildAction?.at === 'bambu'}
+              highlight={phase?.kind === 'build' && nextBuildAction?.at === 'bambu'}
               buildActive={Boolean(state.buildInProgress) && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'bambu')}
             />
             <Door knocking={state.visitorPrompted} />
@@ -1321,7 +1346,7 @@ export function WorkshopGame({
               <p className="workshop-hud-start-eyebrow">Workshop simulation</p>
               <h3>Click to enter the room</h3>
               <p className="workshop-hud-start-body">
-                <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> walk · mouse looks · <kbd>E</kbd> pick up / place / return · <kbd>B</kbd> build at the workstation · <kbd>Tab</kbd> toggle objectives · <kbd>Esc</kbd> release cursor.
+                <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> walk · mouse looks · <kbd>Space</kbd> jump · <kbd>E</kbd> pick up / place / return · <kbd>B</kbd> build at the highlighted station · <kbd>Tab</kbd> toggle objectives · <kbd>Esc</kbd> release cursor.
               </p>
             </div>
           </div>
