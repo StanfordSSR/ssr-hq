@@ -86,6 +86,54 @@ export async function getModuleStartedAt(email: string, moduleSlug: string): Pro
   return data?.started_at ? new Date(data.started_at) : null;
 }
 
+export async function getCurrentChapter(email: string, moduleSlug: string): Promise<number> {
+  const supabase = createAdminClient();
+  const normalized = normalizeEmail(email);
+  const { data } = await supabase
+    .from('training_module_starts')
+    .select('current_chapter')
+    .eq('email', normalized)
+    .eq('module_slug', moduleSlug)
+    .maybeSingle();
+
+  const raw = data?.current_chapter;
+  if (typeof raw === 'number' && raw >= 0) return raw;
+  return 0;
+}
+
+export async function setCurrentChapter(
+  email: string,
+  moduleSlug: string,
+  chapterIndex: number
+): Promise<void> {
+  if (!Number.isFinite(chapterIndex) || chapterIndex < 0) return;
+  const supabase = createAdminClient();
+  const normalized = normalizeEmail(email);
+
+  // Only advance forward — never let a client request to a lower chapter rewrite progress.
+  const { data: existing } = await supabase
+    .from('training_module_starts')
+    .select('current_chapter')
+    .eq('email', normalized)
+    .eq('module_slug', moduleSlug)
+    .maybeSingle();
+
+  if (existing && typeof existing.current_chapter === 'number' && existing.current_chapter >= chapterIndex) {
+    return;
+  }
+
+  await supabase
+    .from('training_module_starts')
+    .upsert(
+      {
+        email: normalized,
+        module_slug: moduleSlug,
+        current_chapter: Math.floor(chapterIndex)
+      },
+      { onConflict: 'email,module_slug' }
+    );
+}
+
 export async function clearModuleStart(email: string, moduleSlug: string): Promise<void> {
   const supabase = createAdminClient();
   const normalized = normalizeEmail(email);

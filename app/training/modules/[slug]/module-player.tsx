@@ -47,14 +47,18 @@ function initialQuestionStates(chapter: Chapter): QuestionState[] {
 export function ModulePlayer({
   module: mod,
   alreadyCompleted,
-  email
+  email,
+  startChapter = 0
 }: {
   module: TrainingModule;
   alreadyCompleted: boolean;
   email: string;
+  startChapter?: number;
 }) {
   const router = useRouter();
-  const [chapterIndex, setChapterIndex] = useState(0);
+  const [chapterIndex, setChapterIndex] = useState(() =>
+    Math.min(Math.max(0, startChapter), mod.chapters.length - 1)
+  );
   const [chapterStates, setChapterStates] = useState<ChapterState>(() => {
     const init: ChapterState = {};
     mod.chapters.forEach((c, i) => {
@@ -302,9 +306,22 @@ export function ModulePlayer({
     }));
   };
 
+  const persistChapter = (nextIndex: number) => {
+    if (alreadyCompleted) return;
+    void fetch(`/api/training/modules/${mod.slug}/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chapterIndex: nextIndex })
+    }).catch(() => {
+      /* progress is best-effort — surfacing a failure here would be more disruptive than helpful */
+    });
+  };
+
   const handleNext = async () => {
     if (!isLastChapter) {
-      setChapterIndex((i) => i + 1);
+      const nextIdx = chapterIndex + 1;
+      setChapterIndex(nextIdx);
+      persistChapter(nextIdx);
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
