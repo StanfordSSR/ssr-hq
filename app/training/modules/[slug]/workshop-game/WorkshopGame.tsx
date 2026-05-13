@@ -657,7 +657,7 @@ function Door({ knocking }: { knocking: boolean }) {
       </group>
 
       {/* Door slab — swings slightly when knocking */}
-      <group ref={doorRef}>
+      <group ref={doorRef} position={DOOR_CFG.position}>
         {/* Bottom solid metal panel */}
         <mesh position={[0, 0.5, 0]}>
           <boxGeometry args={[0.04, 1.0, DOOR_W]} />
