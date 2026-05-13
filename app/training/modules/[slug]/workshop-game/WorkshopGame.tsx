@@ -1,9 +1,10 @@
 'use client';
 
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text, Edges, Environment } from '@react-three/drei';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import {
   POINTS,
   ROUNDS,
@@ -542,35 +543,9 @@ function Room() {
         </mesh>
       </group>
 
-      {/* Drone hanging up on a shelf — visible in the photos */}
-      <group position={[5.5, 1.3, -2.7]}>
-        <mesh castShadow>
-          <boxGeometry args={[0.04, 0.04, 0.04]} />
-          <meshStandardMaterial color="#1a1a1a" />
-        </mesh>
-        {/* X-frame arms */}
-        {[
-          [0.18, 0, 0.18],
-          [-0.18, 0, 0.18],
-          [0.18, 0, -0.18],
-          [-0.18, 0, -0.18]
-        ].map((p, i) => (
-          <group key={i}>
-            <mesh position={[(p[0]) / 2, 0, (p[2]) / 2]} rotation={[0, p[0] * p[2] > 0 ? Math.PI / 4 : -Math.PI / 4, 0]}>
-              <boxGeometry args={[0.26, 0.015, 0.015]} />
-              <meshStandardMaterial color="#1a1a1a" />
-            </mesh>
-            <mesh position={p as [number, number, number]} castShadow>
-              <cylinderGeometry args={[0.05, 0.05, 0.02, 16]} />
-              <meshStandardMaterial color="#3a3a3a" metalness={0.4} roughness={0.4} />
-            </mesh>
-            <mesh position={[p[0], 0.02, p[2]]} rotation={[0, 0, 0]}>
-              <boxGeometry args={[0.12, 0.005, 0.012]} />
-              <meshStandardMaterial color="#5a5a5a" />
-            </mesh>
-          </group>
-        ))}
-      </group>
+      {/* Drone sitting up on the measurement shelf — loaded from the real STL */}
+      <DroneSTL />
+
 
       {/* "Engineered for Efficiency" sign leaning against the wall */}
       <group position={[3.0, 0, ROOM_D / 2 - 0.5]} rotation={[0, 0, -0.05]}>
@@ -591,6 +566,37 @@ function Room() {
           <meshStandardMaterial color="#1a1a1a" />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+// ---- Drone (real STL model) ---------------------------------------------------------------
+
+function DroneSTL() {
+  // Load the STL the user added under /public/drone.stl
+  const geometry = useLoader(STLLoader, '/drone.stl');
+
+  const { centeredGeometry, fitScale } = useMemo(() => {
+    const g = (geometry as THREE.BufferGeometry).clone();
+    g.computeBoundingBox();
+    g.computeVertexNormals();
+    const box = g.boundingBox!;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    g.translate(-center.x, -center.y, -center.z);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const longest = Math.max(size.x, size.y, size.z) || 1;
+    // Scale so the drone is ~0.6m across its widest axis
+    const scale = 0.6 / longest;
+    return { centeredGeometry: g, fitScale: scale };
+  }, [geometry]);
+
+  return (
+    <group position={[5.5, 1.36, -2.7]} rotation={[-Math.PI / 2, 0, 0]} scale={fitScale}>
+      <mesh geometry={centeredGeometry} castShadow>
+        <meshStandardMaterial color="#2a2a2a" metalness={0.45} roughness={0.45} />
+      </mesh>
     </group>
   );
 }
