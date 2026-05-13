@@ -126,7 +126,7 @@ const DOOR_CFG = { position: [5.99, 0, 3.6] as [number, number, number] };
 const DOOR_W = 1.0;
 const DOOR_H = 2.1;
 
-const FLOOR_COLOR = '#dcd2c2';
+const FLOOR_COLOR = '#a8a39a';
 const WALL_COLOR = '#f5f1ec';
 const SHELF_FRAME_COLOR = '#c9beae';
 const FORBIDDEN_FRAME = '#e3b6b0';
@@ -302,8 +302,9 @@ function Room() {
         </mesh>
       </group>
 
-      {/* Red tool chest on wheels (Snap-on style) */}
-      <group position={[-5.2, 0, -1.0]}>
+      {/* Red tool chest on wheels (Snap-on style). Moved out of the line of sight
+          to the tool wall so the items on that shelf are visible. */}
+      <group position={[-3.5, 0, 2.2]}>
         <mesh position={[0, 0.55, 0]} castShadow>
           <boxGeometry args={[0.7, 1.0, 0.5]} />
           <meshStandardMaterial color="#a01a1a" roughness={0.4} metalness={0.2} />
@@ -411,9 +412,16 @@ function Room() {
       <group>
         {/* Main silver duct running east-west */}
         <mesh position={[1.0, WALL_H - 0.35, -2.0]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.18, 0.18, ROOM_W - 1.0, 18]} />
+          <cylinderGeometry args={[0.2, 0.2, ROOM_W - 1.0, 20]} />
           <meshStandardMaterial color="#d8d4cb" roughness={0.45} metalness={0.5} />
         </mesh>
+        {/* Bracket holding the main duct */}
+        {[-3, 0, 3].map((x, i) => (
+          <mesh key={`db-${i}`} position={[x, WALL_H - 0.18, -2.0]}>
+            <boxGeometry args={[0.03, 0.34, 0.08]} />
+            <meshStandardMaterial color="#5a5a5a" metalness={0.6} />
+          </mesh>
+        ))}
         {/* Branching duct */}
         <mesh position={[1.6, WALL_H - 0.6, 0.6]} rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.14, 0.14, 1.4, 16]} />
@@ -429,17 +437,193 @@ function Room() {
           <cylinderGeometry args={[0.062, 0.062, 0.12, 14]} />
           <meshStandardMaterial color="#e8b500" />
         </mesh>
+        {/* Second narrow black pipe running parallel */}
+        <mesh position={[-2.0, WALL_H - 0.4, 1.4]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.04, 0.04, ROOM_W - 1.5, 12]} />
+          <meshStandardMaterial color="#1a1a1a" />
+        </mesh>
         {/* Conduit cables along the south-east */}
         <mesh position={[3.5, WALL_H - 0.5, -0.5]} rotation={[0, 0, Math.PI / 2]}>
           <cylinderGeometry args={[0.025, 0.025, 4.0, 8]} />
           <meshStandardMaterial color="#5a4a3a" />
         </mesh>
+        {/* North-south thin conduits across ceiling */}
+        {[-1.5, 0.0, 1.0].map((x, i) => (
+          <mesh key={`nsc-${i}`} position={[x, WALL_H - 0.16, 0.0]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.015, 0.015, ROOM_D - 0.6, 8]} />
+            <meshStandardMaterial color="#3a3a3a" />
+          </mesh>
+        ))}
         {/* Vent grille on the ceiling */}
         <mesh position={[2.0, WALL_H - 0.02, -0.5]} rotation={[Math.PI / 2, 0, 0]}>
           <boxGeometry args={[0.6, 0.6, 0.02]} />
           <meshStandardMaterial color="#cccccc" metalness={0.4} roughness={0.5} />
         </mesh>
+        {/* Second vent grille */}
+        <mesh position={[-2.5, WALL_H - 0.02, 2.0]} rotation={[Math.PI / 2, 0, 0]}>
+          <boxGeometry args={[0.5, 0.5, 0.02]} />
+          <meshStandardMaterial color="#cccccc" metalness={0.4} roughness={0.5} />
+        </mesh>
       </group>
+
+      {/* Electrical breaker panel on the south wall (next to the door) */}
+      <group position={[4.4, 1.7, ROOM_D / 2 - 0.06]}>
+        <mesh>
+          <boxGeometry args={[0.45, 0.55, 0.1]} />
+          <meshStandardMaterial color="#7a7a7a" metalness={0.55} roughness={0.45} />
+          <Edges color="#2a2a2a" />
+        </mesh>
+        <mesh position={[0, 0, 0.052]}>
+          <boxGeometry args={[0.4, 0.5, 0.005]} />
+          <meshStandardMaterial color="#9a9a9a" metalness={0.5} roughness={0.4} />
+        </mesh>
+        {/* Conduit pipe going down to floor */}
+        <mesh position={[0, -0.95, 0.04]}>
+          <cylinderGeometry args={[0.025, 0.025, 1.4, 8]} />
+          <meshStandardMaterial color="#5a5a5a" metalness={0.5} />
+        </mesh>
+      </group>
+
+      {/* Smaller electrical box on north wall */}
+      <group position={[-2.0, 2.4, -ROOM_D / 2 + 0.06]}>
+        <mesh>
+          <boxGeometry args={[0.25, 0.3, 0.08]} />
+          <meshStandardMaterial color="#5a5a5a" metalness={0.5} />
+        </mesh>
+      </group>
+
+      {/* Wall outlets dotted around */}
+      {[
+        [-4.0, 0.4, -ROOM_D / 2 + 0.055],
+        [1.0, 0.4, -ROOM_D / 2 + 0.055],
+        [-ROOM_W / 2 + 0.055, 0.4, 0.5],
+        [-ROOM_W / 2 + 0.055, 0.4, 3.0]
+      ].map((p, i) => (
+        <group key={`outlet-${i}`} position={p as [number, number, number]}>
+          <mesh>
+            <boxGeometry args={[0.1, 0.14, 0.01]} />
+            <meshStandardMaterial color="#fdfbf6" />
+          </mesh>
+          <mesh position={[0, 0.025, 0.006]}>
+            <boxGeometry args={[0.022, 0.025, 0.005]} />
+            <meshStandardMaterial color="#1a1a1a" />
+          </mesh>
+          <mesh position={[0, -0.025, 0.006]}>
+            <boxGeometry args={[0.022, 0.025, 0.005]} />
+            <meshStandardMaterial color="#1a1a1a" />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Black backpack slumped on the floor (matches the photo) */}
+      <group position={[1.5, 0, 0.5]} rotation={[0, 0.6, 0]}>
+        <mesh position={[0, 0.2, 0]} castShadow>
+          <boxGeometry args={[0.4, 0.4, 0.22]} />
+          <meshStandardMaterial color="#1a1a1a" roughness={0.85} />
+        </mesh>
+        <mesh position={[0, 0.36, 0.04]}>
+          <boxGeometry args={[0.32, 0.08, 0.22]} />
+          <meshStandardMaterial color="#2a2a2a" roughness={0.85} />
+        </mesh>
+        {/* Strap loop on top */}
+        <mesh position={[0, 0.44, 0]}>
+          <torusGeometry args={[0.05, 0.012, 8, 12]} />
+          <meshStandardMaterial color="#3a3a3a" />
+        </mesh>
+      </group>
+
+      {/* Another smaller bag */}
+      <group position={[-1.0, 0, 1.5]} rotation={[0, -0.3, 0]}>
+        <mesh position={[0, 0.15, 0]} castShadow>
+          <boxGeometry args={[0.32, 0.3, 0.18]} />
+          <meshStandardMaterial color="#262626" roughness={0.85} />
+        </mesh>
+      </group>
+
+      {/* Drone hanging up on a shelf — visible in the photos */}
+      <group position={[5.5, 1.3, -2.7]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshStandardMaterial color="#1a1a1a" />
+        </mesh>
+        {/* X-frame arms */}
+        {[
+          [0.18, 0, 0.18],
+          [-0.18, 0, 0.18],
+          [0.18, 0, -0.18],
+          [-0.18, 0, -0.18]
+        ].map((p, i) => (
+          <group key={i}>
+            <mesh position={[(p[0]) / 2, 0, (p[2]) / 2]} rotation={[0, p[0] * p[2] > 0 ? Math.PI / 4 : -Math.PI / 4, 0]}>
+              <boxGeometry args={[0.26, 0.015, 0.015]} />
+              <meshStandardMaterial color="#1a1a1a" />
+            </mesh>
+            <mesh position={p as [number, number, number]} castShadow>
+              <cylinderGeometry args={[0.05, 0.05, 0.02, 16]} />
+              <meshStandardMaterial color="#3a3a3a" metalness={0.4} roughness={0.4} />
+            </mesh>
+            <mesh position={[p[0], 0.02, p[2]]} rotation={[0, 0, 0]}>
+              <boxGeometry args={[0.12, 0.005, 0.012]} />
+              <meshStandardMaterial color="#5a5a5a" />
+            </mesh>
+          </group>
+        ))}
+      </group>
+
+      {/* "Engineered for Efficiency" sign leaning against the wall */}
+      <group position={[3.0, 0, ROOM_D / 2 - 0.5]} rotation={[0, 0, -0.05]}>
+        <mesh position={[0, 0.45, 0]} rotation={[-0.1, 0, 0]} castShadow>
+          <boxGeometry args={[0.6, 0.9, 0.02]} />
+          <meshStandardMaterial color="#1f4d8a" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 0.65, 0.012]} rotation={[-0.1, 0, 0]}>
+          <boxGeometry args={[0.5, 0.06, 0.005]} />
+          <meshStandardMaterial color="#ffffff" />
+        </mesh>
+      </group>
+
+      {/* Hanging cables from ceiling — small visual */}
+      {[-3.5, 4.0].map((x, i) => (
+        <mesh key={`hc-${i}`} position={[x, WALL_H - 0.6, -2.0]}>
+          <cylinderGeometry args={[0.005, 0.005, 1.2, 6]} />
+          <meshStandardMaterial color="#1a1a1a" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ---- Decorations layered into the shelves (blue parts bins) -------------------------------
+
+function ShelfBins({ shelfId }: { shelfId: Shelf }) {
+  const cfg = SHELF_LAYOUT[shelfId];
+  // Stack a row of small blue parts bins on the lowest shelf level — only on the
+  // "main" shelves the photos show them on.
+  if (shelfId === 'forbidden') return null;
+  const bins = 4;
+  const shelfStep = cfg.height / (cfg.shelves + 0.5);
+  return (
+    <group position={cfg.position} rotation={[0, cfg.rotY, 0]}>
+      {Array.from({ length: bins }).map((_, i) => {
+        const spread = cfg.width - 0.6;
+        const x = -spread / 2 + (spread / (bins - 1)) * i;
+        const y = shelfStep * (cfg.shelves - 0.5) + 0.08;
+        const color = i % 2 === 0 ? '#1f4d8a' : '#1a5fa6';
+        return (
+          <group key={i} position={[x, y, 0]}>
+            <mesh castShadow>
+              <boxGeometry args={[0.16, 0.1, 0.18]} />
+              <meshStandardMaterial color={color} roughness={0.5} />
+              <Edges color="#0a2a5a" />
+            </mesh>
+            {/* Label tab on front */}
+            <mesh position={[0, 0.025, 0.091]}>
+              <boxGeometry args={[0.12, 0.025, 0.002]} />
+              <meshStandardMaterial color="#ffffff" />
+            </mesh>
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -859,11 +1043,15 @@ function Door({ openAmount, knocking }: { openAmount: number; knocking: boolean 
 
 function Visitor({
   mode,
+  playerPosRef,
   onArrivedInside,
+  onPushedOut,
   onExited
 }: {
   mode: 'idle' | 'entering' | 'inside' | 'exiting';
+  playerPosRef: React.MutableRefObject<THREE.Vector3>;
   onArrivedInside: () => void;
+  onPushedOut: () => void;
   onExited: () => void;
 }) {
   const ref = useRef<THREE.Group>(null);
@@ -874,22 +1062,30 @@ function Visitor({
   const lastMode = useRef<typeof mode>('idle');
   const arrivedFiredRef = useRef(false);
   const exitedFiredRef = useRef(false);
+  const pushedFiredRef = useRef(false);
+  const internalXRef = useRef<number | null>(null);
 
   // Visitor path waypoints
   const outsideX = DOOR_CFG.position[0] + 3.5;
   const insideStandX = DOOR_CFG.position[0] - 1.8; // 1.8m inside the room
   const z = DOOR_CFG.position[2];
+  const pushThresholdX = DOOR_CFG.position[0] - 0.3; // Crosses this → considered pushed out
 
   useEffect(() => {
     if (mode !== lastMode.current) {
       modeStartedAt.current = Date.now();
       lastMode.current = mode;
       if (mode === 'entering') arrivedFiredRef.current = false;
+      if (mode === 'inside') {
+        pushedFiredRef.current = false;
+        internalXRef.current = insideStandX;
+      }
       if (mode === 'exiting') exitedFiredRef.current = false;
+      if (mode === 'idle') internalXRef.current = null;
     }
-  }, [mode]);
+  }, [mode, insideStandX]);
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (!ref.current) return;
 
     if (mode === 'idle') {
@@ -914,11 +1110,37 @@ function Visitor({
         onArrivedInside();
       }
     } else if (mode === 'inside') {
-      posX = insideStandX;
-      facing = Math.PI / 2;
+      // Player can physically push the visitor by walking into them.
+      const curX = internalXRef.current ?? insideStandX;
+      const px = playerPosRef.current.x;
+      const pz = playerPosRef.current.z;
+      const dxToPlayer = curX - px;
+      const dzToPlayer = z - pz;
+      const inZBand = Math.abs(dzToPlayer) < 0.95;
+      let nextX = curX;
+      // Player must be west of (closer to the room than) the visitor to push them east.
+      if (inZBand && dxToPlayer > 0 && dxToPlayer < 0.95) {
+        const pushSpeed = (0.95 - dxToPlayer) * 4.5; // strong push when very close
+        nextX = curX + pushSpeed * delta;
+        // Slight stagger animation: visitor leans back as they're pushed
+        if (armRef.current) {
+          armRef.current.rotation.z = -1.0 + Math.sin(state.clock.elapsedTime * 14) * 0.25;
+        }
+        facing = Math.PI / 2 + 0.3; // tilt back
+      } else {
+        facing = Math.PI / 2;
+      }
+      internalXRef.current = nextX;
+      posX = nextX;
+
+      if (nextX > pushThresholdX && !pushedFiredRef.current) {
+        pushedFiredRef.current = true;
+        onPushedOut();
+      }
     } else if (mode === 'exiting') {
       const p = Math.min(1, t / walkDuration);
-      posX = insideStandX + (outsideX - insideStandX) * p;
+      const startX = internalXRef.current ?? insideStandX;
+      posX = startX + (outsideX - startX) * p;
       walking = p < 1;
       facing = -Math.PI / 2;
       if (p >= 1 && !exitedFiredRef.current) {
@@ -1496,6 +1718,7 @@ export function WorkshopGame({
 
   // Distance from player camera to where the visitor stands inside
   const [playerNearVisitor, setPlayerNearVisitor] = useState(false);
+  const playerPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
 
   // --- Whenever the round is complete (all phases done), the game ends, the
   // visitor dialogue is showing, or a build minigame is active, release pointer
@@ -1720,6 +1943,19 @@ export function WorkshopGame({
     pushToast('✓ Politely walked them back out', 'good');
   };
 
+  const visitorPushedOut = () => {
+    setState((prev) => {
+      if (prev.visitorMode !== 'inside') return prev;
+      return {
+        ...prev,
+        visitorMode: 'exiting',
+        visitorPlayerLine: 'Yo, out you go. Have Anish come let you in himself.',
+        scoreRaw: prev.scoreRaw + POINTS.visitorDeclined
+      };
+    });
+    pushToast('✓ Shoved them right back out the door', 'good');
+  };
+
   const declineVisitor = () => {
     setState((prev) => {
       if (prev.visitorMode !== 'inside') return prev;
@@ -1872,6 +2108,11 @@ export function WorkshopGame({
             {(Object.keys(SHELF_LAYOUT) as Shelf[]).map((s) => (
               <ShelfFurniture key={s} shelfId={s} highlight={hover?.kind === 'shelf' && hover.shelfId === s} />
             ))}
+            {(Object.keys(SHELF_LAYOUT) as Shelf[])
+              .filter((s) => s === 'hand-tools' || s === 'electronics' || s === 'screws')
+              .map((s) => (
+                <ShelfBins key={`bins-${s}`} shelfId={s} />
+              ))}
             <Workbench
               highlight={
                 hover?.kind === 'bench' ||
@@ -1894,7 +2135,9 @@ export function WorkshopGame({
             />
             <Visitor
               mode={state.visitorMode}
+              playerPosRef={playerPosRef}
               onArrivedInside={visitorArrivedInside}
+              onPushedOut={visitorPushedOut}
               onExited={visitorExited}
             />
             <BuildToolAnimation
@@ -1919,6 +2162,7 @@ export function WorkshopGame({
             <Player
               enabled={pointerLocked && !state.finished && !state.failedHard && !state.activeMinigameActionId}
               onPositionChange={(pos) => {
+                playerPosRef.current.copy(pos);
                 const dx = pos.x - (DOOR_CFG.position[0] - 1.8);
                 const dz = pos.z - DOOR_CFG.position[2];
                 const dist = Math.sqrt(dx * dx + dz * dz);
@@ -2143,11 +2387,11 @@ export function WorkshopGame({
                 <span className={`workshop-subtitle-prompt-inline ${playerNearVisitor ? 'is-active' : ''}`}>
                   {playerNearVisitor ? (
                     <>
-                      <kbd>E</kbd> Walk them back out now
+                      Walk into them to physically push them out — or press <kbd>E</kbd>
                     </>
                   ) : (
                     <>
-                      Or walk up to them and press <kbd>E</kbd> to physically escort them out
+                      Or walk up and shove them out the door yourself
                     </>
                   )}
                 </span>
