@@ -17,6 +17,7 @@ import {
 } from './game-logic';
 import { PartMesh } from './parts';
 import { BuildMinigame } from './BuildMinigame';
+import { FilamentMinigame } from './FilamentMinigame';
 
 type Toast = { id: number; text: string; tone: 'good' | 'bad' };
 
@@ -1399,6 +1400,16 @@ export function WorkshopGame({
           const action =
             phase?.kind === 'build' ? phase.actions.find((a) => a.id === state.activeMinigameActionId) : null;
           if (!action) return null;
+          const kind = action.minigame || 'screws';
+          if (kind === 'filament') {
+            return (
+              <FilamentMinigame
+                actionPrompt={action.prompt}
+                onComplete={completeMinigame}
+                onCancel={cancelMinigame}
+              />
+            );
+          }
           return (
             <BuildMinigame
               actionPrompt={action.prompt}
