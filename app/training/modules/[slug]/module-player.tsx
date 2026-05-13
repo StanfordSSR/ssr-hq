@@ -61,6 +61,7 @@ export function ModulePlayer({
   const [scrolledToEnd, setScrolledToEnd] = useState(false);
   const [hasReachedBottom, setHasReachedBottom] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
+  const [hasFocus, setHasFocus] = useState(true);
   const [isIdle, setIsIdle] = useState(false);
   const [scrolledTooFast, setScrolledTooFast] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -107,20 +108,34 @@ export function ModulePlayer({
   }, [chapterIndex]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Watch tab visibility — pause the dwell timer when the tab is hidden.
-  /* eslint-disable react-hooks/set-state-in-effect */
+  // Watch tab visibility + window focus — pause whenever the training tab is not
+  // the active document. visibilitychange covers tab-switching and minimizing;
+  // window blur/focus covers Cmd-Tab / Alt-Tab to other applications, which on
+  // Chrome/Safari does not fire visibilitychange.
   useEffect(() => {
-    const onVisibility = () => {
+    const sync = () => {
       setIsHidden(document.hidden);
-      if (!document.hidden) {
+      const focused =
+        typeof document.hasFocus === 'function' ? document.hasFocus() : !document.hidden;
+      setHasFocus(focused);
+      if (!document.hidden && focused) {
         lastActivityRef.current = Date.now();
       }
     };
-    setIsHidden(document.hidden);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('blur', sync);
+    window.addEventListener('focus', sync);
+    window.addEventListener('pageshow', sync);
+    window.addEventListener('pagehide', sync);
+    return () => {
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('blur', sync);
+      window.removeEventListener('focus', sync);
+      window.removeEventListener('pageshow', sync);
+      window.removeEventListener('pagehide', sync);
+    };
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Activity tracking: any user input resets the idle clock.
   useEffect(() => {
@@ -171,8 +186,12 @@ export function ModulePlayer({
       }
 
       const visible = typeof document !== 'undefined' && !document.hidden;
+      const focused =
+        typeof document !== 'undefined' && typeof document.hasFocus === 'function'
+          ? document.hasFocus()
+          : true;
 
-      if (visible && !idleNow) {
+      if (visible && focused && !idleNow) {
         activeSecondsRef.current += 1;
         setActiveSeconds(activeSecondsRef.current);
       }
@@ -401,7 +420,7 @@ export function ModulePlayer({
           {!alreadyCompleted ? (
             <div className="training-gate" data-met={questionsUnlocked ? 'true' : 'false'}>
               <div className={`training-gate-row ${dwellMet ? 'is-met' : ''}`}>
-                <span className="training-gate-icon">{dwellMet ? '✓' : isHidden || isIdle ? '⏸' : '◷'}</span>
+                <span className="training-gate-icon">{dwellMet ? '✓' : isHidden || !hasFocus || isIdle ? '⏸' : '◷'}</span>
                 <div>
                   <p className="training-gate-label">Minimum active time on chapter</p>
                   <p className="training-gate-detail">
@@ -409,9 +428,11 @@ export function ModulePlayer({
                       ? 'Met. You can submit the knowledge check below.'
                       : isHidden
                         ? `Paused — tab is hidden. (${activeSeconds}/${chapter.minSeconds}s of active time)`
-                        : isIdle
-                          ? `Paused — no activity for over a minute. (${activeSeconds}/${chapter.minSeconds}s of active time)`
-                          : `Stay for ${dwellRemaining}s longer. (${activeSeconds}/${chapter.minSeconds}s of active time)`}
+                        : !hasFocus
+                          ? `Paused — window is not focused. (${activeSeconds}/${chapter.minSeconds}s of active time)`
+                          : isIdle
+                            ? `Paused — no activity for over a minute. (${activeSeconds}/${chapter.minSeconds}s of active time)`
+                            : `Stay for ${dwellRemaining}s longer. (${activeSeconds}/${chapter.minSeconds}s of active time)`}
                   </p>
                 </div>
               </div>
