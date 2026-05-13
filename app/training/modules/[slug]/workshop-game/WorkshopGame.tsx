@@ -1482,15 +1482,27 @@ export function WorkshopGame({
   // Distance from player camera to where the visitor stands inside
   const [playerNearVisitor, setPlayerNearVisitor] = useState(false);
 
-  // --- Whenever the round is complete (all phases done) or the game ends, release
-  // pointer lock so the cursor is visible and the user can click Next / Restart.
+  // --- Whenever the round is complete (all phases done), the game ends, the
+  // visitor dialogue is showing, or a build minigame is active, release pointer
+  // lock so the cursor is visible and the user can click options / buttons.
   useEffect(() => {
-    if (state.phaseIdx >= round.phases.length || state.finished || state.failedHard) {
-      if (document.pointerLockElement) {
-        (document as unknown as { exitPointerLock?: () => void }).exitPointerLock?.();
-      }
+    const needsCursor =
+      state.phaseIdx >= round.phases.length ||
+      state.finished ||
+      state.failedHard ||
+      state.visitorMode === 'inside' ||
+      state.activeMinigameActionId !== null;
+    if (needsCursor && document.pointerLockElement) {
+      (document as unknown as { exitPointerLock?: () => void }).exitPointerLock?.();
     }
-  }, [state.phaseIdx, round.phases.length, state.finished, state.failedHard]);
+  }, [
+    state.phaseIdx,
+    round.phases.length,
+    state.finished,
+    state.failedHard,
+    state.visitorMode,
+    state.activeMinigameActionId
+  ]);
 
   // --- Pickup / place / return
   const pickupItem = (id: ItemId) => {
