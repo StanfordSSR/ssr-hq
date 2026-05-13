@@ -37,6 +37,7 @@ type GameState = {
   buildActionsDone: Record<string, boolean>;
   buildInProgress: BuildInProgress | null;
   activeMinigameActionId: string | null;
+  visitorWalking: boolean;
   visitorPrompted: boolean;
   visitorHandled: boolean;
   toasts: Toast[];
@@ -53,6 +54,7 @@ const initialState: GameState = {
   buildActionsDone: {},
   buildInProgress: null,
   activeMinigameActionId: null,
+  visitorWalking: false,
   visitorPrompted: false,
   visitorHandled: false,
   toasts: [],
@@ -150,8 +152,9 @@ function Room() {
         const southZStart = -ROOM_D / 2;
         const southLen = doorZStart - southZStart;
         const northLen = ROOM_D / 2 - doorZEnd;
-        const transomY = DOOR_H + 0.7;
-        const lintelHeight = WALL_H - transomY;
+        // Lintel sits flush right above the door's metal header.
+        const lintelStart = DOOR_H + 0.1;
+        const lintelHeight = WALL_H - lintelStart;
         return (
           <>
             <mesh position={[ROOM_W / 2, WALL_H / 2, southZStart + southLen / 2]} receiveShadow>
@@ -162,9 +165,9 @@ function Room() {
               <boxGeometry args={[0.1, WALL_H, northLen]} />
               <meshStandardMaterial color={WALL_COLOR} roughness={0.8} />
             </mesh>
-            {/* Lintel above the door / transom */}
+            {/* Lintel directly above the door header */}
             <mesh
-              position={[ROOM_W / 2, transomY + lintelHeight / 2, DOOR_CFG.position[2]]}
+              position={[ROOM_W / 2, lintelStart + lintelHeight / 2, DOOR_CFG.position[2]]}
               receiveShadow
             >
               <boxGeometry args={[0.1, lintelHeight, DOOR_W]} />
@@ -635,11 +638,11 @@ function Door({ knocking }: { knocking: boolean }) {
   const handleZSide = -DOOR_W / 2 + 0.12; // handle near the open edge
   return (
     <group>
-      {/* Frame — slightly outside the wall plane so the door reads as a real opening */}
+      {/* Frame — flush against the door, no floating transom */}
       <group position={[DOOR_CFG.position[0], 0, DOOR_CFG.position[2]]}>
-        {/* Top header */}
-        <mesh position={[0, DOOR_H + 0.04, 0]}>
-          <boxGeometry args={[0.12, 0.08, DOOR_W + 0.12]} />
+        {/* Top header tight against the door slab */}
+        <mesh position={[0, DOOR_H + 0.05, 0]}>
+          <boxGeometry args={[0.12, 0.1, DOOR_W + 0.12]} />
           <meshStandardMaterial color={frameColor} metalness={0.6} roughness={0.4} />
         </mesh>
         {/* Side jambs */}
@@ -650,20 +653,6 @@ function Door({ knocking }: { knocking: boolean }) {
         <mesh position={[0, DOOR_H / 2, -DOOR_W / 2 - 0.06]}>
           <boxGeometry args={[0.12, DOOR_H + 0.08, 0.06]} />
           <meshStandardMaterial color={frameColor} metalness={0.6} roughness={0.4} />
-        </mesh>
-        {/* Transom (window above the door) */}
-        <mesh position={[0, DOOR_H + 0.35, 0]}>
-          <boxGeometry args={[0.02, 0.6, DOOR_W]} />
-          <meshPhysicalMaterial
-            color="#dfe8ef"
-            transparent
-            opacity={0.32}
-            transmission={0.7}
-            roughness={0.05}
-            metalness={0.0}
-            ior={1.5}
-            thickness={0.05}
-          />
         </mesh>
       </group>
 
@@ -1262,13 +1251,18 @@ export function WorkshopGame({
     if (!phase) return;
     let shouldAdvance = false;
     if (phase.kind === 'gather') {
-      shouldAdvance = phase.needs.every((id) => state.benchItems.includes(id));
+      // Gather accepts items currently on the bench OR currently in hand — so
+      // round 2's "bring PLA to the Bambu" advances as soon as the player
+      // picks up the spool, without forcing a detour to the workstation.
+      shouldAdvance = phase.needs.every(
+        (id) => state.benchItems.includes(id) || state.carrying === id
+      );
     } else if (phase.kind === 'visitor') {
       shouldAdvance = state.visitorHandled;
     } else if (phase.kind === 'build') {
       shouldAdvance = phase.actions.every((a) => state.buildActionsDone[a.id]);
     } else if (phase.kind === 'return') {
-      shouldAdvance = state.benchItems.length === 0;
+      shouldAdvance = state.benchItems.length === 0 && state.carrying === null;
     }
     if (shouldAdvance) {
       const t = window.setTimeout(() => {
@@ -1279,18 +1273,35 @@ export function WorkshopGame({
       }, 350);
       return () => window.clearTimeout(t);
     }
-  }, [phase, state.benchItems, state.visitorHandled, state.buildActionsDone, state.phaseIdx]);
+  }, [phase, state.benchItems, state.carrying, state.visitorHandled, state.buildActionsDone, state.phaseIdx]);
 
-  // --- Trigger visitor modal when we enter the visitor phase
+  // --- Visitor walk + dialogue
+  // When the visitor phase starts, kick off the walk animation first. Once the
+  // visitor reaches the door (~2.7s later) open the dialogue modal and release
+  // pointer lock so the player can click an option.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (phase?.kind === 'visitor' && !state.visitorPrompted && !state.visitorHandled) {
-      setState((prev) => ({ ...prev, visitorPrompted: true }));
-      if (document.pointerLockElement) {
-        (document as unknown as { exitPointerLock?: () => void }).exitPointerLock?.();
-      }
+    if (
+      phase?.kind === 'visitor' &&
+      !state.visitorWalking &&
+      !state.visitorPrompted &&
+      !state.visitorHandled
+    ) {
+      setState((prev) => ({ ...prev, visitorWalking: true }));
     }
-  }, [phase, state.visitorPrompted, state.visitorHandled]);
+  }, [phase, state.visitorWalking, state.visitorPrompted, state.visitorHandled]);
+
+  useEffect(() => {
+    if (state.visitorWalking && !state.visitorPrompted && !state.visitorHandled) {
+      const t = window.setTimeout(() => {
+        setState((prev) => ({ ...prev, visitorPrompted: true }));
+        if (document.pointerLockElement) {
+          (document as unknown as { exitPointerLock?: () => void }).exitPointerLock?.();
+        }
+      }, 2700);
+      return () => window.clearTimeout(t);
+    }
+  }, [state.visitorWalking, state.visitorPrompted, state.visitorHandled]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // --- Whenever the round is complete (all phases done) or the game ends, release
@@ -1423,6 +1434,7 @@ export function WorkshopGame({
   const handleVisitorDecline = () => {
     setState((prev) => ({
       ...prev,
+      visitorWalking: false,
       visitorPrompted: false,
       visitorHandled: true,
       scoreRaw: prev.scoreRaw + POINTS.visitorDeclined
@@ -1433,6 +1445,7 @@ export function WorkshopGame({
   const handleVisitorAccept = () => {
     setState((prev) => ({
       ...prev,
+      visitorWalking: false,
       visitorPrompted: false,
       visitorHandled: true,
       scoreRaw: prev.scoreRaw + POINTS.letVisitorIn,
@@ -1460,6 +1473,7 @@ export function WorkshopGame({
       carrying: null,
       buildActionsDone: {},
       buildInProgress: null,
+      visitorWalking: false,
       visitorPrompted: false,
       visitorHandled: false
     }));
@@ -1548,8 +1562,8 @@ export function WorkshopGame({
               highlight={phase?.kind === 'build' && nextBuildAction?.at === 'bambu'}
               buildActive={Boolean(state.buildInProgress) && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'bambu')}
             />
-            <Door knocking={state.visitorPrompted} />
-            <Visitor active={state.visitorPrompted} />
+            <Door knocking={state.visitorWalking || state.visitorPrompted} />
+            <Visitor active={(state.visitorWalking || state.visitorPrompted) && !state.visitorHandled} />
             <BuildToolAnimation
               buildInProgress={state.buildInProgress}
               location={
@@ -1737,19 +1751,39 @@ export function WorkshopGame({
 
         {state.visitorPrompted ? (
           <div className="workshop-modal-backdrop">
-            <div className="workshop-modal">
+            <div className="workshop-modal workshop-dialogue">
               <p className="workshop-modal-eyebrow">Door event</p>
-              <h3 className="workshop-modal-title">Someone is knocking.</h3>
-              <p><em>“Hey, I’m a friend of someone in the club. Can I come in to borrow a tool real quick?”</em></p>
+              <div className="workshop-dialogue-line">
+                <div className="workshop-dialogue-speaker">Visitor</div>
+                <p className="workshop-dialogue-text">
+                  “Yo, I&apos;m tryna get some batteries — I know Anish from the club. Can I come in real quick?”
+                </p>
+              </div>
               <p className="workshop-modal-body">
-                You do not recognize this person. They have not done the training. What do you do?
+                You don&apos;t recognize this person. They haven&apos;t done the training. How do you respond?
               </p>
-              <div className="workshop-modal-actions">
-                <button type="button" className="button" onClick={handleVisitorDecline}>
-                  Decline and direct them to email the Exec Board
+              <div className="workshop-dialogue-options">
+                <button type="button" className="workshop-dialogue-option" onClick={handleVisitorDecline}>
+                  <span className="workshop-dialogue-marker">1.</span>
+                  <span>
+                    “Sorry, I don&apos;t recognize you. If Anish actually invited you, have him come let you in himself.”
+                  </span>
                 </button>
-                <button type="button" className="button-ghost" onClick={handleVisitorAccept}>
-                  Open the door and let them in
+                <button type="button" className="workshop-dialogue-option" onClick={handleVisitorDecline}>
+                  <span className="workshop-dialogue-marker">2.</span>
+                  <span>
+                    “I can&apos;t let anyone in who hasn&apos;t done the training — email an Exec Board officer to request access.”
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="workshop-dialogue-option workshop-dialogue-option-bad"
+                  onClick={handleVisitorAccept}
+                >
+                  <span className="workshop-dialogue-marker">3.</span>
+                  <span>
+                    “Yeah sure, come on in — you said Anish, right?”
+                  </span>
                 </button>
               </div>
             </div>
