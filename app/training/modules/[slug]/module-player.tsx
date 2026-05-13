@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type {
@@ -10,6 +11,11 @@ import type {
   TrainingModule
 } from '@/lib/training-content';
 import { ChapterIllustration } from '@/app/training/modules/[slug]/illustrations';
+
+const WorkshopGame = dynamic(
+  () => import('@/app/training/modules/[slug]/workshop-game/WorkshopGame').then((m) => m.WorkshopGame),
+  { ssr: false, loading: () => <div className="workshop-loading">Loading simulation…</div> }
+);
 
 type QuestionState = {
   selected: Set<number>;
@@ -411,13 +417,38 @@ export function ModulePlayer({
             </div>
           </section>
 
-          <article className="training-body" ref={bodyRef}>
-            {chapter.blocks.map((block, i) => (
-              <ContentBlockView key={i} block={block} />
-            ))}
-          </article>
+          {chapter.simulation ? (
+            <WorkshopGame
+              passingScore={mod.passingScore}
+              onComplete={async (score) => {
+                if (alreadyCompleted) {
+                  router.push(`/training/modules/${mod.slug}/certificate`);
+                  return;
+                }
+                const response = await fetch(`/api/training/modules/${mod.slug}/complete`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ score, attempts })
+                });
+                if (!response.ok) {
+                  const body = await response.json().catch(() => ({}));
+                  throw new Error(body?.error || 'Could not record completion. Please try again.');
+                }
+                router.push(`/training/modules/${mod.slug}/certificate`);
+                router.refresh();
+              }}
+            />
+          ) : null}
 
-          {!alreadyCompleted ? (
+          {!chapter.simulation ? (
+            <article className="training-body" ref={bodyRef}>
+              {chapter.blocks.map((block, i) => (
+                <ContentBlockView key={i} block={block} />
+              ))}
+            </article>
+          ) : null}
+
+          {!chapter.simulation && !alreadyCompleted ? (
             <div className="training-gate" data-met={questionsUnlocked ? 'true' : 'false'}>
               <div className={`training-gate-row ${dwellMet ? 'is-met' : ''}`}>
                 <span className="training-gate-icon">{dwellMet ? '✓' : isHidden || !hasFocus || isIdle ? '⏸' : '◷'}</span>
@@ -468,6 +499,7 @@ export function ModulePlayer({
             </div>
           ) : null}
 
+          {!chapter.simulation ? (
           <section className="training-check" data-locked={!questionsUnlocked}>
             <header className="training-check-head">
               <p className="training-check-eyebrow">Knowledge check</p>
@@ -556,6 +588,7 @@ export function ModulePlayer({
               })}
             </ol>
           </section>
+          ) : null}
 
           <footer className="training-footer-nav">
             <button
@@ -566,20 +599,26 @@ export function ModulePlayer({
             >
               ← Previous chapter
             </button>
-            <button
-              type="button"
-              className="button-primary"
-              onClick={handleNext}
-              disabled={!nextEnabled}
-            >
-              {submitting
-                ? 'Saving...'
-                : isLastChapter
-                  ? alreadyCompleted
-                    ? 'View certificate →'
-                    : 'Complete training →'
-                  : `Continue to chapter ${chapter.number + 1} →`}
-            </button>
+            {!chapter.simulation ? (
+              <button
+                type="button"
+                className="button-primary"
+                onClick={handleNext}
+                disabled={!nextEnabled}
+              >
+                {submitting
+                  ? 'Saving...'
+                  : isLastChapter
+                    ? alreadyCompleted
+                      ? 'View certificate →'
+                      : 'Complete training →'
+                    : `Continue to chapter ${chapter.number + 1} →`}
+              </button>
+            ) : (
+              <span className="training-footer-meta" style={{ marginLeft: 'auto' }}>
+                The simulation has its own completion control.
+              </span>
+            )}
           </footer>
 
           {startError ? (
