@@ -32,6 +32,7 @@ type GameState = {
   roundIdx: number;
   phaseIdx: number;
   scoreRaw: number;
+  roundStartScore: number;
   benchItems: ItemId[];
   carrying: ItemId | null;
   buildActionsDone: Record<string, boolean>;
@@ -53,6 +54,7 @@ const initialState: GameState = {
   roundIdx: 0,
   phaseIdx: 0,
   scoreRaw: 0,
+  roundStartScore: 0,
   benchItems: [],
   carrying: null,
   buildActionsDone: {},
@@ -1110,23 +1112,23 @@ function Visitor({
         onArrivedInside();
       }
     } else if (mode === 'inside') {
-      // Player can physically push the visitor by walking into them.
+      // Player can physically push the visitor by walking into them. Tight
+      // contact radius so just walking past doesn't shove them.
       const curX = internalXRef.current ?? insideStandX;
       const px = playerPosRef.current.x;
       const pz = playerPosRef.current.z;
       const dxToPlayer = curX - px;
       const dzToPlayer = z - pz;
-      const inZBand = Math.abs(dzToPlayer) < 0.95;
+      const inZBand = Math.abs(dzToPlayer) < 0.55;
       let nextX = curX;
-      // Player must be west of (closer to the room than) the visitor to push them east.
-      if (inZBand && dxToPlayer > 0 && dxToPlayer < 0.95) {
-        const pushSpeed = (0.95 - dxToPlayer) * 4.5; // strong push when very close
+      // Player must be west of the visitor AND well inside the contact radius.
+      if (inZBand && dxToPlayer > 0 && dxToPlayer < 0.55) {
+        const pushSpeed = (0.55 - dxToPlayer) * 3.6;
         nextX = curX + pushSpeed * delta;
-        // Slight stagger animation: visitor leans back as they're pushed
         if (armRef.current) {
           armRef.current.rotation.z = -1.0 + Math.sin(state.clock.elapsedTime * 14) * 0.25;
         }
-        facing = Math.PI / 2 + 0.3; // tilt back
+        facing = Math.PI / 2 + 0.3;
       } else {
         facing = Math.PI / 2;
       }
@@ -1188,19 +1190,45 @@ function Visitor({
         <boxGeometry args={[0.4, 0.4, 0.4]} />
         <meshStandardMaterial color={skin} roughness={0.7} />
       </mesh>
-      {/* Face — simple eyes + mouth painted on */}
+      {/* Face — white-of-eye + pupil, plus a real curved smile */}
       <group position={[0, 1.65, 0]}>
-        <mesh position={[-0.085, 0.04, 0.201]}>
-          <boxGeometry args={[0.05, 0.05, 0.005]} />
+        {/* Left eye white */}
+        <mesh position={[-0.085, 0.05, 0.201]}>
+          <boxGeometry args={[0.075, 0.075, 0.005]} />
+          <meshStandardMaterial color="#fdfbf6" />
+        </mesh>
+        {/* Left pupil */}
+        <mesh position={[-0.085, 0.05, 0.205]}>
+          <boxGeometry args={[0.03, 0.03, 0.004]} />
           <meshStandardMaterial color="#0a0a0a" />
         </mesh>
-        <mesh position={[0.085, 0.04, 0.201]}>
-          <boxGeometry args={[0.05, 0.05, 0.005]} />
+        {/* Left highlight */}
+        <mesh position={[-0.076, 0.058, 0.208]}>
+          <boxGeometry args={[0.012, 0.012, 0.002]} />
+          <meshStandardMaterial color="#ffffff" />
+        </mesh>
+        {/* Right eye white */}
+        <mesh position={[0.085, 0.05, 0.201]}>
+          <boxGeometry args={[0.075, 0.075, 0.005]} />
+          <meshStandardMaterial color="#fdfbf6" />
+        </mesh>
+        <mesh position={[0.085, 0.05, 0.205]}>
+          <boxGeometry args={[0.03, 0.03, 0.004]} />
           <meshStandardMaterial color="#0a0a0a" />
         </mesh>
-        <mesh position={[0, -0.07, 0.201]}>
-          <boxGeometry args={[0.12, 0.02, 0.005]} />
+        <mesh position={[0.094, 0.058, 0.208]}>
+          <boxGeometry args={[0.012, 0.012, 0.002]} />
+          <meshStandardMaterial color="#ffffff" />
+        </mesh>
+        {/* Smile — half-torus curving downward like a U */}
+        <mesh position={[0, -0.06, 0.201]} rotation={[Math.PI, 0, 0]}>
+          <torusGeometry args={[0.07, 0.012, 8, 18, Math.PI]} />
           <meshStandardMaterial color="#0a0a0a" />
+        </mesh>
+        {/* Tooth highlight in the smile */}
+        <mesh position={[0, -0.045, 0.202]}>
+          <boxGeometry args={[0.09, 0.02, 0.003]} />
+          <meshStandardMaterial color="#fdfbf6" />
         </mesh>
       </group>
       {/* Hair on top */}
@@ -1839,54 +1867,6 @@ export function WorkshopGame({
   // --- Keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Number-key shortcuts during visitor dialogue: 1 = decline, 2 = bad option.
-      if (state.visitorMode === 'inside') {
-        if (e.code === 'Digit1' || e.code === 'Numpad1') {
-          e.preventDefault();
-          // Inlined decline logic to avoid TDZ on declineVisitor (declared below).
-          setState((prev) => {
-            if (prev.visitorMode !== 'inside') return prev;
-            const nextTurn = prev.visitorTurn + 1;
-            const playerLine =
-              DECLINE_LABELS[prev.visitorTurn] || DECLINE_LABELS[DECLINE_LABELS.length - 1];
-            if (nextTurn >= VISITOR_LINES.length - 1) {
-              window.setTimeout(() => {
-                setState((p) => {
-                  if (p.visitorMode !== 'inside') return p;
-                  return {
-                    ...p,
-                    visitorMode: 'exiting',
-                    visitorPlayerLine: null,
-                    scoreRaw: p.scoreRaw + POINTS.visitorDeclined
-                  };
-                });
-              }, 2200);
-              return {
-                ...prev,
-                visitorTurn: VISITOR_LINES.length - 1,
-                visitorPlayerLine: playerLine
-              };
-            }
-            return { ...prev, visitorTurn: nextTurn, visitorPlayerLine: playerLine };
-          });
-          return;
-        }
-        if (e.code === 'Digit2' || e.code === 'Numpad2') {
-          e.preventDefault();
-          setState((prev) => ({
-            ...prev,
-            visitorMode: 'idle',
-            visitorHandled: true,
-            visitorPromptedAt: null,
-            visitorPlayerLine: null,
-            scoreRaw: prev.scoreRaw + POINTS.letVisitorIn,
-            failedHard: true
-          }));
-          pushToast('✗ You let an unauthorized visitor stay. That is an immediate fail.', 'bad');
-          return;
-        }
-      }
-
       if (e.code === 'KeyE') {
         e.preventDefault();
         // If the visitor is inside the room and the player is standing near them,
@@ -2017,6 +1997,7 @@ export function WorkshopGame({
       ...prev,
       roundIdx: prev.roundIdx + 1,
       phaseIdx: 0,
+      roundStartScore: prev.scoreRaw,
       benchItems: [],
       carrying: null,
       buildActionsDone: {},
@@ -2032,6 +2013,28 @@ export function WorkshopGame({
   };
 
   const restartGame = () => setState(initialState);
+
+  const retryRound = () => {
+    setState((prev) => ({
+      ...prev,
+      phaseIdx: 0,
+      scoreRaw: prev.roundStartScore,
+      benchItems: [],
+      carrying: null,
+      buildActionsDone: {},
+      buildInProgress: null,
+      activeMinigameActionId: null,
+      visitorMode: 'idle',
+      visitorPromptedAt: null,
+      visitorTurn: 0,
+      visitorPlayerLine: null,
+      visitorWalking: false,
+      visitorPrompted: false,
+      visitorHandled: false,
+      failedHard: false,
+      toasts: []
+    }));
+  };
 
   const submitFinal = async () => {
     setSubmitting(true);
@@ -2297,9 +2300,16 @@ export function WorkshopGame({
             <div className="workshop-modal">
               <p className="workshop-modal-eyebrow">Round failed</p>
               <h3 className="workshop-modal-title">Hard safety violation.</h3>
-              <p className="workshop-modal-body">The simulation ended early. Restart to try again.</p>
+              <p className="workshop-modal-body">
+                You can retry just this round — your score from earlier rounds is preserved — or restart the whole simulation.
+              </p>
               <div className="workshop-modal-actions">
-                <button type="button" className="button" onClick={restartGame}>Restart simulation</button>
+                <button type="button" className="button-primary" onClick={retryRound} autoFocus>
+                  Retry round {state.roundIdx + 1}
+                </button>
+                <button type="button" className="button-ghost" onClick={restartGame}>
+                  Restart from round 1
+                </button>
               </div>
             </div>
           </div>
