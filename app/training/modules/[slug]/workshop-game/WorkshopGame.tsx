@@ -20,6 +20,8 @@ import {
 import { PartMesh } from './parts';
 import { BuildMinigame } from './BuildMinigame';
 import { FilamentMinigame } from './FilamentMinigame';
+import { TorqueMinigame } from './TorqueMinigame';
+import { CaliperMinigame } from './CaliperMinigame';
 
 type Toast = { id: number; text: string; tone: 'good' | 'bad' };
 
@@ -2373,6 +2375,24 @@ export function WorkshopGame({
           if (kind === 'filament') {
             return (
               <FilamentMinigame
+                actionPrompt={action.prompt}
+                onComplete={completeMinigame}
+                onCancel={cancelMinigame}
+              />
+            );
+          }
+          if (kind === 'torque') {
+            return (
+              <TorqueMinigame
+                actionPrompt={action.prompt}
+                onComplete={completeMinigame}
+                onCancel={cancelMinigame}
+              />
+            );
+          }
+          if (kind === 'caliper') {
+            return (
+              <CaliperMinigame
                 actionPrompt={action.prompt}
                 onComplete={completeMinigame}
                 onCancel={cancelMinigame}
