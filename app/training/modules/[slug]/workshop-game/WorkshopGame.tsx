@@ -955,6 +955,16 @@ export function WorkshopGame({
   }, [phase, state.visitorPrompted, state.visitorHandled]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // --- Whenever the round is complete (all phases done) or the game ends, release
+  // pointer lock so the cursor is visible and the user can click Next / Restart.
+  useEffect(() => {
+    if (state.phaseIdx >= round.phases.length || state.finished || state.failedHard) {
+      if (document.pointerLockElement) {
+        (document as unknown as { exitPointerLock?: () => void }).exitPointerLock?.();
+      }
+    }
+  }, [state.phaseIdx, round.phases.length, state.finished, state.failedHard]);
+
   // --- Pickup / place / return
   const pickupItem = (id: ItemId) => {
     if (state.carrying || state.finished || state.failedHard) return;
@@ -1317,7 +1327,7 @@ export function WorkshopGame({
           </div>
         ) : null}
 
-        {pointerLocked && roundComplete && !state.finished && !state.failedHard ? (
+        {roundComplete && !state.finished && !state.failedHard ? (
           <div className="workshop-hud-advance">
             <button type="button" className="button-primary" onClick={advanceRound}>
               {state.roundIdx === ROUNDS.length - 1 ? 'Finish simulation →' : 'Next round →'}
