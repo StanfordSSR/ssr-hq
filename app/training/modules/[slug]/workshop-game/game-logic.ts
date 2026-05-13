@@ -98,12 +98,15 @@ export function getItem(id: ItemId): ItemDef {
 
 export type BuildLocation = 'workstation' | 'bambu' | 'prusa';
 
+export type MinigameKind = 'screws' | 'filament';
+
 export type BuildAction = {
   id: string;
   prompt: string;
   tool?: ItemId;
   durationMs: number;
   at?: BuildLocation; // defaults to 'workstation'
+  minigame?: MinigameKind; // defaults to 'screws'
 };
 
 export type Phase =
@@ -168,7 +171,7 @@ export const ROUNDS: RoundDef[] = [
         kind: 'build',
         label: 'Load and start the print',
         actions: [
-          { id: 'load-start', prompt: 'Load the filament into the Bambu H2D and start the print', tool: 'spool-pla', durationMs: 2200, at: 'bambu' }
+          { id: 'load-start', prompt: 'Load the filament into the Bambu H2D and start the print', tool: 'spool-pla', durationMs: 2200, at: 'bambu', minigame: 'filament' }
         ]
       },
       { kind: 'return', label: 'Return the spool to its shelf' }
