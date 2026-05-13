@@ -8,8 +8,7 @@ import { listModules } from '@/lib/training-content';
 import {
   getCompletionsForEmail,
   getMemberDisplayName,
-  getOptInsForEmail,
-  getRequiredOutstanding
+  getOptInsForEmail
 } from '@/lib/training-modules';
 
 export default async function TrainingMemberHomePage() {
@@ -17,11 +16,6 @@ export default async function TrainingMemberHomePage() {
 
   if (!session) {
     redirect('/training/login');
-  }
-
-  const outstanding = await getRequiredOutstanding(session.email);
-  if (outstanding) {
-    redirect(`/training/modules/${outstanding.slug}`);
   }
 
   const [completions, optIns, displayName] = await Promise.all([
