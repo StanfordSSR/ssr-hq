@@ -5458,3 +5458,67 @@ tr:last-child td {
   font-size: 11px;
   font-weight: 700;
 }
+
+/* Round complete banner */
+
+.workshop-round-complete {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 14, 14, 0.72);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 12;
+  animation: workshopToastIn 220ms ease-out;
+}
+
+.workshop-round-complete-card {
+  background: linear-gradient(180deg, #ffffff 0%, #faf3e9 100%);
+  border: 1px solid #d2c4a2;
+  border-radius: 18px;
+  padding: 36px 44px;
+  text-align: center;
+  max-width: 480px;
+  width: calc(100% - 48px);
+  box-shadow: 0 24px 60px rgba(20, 14, 14, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workshop-round-complete-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8c1515;
+  font-weight: 700;
+}
+
+.workshop-round-complete-title {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.15;
+  color: #1a1410;
+}
+
+.workshop-round-complete-body {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: #4b4243;
+}
+
+.workshop-round-complete-btn {
+  margin-top: 14px;
+  align-self: center;
+  font-size: 16px;
+  padding: 14px 28px;
+  animation: workshopPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes workshopPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 8px 22px rgba(140, 21, 21, 0.35); }
+  50% { transform: scale(1.04); box-shadow: 0 10px 28px rgba(140, 21, 21, 0.55); }
+}

@@ -1440,7 +1440,22 @@ export function WorkshopGame({
       const t = window.setTimeout(() => {
         setState((prev) => {
           if (prev.phaseIdx !== state.phaseIdx) return prev;
-          return { ...prev, phaseIdx: prev.phaseIdx + 1 };
+          const nextIdx = prev.phaseIdx + 1;
+          const nextPhase = round.phases[nextIdx];
+          if (nextPhase) {
+            // Surface the new phase so the player knows what just changed
+            const id = Date.now() + Math.random();
+            const text = `→ ${nextPhase.label}`;
+            window.setTimeout(() => {
+              setState((p) => ({ ...p, toasts: p.toasts.filter((tt) => tt.id !== id) }));
+            }, 3800);
+            return {
+              ...prev,
+              phaseIdx: nextIdx,
+              toasts: [...prev.toasts.slice(-3), { id, text, tone: 'good' }]
+            };
+          }
+          return { ...prev, phaseIdx: nextIdx };
         });
       }, 350);
       return () => window.clearTimeout(t);
@@ -2015,10 +2030,21 @@ export function WorkshopGame({
         ) : null}
 
         {roundComplete && !state.finished && !state.failedHard ? (
-          <div className="workshop-hud-advance">
-            <button type="button" className="button-primary" onClick={advanceRound}>
-              {state.roundIdx === ROUNDS.length - 1 ? 'Finish simulation →' : 'Next round →'}
-            </button>
+          <div className="workshop-round-complete">
+            <div className="workshop-round-complete-card">
+              <p className="workshop-round-complete-eyebrow">Round {state.roundIdx + 1} complete</p>
+              <h2 className="workshop-round-complete-title">
+                Nice work — {Math.round(normalizedScore * 100)}%
+              </h2>
+              <p className="workshop-round-complete-body">
+                {state.roundIdx === ROUNDS.length - 1
+                  ? 'Wrap up the simulation to record your score.'
+                  : 'Ready for the next round?'}
+              </p>
+              <button type="button" className="button-primary workshop-round-complete-btn" onClick={advanceRound} autoFocus>
+                {state.roundIdx === ROUNDS.length - 1 ? 'Finish simulation →' : 'Continue to next round →'}
+              </button>
+            </div>
           </div>
         ) : null}
 
