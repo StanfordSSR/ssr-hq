@@ -1601,6 +1601,54 @@ export function WorkshopGame({
   // --- Keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Number-key shortcuts during visitor dialogue: 1 = decline, 2 = bad option.
+      if (state.visitorMode === 'inside') {
+        if (e.code === 'Digit1' || e.code === 'Numpad1') {
+          e.preventDefault();
+          // Inlined decline logic to avoid TDZ on declineVisitor (declared below).
+          setState((prev) => {
+            if (prev.visitorMode !== 'inside') return prev;
+            const nextTurn = prev.visitorTurn + 1;
+            const playerLine =
+              DECLINE_LABELS[prev.visitorTurn] || DECLINE_LABELS[DECLINE_LABELS.length - 1];
+            if (nextTurn >= VISITOR_LINES.length - 1) {
+              window.setTimeout(() => {
+                setState((p) => {
+                  if (p.visitorMode !== 'inside') return p;
+                  return {
+                    ...p,
+                    visitorMode: 'exiting',
+                    visitorPlayerLine: null,
+                    scoreRaw: p.scoreRaw + POINTS.visitorDeclined
+                  };
+                });
+              }, 2200);
+              return {
+                ...prev,
+                visitorTurn: VISITOR_LINES.length - 1,
+                visitorPlayerLine: playerLine
+              };
+            }
+            return { ...prev, visitorTurn: nextTurn, visitorPlayerLine: playerLine };
+          });
+          return;
+        }
+        if (e.code === 'Digit2' || e.code === 'Numpad2') {
+          e.preventDefault();
+          setState((prev) => ({
+            ...prev,
+            visitorMode: 'idle',
+            visitorHandled: true,
+            visitorPromptedAt: null,
+            visitorPlayerLine: null,
+            scoreRaw: prev.scoreRaw + POINTS.letVisitorIn,
+            failedHard: true
+          }));
+          pushToast('✗ You let an unauthorized visitor stay. That is an immediate fail.', 'bad');
+          return;
+        }
+      }
+
       if (e.code === 'KeyE') {
         e.preventDefault();
         // If the visitor is inside the room and the player is standing near them,
@@ -1870,7 +1918,11 @@ export function WorkshopGame({
               onProximity={setNearZone}
             />
 
-            {!state.finished && !state.failedHard && !state.activeMinigameActionId ? (
+            {!state.finished &&
+            !state.failedHard &&
+            !state.activeMinigameActionId &&
+            state.visitorMode !== 'inside' &&
+            state.phaseIdx < round.phases.length ? (
               <PointerLockControls
                 onLock={() => setPointerLocked(true)}
                 onUnlock={() => setPointerLocked(false)}
