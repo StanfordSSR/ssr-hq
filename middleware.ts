@@ -16,6 +16,13 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
 
+    // Static asset extensions in /public must be served as-is, not rewritten
+    // to /training/<file>. The matcher already excludes most of these but keep
+    // this as a safety net for any new extensions added later.
+    if (/\.(stl|fbx|glb|gltf|bin|hdr|ktx2|woff2?|ttf|otf|mp3|mp4|ogg|wav|webm|svg|png|jpe?g|gif|webp|ico)$/i.test(pathname)) {
+      return NextResponse.next();
+    }
+
     // Don't expose the HQ portal from the training host.
     if (pathname.startsWith('/dashboard') || pathname.startsWith('/login') || pathname.startsWith('/auth')) {
       const url = request.nextUrl.clone();
@@ -62,5 +69,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)']
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|stl|fbx|glb|gltf|bin|hdr|ktx2|woff|woff2|ttf|otf|mp3|mp4|ogg|wav|webm)$).*)'
+  ]
 };
