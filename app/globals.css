@@ -5143,3 +5143,120 @@ tr:last-child td {
   color: #5a4f3a;
   line-height: 1.45;
 }
+
+/* Visitor dialogue */
+
+.workshop-dialogue {
+  max-width: 580px;
+}
+
+.workshop-dialogue-line {
+  background: linear-gradient(180deg, #faf3e9 0%, #f0e7d4 100%);
+  border-radius: 14px;
+  border: 1px solid #d2c4a2;
+  padding: 14px 18px;
+  margin: 10px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.workshop-dialogue-line::before {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 28px;
+  width: 0;
+  height: 0;
+  border: 10px solid transparent;
+  border-top-color: #d2c4a2;
+  border-bottom: 0;
+}
+
+.workshop-dialogue-line::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 30px;
+  width: 0;
+  height: 0;
+  border: 8px solid transparent;
+  border-top-color: #f0e7d4;
+  border-bottom: 0;
+}
+
+.workshop-dialogue-speaker {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8c1515;
+  font-weight: 700;
+}
+
+.workshop-dialogue-text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #1a1410;
+  font-style: italic;
+}
+
+.workshop-dialogue-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.workshop-dialogue-option {
+  background: #ffffff;
+  border: 1px solid #d2c4a2;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #2c2627;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+
+.workshop-dialogue-option:hover {
+  background: #fdf6f6;
+  border-color: #8c1515;
+  transform: translateX(2px);
+}
+
+.workshop-dialogue-marker {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #efe6e6;
+  color: #8c1515;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workshop-dialogue-option-bad {
+  border-style: dashed;
+  color: #4b4243;
+}
+
+.workshop-dialogue-option-bad:hover {
+  background: #fbe9e3;
+  border-color: #b03a1f;
+}
+
+.workshop-dialogue-option-bad .workshop-dialogue-marker {
+  background: #fbe9e3;
+  color: #b03a1f;
+}
