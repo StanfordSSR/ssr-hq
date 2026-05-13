@@ -4435,3 +4435,307 @@ tr:last-child td {
     max-height: none;
   }
 }
+
+/* Workshop game — full-screen FPS layout */
+
+.workshop-shell {
+  margin-top: 18px;
+  width: 100%;
+}
+
+.workshop-stage {
+  position: relative;
+  width: 100%;
+  height: 85vh;
+  min-height: 560px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #e8e2d4;
+  border: 1px solid #d8c9c9;
+  box-shadow: 0 12px 40px rgba(80, 50, 30, 0.18);
+}
+
+.workshop-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.workshop-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(20, 14, 14, 0.55);
+  font-size: 22px;
+  font-weight: 300;
+  pointer-events: none;
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+  z-index: 5;
+}
+
+.workshop-hud-top {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.workshop-hud-round {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #d8c9c9;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #171414;
+  backdrop-filter: blur(6px);
+}
+
+.workshop-hud-score {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #d8c9c9;
+  border-radius: 12px;
+  padding: 10px 14px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  backdrop-filter: blur(6px);
+}
+
+.workshop-hud-score-num {
+  font-size: 16px;
+  font-weight: 700;
+  color: #171414;
+}
+
+.workshop-hud-score-track {
+  position: relative;
+  height: 8px;
+  background: #efe6e6;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.workshop-hud-score-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.workshop-hud-score-thresh {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  background: #14593a;
+}
+
+.workshop-hud-objective {
+  position: absolute;
+  top: 80px;
+  right: 16px;
+  width: 320px;
+  max-width: calc(100% - 32px);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #d8c9c9;
+  border-radius: 14px;
+  padding: 14px 16px;
+  backdrop-filter: blur(8px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.workshop-hud-objective-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8c1515;
+  font-weight: 700;
+}
+
+.workshop-hud-collapse {
+  background: transparent;
+  border: none;
+  color: #6d6161;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0 4px;
+}
+
+.workshop-hud-brief {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #2c2627;
+}
+
+.workshop-hud-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workshop-hud-steps li {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #4b4243;
+  display: flex;
+  gap: 8px;
+}
+
+.workshop-hud-steps li.is-done {
+  color: #0f4429;
+}
+
+.workshop-hud-objective-toggle {
+  position: absolute;
+  top: 80px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #d8c9c9;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #171414;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  font-family: inherit;
+  z-index: 6;
+}
+
+.workshop-hud-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: rgba(20, 14, 14, 0.78);
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.workshop-hud-prompt kbd,
+.workshop-hud-start kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  background: #ffffff;
+  color: #171414;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.workshop-hud-toasts {
+  position: absolute;
+  bottom: 80px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 320px;
+  max-width: calc(100% - 32px);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.workshop-hud-toasts .workshop-toast {
+  backdrop-filter: blur(6px);
+}
+
+.workshop-hud-start {
+  position: absolute;
+  inset: 0;
+  background: rgba(232, 226, 212, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 8;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+}
+
+.workshop-hud-start-card {
+  background: #ffffff;
+  border: 1px solid #d8c9c9;
+  border-radius: 18px;
+  padding: 28px 32px;
+  max-width: 500px;
+  width: calc(100% - 32px);
+  box-shadow: 0 18px 60px rgba(40, 25, 12, 0.18);
+  text-align: center;
+  pointer-events: none;
+}
+
+.workshop-hud-start-card h3 {
+  margin: 6px 0 12px;
+  font-size: 24px;
+  color: #171414;
+}
+
+.workshop-hud-start-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8c1515;
+  font-weight: 700;
+}
+
+.workshop-hud-start-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #4b4243;
+}
+
+.workshop-hud-advance {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  z-index: 7;
+}
+
+@media (max-width: 760px) {
+  .workshop-stage {
+    height: 70vh;
+    min-height: 480px;
+  }
+  .workshop-hud-objective {
+    width: 240px;
+    top: 92px;
+  }
+  .workshop-hud-toasts {
+    width: 240px;
+  }
+}
