@@ -848,47 +848,58 @@ function PrusaPrinter({ highlight, buildActive }: { highlight: boolean; buildAct
 }
 
 function BambuPrinter({ highlight, buildActive }: { highlight: boolean; buildActive: boolean }) {
+  // Body comes from the user-supplied h2d.stl. We keep the procedural AMS box,
+  // touchscreen, label, and floor highlight around it so it still reads as the
+  // workshop's interactable printer station.
+  const rawGeometry = useLoader(STLLoader, '/h2d.stl');
+
+  const { centeredGeometry, fitScale, fitHeight } = useMemo(() => {
+    const g = (rawGeometry as THREE.BufferGeometry).clone();
+    g.computeBoundingBox();
+    g.computeVertexNormals();
+    const box = g.boundingBox!;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    g.translate(-center.x, -center.y, -center.z);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const longest = Math.max(size.x, size.y, size.z) || 1;
+    // Real Bambu H2D is ~0.46m on its longest side, but our procedural one was
+    // 0.9m so we keep it at 0.85m so the player's eyeline still hits it well.
+    const scale = 0.85 / longest;
+    return { centeredGeometry: g, fitScale: scale, fitHeight: size.z * scale };
+  }, [rawGeometry]);
+
+  // STLs from CAD are typically Z-up. Rotate -π/2 around X to bring them to
+  // Y-up so the printer sits upright on the table. If yours imports rotated
+  // wrong, tweak this rotation.
+  const stlRotation: [number, number, number] = [-Math.PI / 2, 0, 0];
+
   return (
     <group position={BAMBU_POS}>
-      {/* Main enclosure — dark grey with green accents */}
-      <mesh position={[0, 0.45, 0]} castShadow>
-        <boxGeometry args={[0.78, 0.9, 0.78]} />
-        <meshStandardMaterial color="#262626" roughness={0.35} metalness={0.25} />
-        <Edges color="#0a0a0a" />
+      <group position={[0, fitHeight / 2 + 0.04, 0]}>
+        <group scale={fitScale} rotation={stlRotation}>
+          <mesh geometry={centeredGeometry} castShadow>
+            <meshStandardMaterial color="#1f2326" metalness={0.55} roughness={0.42} />
+          </mesh>
+        </group>
+      </group>
+      {/* Green Bambu accent stripe across the front, sized to the model */}
+      <mesh position={[0, fitHeight - 0.06, 0.39]}>
+        <boxGeometry args={[0.5, 0.04, 0.005]} />
+        <meshStandardMaterial color="#1f8a4a" emissive="#1f8a4a" emissiveIntensity={0.4} />
       </mesh>
-      {/* Green logo strip */}
-      <mesh position={[0, 0.85, 0.391]}>
-        <boxGeometry args={[0.6, 0.06, 0.005]} />
-        <meshStandardMaterial color="#1f8a4a" emissive="#1f8a4a" emissiveIntensity={0.3} />
-      </mesh>
-      {/* Front panel — glass */}
-      <mesh position={[0, 0.45, 0.391]}>
-        <boxGeometry args={[0.66, 0.66, 0.005]} />
-        <meshStandardMaterial color="#101020" transparent opacity={0.55} roughness={0.05} metalness={0.4} />
-      </mesh>
-      {/* Internal build plate */}
-      <mesh position={[0, 0.15, 0]}>
-        <boxGeometry args={[0.55, 0.04, 0.55]} />
-        <meshStandardMaterial color="#c6c6c6" metalness={0.4} roughness={0.5} />
-      </mesh>
-      {/* Top with handle */}
-      <mesh position={[0, 0.92, 0]}>
-        <boxGeometry args={[0.4, 0.04, 0.08]} />
-        <meshStandardMaterial color="#444" metalness={0.5} />
-      </mesh>
-      {/* AMS unit on the side */}
+      {/* AMS unit on the side — kept from the procedural model */}
       <group position={[-0.55, 0.35, 0]}>
         <mesh castShadow>
           <boxGeometry args={[0.3, 0.4, 0.4]} />
           <meshStandardMaterial color="#3a3a3a" roughness={0.4} />
           <Edges color="#0a0a0a" />
         </mesh>
-        {/* AMS lid stripe */}
         <mesh position={[0, 0.21, 0]}>
           <boxGeometry args={[0.3, 0.02, 0.4]} />
           <meshStandardMaterial color="#1f8a4a" emissive="#1f8a4a" emissiveIntensity={0.4} />
         </mesh>
-        {/* Spool slots */}
         {[-0.13, 0, 0.13].map((dz, i) => (
           <mesh key={i} position={[0.16, 0, dz]} rotation={[0, 0, Math.PI / 2]}>
             <cylinderGeometry args={[0.1, 0.1, 0.04, 18]} />
@@ -897,7 +908,7 @@ function BambuPrinter({ highlight, buildActive }: { highlight: boolean; buildAct
         ))}
       </group>
       {/* Front touchscreen */}
-      <mesh position={[0.18, 0.18, 0.392]}>
+      <mesh position={[0.18, 0.2, 0.392]}>
         <boxGeometry args={[0.16, 0.09, 0.005]} />
         <meshStandardMaterial color="#1f8a4a" emissive="#1f8a4a" emissiveIntensity={0.6} />
       </mesh>
@@ -907,7 +918,7 @@ function BambuPrinter({ highlight, buildActive }: { highlight: boolean; buildAct
           <meshBasicMaterial color={buildActive ? '#7ad27a' : '#ffd34a'} transparent opacity={0.7} side={THREE.DoubleSide} />
         </mesh>
       ) : null}
-      <Text position={[0, 1.05, 0]} fontSize={0.11} color="#3a2f24" anchorX="center" anchorY="middle">
+      <Text position={[0, fitHeight + 0.18, 0]} fontSize={0.11} color="#3a2f24" anchorX="center" anchorY="middle">
         Bambu H2D
       </Text>
     </group>
