@@ -2071,37 +2071,95 @@ export function WorkshopGame({
           <color attach="background" args={['#e8e2d4']} />
           <fog attach="fog" args={['#f1ebde', 14, 28]} />
           <Lighting />
+
+          {/* Synchronous scene — always renders, never blocks on assets */}
+          <Room />
+          {(Object.keys(SHELF_LAYOUT) as Shelf[]).map((s) => (
+            <ShelfFurniture key={s} shelfId={s} highlight={hover?.kind === 'shelf' && hover.shelfId === s} />
+          ))}
+          {(Object.keys(SHELF_LAYOUT) as Shelf[])
+            .filter((s) => s === 'hand-tools' || s === 'electronics' || s === 'screws')
+            .map((s) => (
+              <ShelfBins key={`bins-${s}`} shelfId={s} />
+            ))}
+          <Workbench
+            highlight={
+              hover?.kind === 'bench' ||
+              (phase?.kind === 'build' && (nextBuildAction?.at || 'workstation') === 'workstation')
+            }
+            buildActive={Boolean(state.buildInProgress) && (nextBuildAction?.at || 'workstation') === 'workstation'}
+          />
+          <PrinterTable />
+          <PrusaPrinter
+            highlight={phase?.kind === 'build' && nextBuildAction?.at === 'prusa'}
+            buildActive={Boolean(state.buildInProgress) && state.buildInProgress?.tool != null && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'prusa')}
+          />
+          <Door
+            openAmount={state.visitorMode === 'entering' || state.visitorMode === 'exiting' ? 1 : 0}
+            knocking={false}
+          />
+          <BuildToolAnimation
+            buildInProgress={state.buildInProgress}
+            location={
+              phase?.kind === 'build' && state.buildInProgress
+                ? (phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at || 'workstation')
+                : 'workstation'
+            }
+          />
+          {worldItems.map((w) => (
+            <ItemInWorld
+              key={`${w.id}-${w.position.x.toFixed(2)}-${w.position.z.toFixed(2)}`}
+              item={w}
+              hovered={hover?.kind === 'item' && hover.itemId === w.id}
+            />
+          ))}
+          {state.carrying ? <CarriedItem itemId={state.carrying} /> : null}
+
+          {/* Always-on player + look controls so the user can start the game
+              even while heavy assets are still loading. */}
+          <Player
+            enabled={pointerLocked && !state.finished && !state.failedHard && !state.activeMinigameActionId}
+            onPositionChange={(pos) => {
+              playerPosRef.current.copy(pos);
+              const dx = pos.x - (DOOR_CFG.position[0] - 1.8);
+              const dz = pos.z - DOOR_CFG.position[2];
+              const dist = Math.sqrt(dx * dx + dz * dz);
+              const near = dist < 2.4;
+              setPlayerNearVisitor((prev) => (prev === near ? prev : near));
+            }}
+          />
+          <HoverDetector
+            worldItems={worldItems}
+            carrying={state.carrying}
+            onHover={setHover}
+            onProximity={setNearZone}
+          />
+          {!state.finished &&
+          !state.failedHard &&
+          !state.activeMinigameActionId &&
+          state.visitorMode !== 'inside' &&
+          state.phaseIdx < round.phases.length ? (
+            <PointerLockControls
+              onLock={() => setPointerLocked(true)}
+              onUnlock={() => setPointerLocked(false)}
+            />
+          ) : null}
+
+          {/* Asset-loading components — each in its own Suspense so they don't
+              block siblings or the player controls while they download. */}
           <Suspense fallback={null}>
             <Environment preset="warehouse" background={false} environmentIntensity={0.55} />
-            <Room />
-            {(Object.keys(SHELF_LAYOUT) as Shelf[]).map((s) => (
-              <ShelfFurniture key={s} shelfId={s} highlight={hover?.kind === 'shelf' && hover.shelfId === s} />
-            ))}
-            {(Object.keys(SHELF_LAYOUT) as Shelf[])
-              .filter((s) => s === 'hand-tools' || s === 'electronics' || s === 'screws')
-              .map((s) => (
-                <ShelfBins key={`bins-${s}`} shelfId={s} />
-              ))}
-            <Workbench
-              highlight={
-                hover?.kind === 'bench' ||
-                (phase?.kind === 'build' && (nextBuildAction?.at || 'workstation') === 'workstation')
-              }
-              buildActive={Boolean(state.buildInProgress) && (nextBuildAction?.at || 'workstation') === 'workstation'}
-            />
-            <PrinterTable />
-            <PrusaPrinter
-              highlight={phase?.kind === 'build' && nextBuildAction?.at === 'prusa'}
-              buildActive={Boolean(state.buildInProgress) && state.buildInProgress?.tool != null && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'prusa')}
-            />
+          </Suspense>
+          <Suspense fallback={null}>
+            <DroneSTL />
+          </Suspense>
+          <Suspense fallback={null}>
             <BambuPrinter
               highlight={phase?.kind === 'build' && nextBuildAction?.at === 'bambu'}
               buildActive={Boolean(state.buildInProgress) && (phase?.kind === 'build' && phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at === 'bambu')}
             />
-            <Door
-              openAmount={state.visitorMode === 'entering' || state.visitorMode === 'exiting' ? 1 : 0}
-              knocking={false}
-            />
+          </Suspense>
+          <Suspense fallback={null}>
             <Visitor
               mode={state.visitorMode}
               playerPosRef={playerPosRef}
@@ -2109,53 +2167,6 @@ export function WorkshopGame({
               onPushedOut={visitorPushedOut}
               onExited={visitorExited}
             />
-            <BuildToolAnimation
-              buildInProgress={state.buildInProgress}
-              location={
-                phase?.kind === 'build' && state.buildInProgress
-                  ? (phase.actions.find((a) => a.id === state.buildInProgress?.actionId)?.at || 'workstation')
-                  : 'workstation'
-              }
-            />
-
-            {worldItems.map((w) => (
-              <ItemInWorld
-                key={`${w.id}-${w.position.x.toFixed(2)}-${w.position.z.toFixed(2)}`}
-                item={w}
-                hovered={hover?.kind === 'item' && hover.itemId === w.id}
-              />
-            ))}
-
-            {state.carrying ? <CarriedItem itemId={state.carrying} /> : null}
-
-            <Player
-              enabled={pointerLocked && !state.finished && !state.failedHard && !state.activeMinigameActionId}
-              onPositionChange={(pos) => {
-                playerPosRef.current.copy(pos);
-                const dx = pos.x - (DOOR_CFG.position[0] - 1.8);
-                const dz = pos.z - DOOR_CFG.position[2];
-                const dist = Math.sqrt(dx * dx + dz * dz);
-                const near = dist < 2.4;
-                setPlayerNearVisitor((prev) => (prev === near ? prev : near));
-              }}
-            />
-            <HoverDetector
-              worldItems={worldItems}
-              carrying={state.carrying}
-              onHover={setHover}
-              onProximity={setNearZone}
-            />
-
-            {!state.finished &&
-            !state.failedHard &&
-            !state.activeMinigameActionId &&
-            state.visitorMode !== 'inside' &&
-            state.phaseIdx < round.phases.length ? (
-              <PointerLockControls
-                onLock={() => setPointerLocked(true)}
-                onUnlock={() => setPointerLocked(false)}
-              />
-            ) : null}
           </Suspense>
         </Canvas>
 
