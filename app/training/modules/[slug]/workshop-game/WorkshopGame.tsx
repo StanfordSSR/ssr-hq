@@ -594,7 +594,7 @@ function DroneSTL() {
   }, [geometry]);
 
   return (
-    <group position={[5.5, 1.36, -2.7]} rotation={[-Math.PI / 2, 0, 0]} scale={fitScale}>
+    <group position={[5.5, 1.36, -2.7]} rotation={[0, 0, 0]} scale={fitScale}>
       <mesh geometry={centeredGeometry} castShadow>
         <meshStandardMaterial color="#2a2a2a" metalness={0.45} roughness={0.45} />
       </mesh>
@@ -1061,53 +1061,97 @@ function Door({ openAmount, knocking }: { openAmount: number; knocking: boolean 
 // triggers, walks from off-screen toward the door, knocks twice, and stays put
 // until the player decides.
 
-// ---- Rigged Mixamo-style FBX character used as the visitor --------------------------------
+// ---- Auto-orient player toward visitor on entering ---------------------------------------
 
-function VisitorRig({ mode, beingPushed }: { mode: 'idle' | 'entering' | 'inside' | 'exiting'; beingPushed: boolean }) {
-  const idleFBX = useFBX('/standing-idle.fbx');
-  const walkFBX = useFBX('/walking.fbx');
-  const backFBX = useFBX('/walking-back.fbx');
-
-  // Clone each FBX scene so the three mounted instances have independent
-  // skeletons and animation mixers.
-  const idleScene = useMemo(() => SkeletonUtils.clone(idleFBX), [idleFBX]);
-  const walkScene = useMemo(() => SkeletonUtils.clone(walkFBX), [walkFBX]);
-  const backScene = useMemo(() => SkeletonUtils.clone(backFBX), [backFBX]);
-
-  const idleMixer = useMemo(() => new THREE.AnimationMixer(idleScene), [idleScene]);
-  const walkMixer = useMemo(() => new THREE.AnimationMixer(walkScene), [walkScene]);
-  const backMixer = useMemo(() => new THREE.AnimationMixer(backScene), [backScene]);
+function CameraOrient({ active }: { active: boolean }) {
+  const { camera } = useThree();
+  const targetRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const ai = idleFBX.animations[0];
-    const aw = walkFBX.animations[0];
-    const ab = backFBX.animations[0];
-    if (ai) idleMixer.clipAction(ai).play();
-    if (aw) walkMixer.clipAction(aw).play();
-    if (ab) backMixer.clipAction(ab).play();
+    if (active) {
+      const targetX = DOOR_CFG.position[0] - 1.8;
+      const targetZ = DOOR_CFG.position[2];
+      const dx = targetX - camera.position.x;
+      const dz = targetZ - camera.position.z;
+      targetRef.current = Math.atan2(dx, dz);
+    } else {
+      targetRef.current = null;
+    }
+  }, [active, camera]);
+
+  /* eslint-disable react-hooks/immutability */
+  useFrame((_, delta) => {
+    if (targetRef.current === null) return;
+    const target = targetRef.current;
+    const current = camera.rotation.y;
+    let diff = target - current;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    if (Math.abs(diff) < 0.01) {
+      targetRef.current = null;
+      return;
+    }
+    const step = Math.sign(diff) * Math.min(Math.abs(diff), delta * 2.6);
+    camera.rotation.y = current + step;
+    camera.rotation.x *= 0.85; // also flatten any pitch toward horizontal
+  });
+  /* eslint-enable react-hooks/immutability */
+
+  return null;
+}
+
+// ---- Rigged Mixamo-style FBX character used as the visitor --------------------------------
+
+// One lazily-loaded animation. Mounted only when its clip is the active one,
+// so each FBX is only downloaded the first time it's actually needed.
+// Animation updates throttled to ~30fps to save CPU.
+function VisitorAnim({ url }: { url: string }) {
+  const fbx = useFBX(url);
+  const scene = useMemo(() => SkeletonUtils.clone(fbx), [fbx]);
+  const mixer = useMemo(() => new THREE.AnimationMixer(scene), [scene]);
+  const accum = useRef(0);
+
+  useEffect(() => {
+    const clip = fbx.animations[0];
+    if (clip) mixer.clipAction(clip).play();
     return () => {
-      idleMixer.stopAllAction();
-      walkMixer.stopAllAction();
-      backMixer.stopAllAction();
+      mixer.stopAllAction();
     };
-  }, [idleFBX, walkFBX, backFBX, idleMixer, walkMixer, backMixer]);
+  }, [fbx, mixer]);
 
   useFrame((_, delta) => {
-    idleMixer.update(delta);
-    walkMixer.update(delta);
-    backMixer.update(delta);
+    accum.current += delta;
+    if (accum.current >= 1 / 30) {
+      mixer.update(accum.current);
+      accum.current = 0;
+    }
   });
 
+  return <primitive object={scene} />;
+}
+
+function VisitorRig({ mode, beingPushed }: { mode: 'idle' | 'entering' | 'inside' | 'exiting'; beingPushed: boolean }) {
   const showWalk = mode === 'entering' || mode === 'exiting';
   const showBack = mode === 'inside' && beingPushed;
   const showIdle = mode === 'inside' && !beingPushed;
-
   // Mixamo characters export in cm — scale 0.011 reads ~1.8m tall.
   return (
     <group scale={0.011}>
-      <primitive object={idleScene} visible={showIdle} />
-      <primitive object={walkScene} visible={showWalk} />
-      <primitive object={backScene} visible={showBack} />
+      {showIdle ? (
+        <Suspense fallback={null}>
+          <VisitorAnim url="/standing-idle.fbx" />
+        </Suspense>
+      ) : null}
+      {showWalk ? (
+        <Suspense fallback={null}>
+          <VisitorAnim url="/walking.fbx" />
+        </Suspense>
+      ) : null}
+      {showBack ? (
+        <Suspense fallback={null}>
+          <VisitorAnim url="/walking-back.fbx" />
+        </Suspense>
+      ) : null}
     </group>
   );
 }
@@ -1193,10 +1237,16 @@ function Visitor({
       if (inZBand && dxToPlayer > 0 && dxToPlayer < 0.55) {
         const pushSpeed = (0.55 - dxToPlayer) * 3.6;
         nextX = curX + pushSpeed * delta;
-        facing = Math.PI / 2 + 0.3;
         pushing = true;
+      }
+      // Face the player whenever they're around (continuously turning toward
+      // wherever the camera is).
+      const fdx = px - nextX;
+      const fdz = pz - z;
+      if (Math.abs(fdx) > 0.001 || Math.abs(fdz) > 0.001) {
+        facing = Math.atan2(fdx, fdz);
       } else {
-        facing = Math.PI / 2;
+        facing = -Math.PI / 2; // default: facing into the room
       }
       if (pushing !== beingPushed) setBeingPushed(pushing);
       internalXRef.current = nextX;
@@ -2134,6 +2184,7 @@ export function WorkshopGame({
             onHover={setHover}
             onProximity={setNearZone}
           />
+          <CameraOrient active={state.visitorMode === 'entering'} />
           {!state.finished &&
           !state.failedHard &&
           !state.activeMinigameActionId &&
