@@ -16,6 +16,7 @@ import {
   type Shelf
 } from './game-logic';
 import { PartMesh } from './parts';
+import { BuildMinigame } from './BuildMinigame';
 
 type Toast = { id: number; text: string; tone: 'good' | 'bad' };
 
@@ -34,6 +35,7 @@ type GameState = {
   carrying: ItemId | null;
   buildActionsDone: Record<string, boolean>;
   buildInProgress: BuildInProgress | null;
+  activeMinigameActionId: string | null;
   visitorPrompted: boolean;
   visitorHandled: boolean;
   toasts: Toast[];
@@ -49,6 +51,7 @@ const initialState: GameState = {
   carrying: null,
   buildActionsDone: {},
   buildInProgress: null,
+  activeMinigameActionId: null,
   visitorPrompted: false,
   visitorHandled: false,
   toasts: [],
@@ -1003,29 +1006,47 @@ export function WorkshopGame({
   })();
 
   const startBuildAction = (action: BuildAction) => {
-    if (state.buildInProgress) return;
+    if (state.activeMinigameActionId || state.buildInProgress) return;
+    // Release pointer lock so the player can interact with the minigame overlay.
+    if (document.pointerLockElement) {
+      (document as unknown as { exitPointerLock?: () => void }).exitPointerLock?.();
+    }
+    setState((prev) => ({ ...prev, activeMinigameActionId: action.id }));
+    pushToast(`… ${action.prompt}`, 'good');
+  };
+
+  const completeMinigame = () => {
+    const actionId = state.activeMinigameActionId;
+    if (!actionId) return;
+    const action = phase?.kind === 'build' ? phase.actions.find((a) => a.id === actionId) : null;
     setState((prev) => ({
       ...prev,
-      buildInProgress: {
-        actionId: action.id,
-        startedAt: Date.now(),
-        durationMs: action.durationMs,
-        tool: action.tool
-      }
+      activeMinigameActionId: null,
+      buildActionsDone: { ...prev.buildActionsDone, [actionId]: true },
+      scoreRaw: prev.scoreRaw + POINTS.buildAction,
+      // Trigger the workstation spin animation briefly so the room reacts.
+      buildInProgress: action
+        ? {
+            actionId: action.id,
+            startedAt: Date.now(),
+            durationMs: 900,
+            tool: action.tool
+          }
+        : prev.buildInProgress
     }));
-    pushToast(`… ${action.prompt}`, 'good');
-    window.setTimeout(() => {
-      setState((prev) => {
-        if (!prev.buildInProgress || prev.buildInProgress.actionId !== action.id) return prev;
-        return {
-          ...prev,
-          buildInProgress: null,
-          buildActionsDone: { ...prev.buildActionsDone, [action.id]: true },
-          scoreRaw: prev.scoreRaw + POINTS.buildAction
-        };
-      });
+    if (action) {
       pushToast(`✓ ${action.prompt}`, 'good');
-    }, action.durationMs);
+      window.setTimeout(() => {
+        setState((prev) => ({
+          ...prev,
+          buildInProgress: prev.buildInProgress?.actionId === action.id ? null : prev.buildInProgress
+        }));
+      }, 900);
+    }
+  };
+
+  const cancelMinigame = () => {
+    setState((prev) => ({ ...prev, activeMinigameActionId: null }));
   };
 
   // --- Keyboard
@@ -1196,7 +1217,7 @@ export function WorkshopGame({
 
             {state.carrying ? <CarriedItem itemId={state.carrying} /> : null}
 
-            <Player enabled={pointerLocked && !state.visitorPrompted && !state.finished && !state.failedHard} />
+            <Player enabled={pointerLocked && !state.visitorPrompted && !state.finished && !state.failedHard && !state.activeMinigameActionId} />
             <HoverDetector
               worldItems={worldItems}
               carrying={state.carrying}
@@ -1204,7 +1225,7 @@ export function WorkshopGame({
               onProximity={setNearZone}
             />
 
-            {!state.visitorPrompted && !state.finished && !state.failedHard ? (
+            {!state.visitorPrompted && !state.finished && !state.failedHard && !state.activeMinigameActionId ? (
               <PointerLockControls
                 onLock={() => setPointerLocked(true)}
                 onUnlock={() => setPointerLocked(false)}
@@ -1338,6 +1359,19 @@ export function WorkshopGame({
             </div>
           </div>
         ) : null}
+
+        {state.activeMinigameActionId ? (() => {
+          const action =
+            phase?.kind === 'build' ? phase.actions.find((a) => a.id === state.activeMinigameActionId) : null;
+          if (!action) return null;
+          return (
+            <BuildMinigame
+              actionPrompt={action.prompt}
+              onComplete={completeMinigame}
+              onCancel={cancelMinigame}
+            />
+          );
+        })() : null}
 
         {state.visitorPrompted ? (
           <div className="workshop-modal-backdrop">
