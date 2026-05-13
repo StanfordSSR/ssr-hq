@@ -55,7 +55,7 @@ const initiation: TrainingModule = {
   subtitle:
     'A short, required orientation covering what SSR is, how it works, and how every member is expected to operate.',
   required: true,
-  estimatedMinutes: 18,
+  estimatedMinutes: 13,
   passingScore: 1.0,
   chapters: [
     {
@@ -67,7 +67,7 @@ const initiation: TrainingModule = {
         'You are now part of an organization built to design, build, and operate real robotic systems — and to train the engineers behind them.',
       accent: '#8c1515',
       illustration: 'circuit',
-      minSeconds: 60,
+      minSeconds: 45,
       blocks: [
         {
           type: 'paragraph',
@@ -178,7 +178,7 @@ const initiation: TrainingModule = {
         'Two layers run SSR: the Executive Board, which governs the organization, and Teams, which build the projects.',
       accent: '#5b3a8a',
       illustration: 'gear',
-      minSeconds: 110,
+      minSeconds: 80,
       blocks: [
         {
           type: 'heading',
@@ -207,9 +207,9 @@ const initiation: TrainingModule = {
         {
           type: 'stat-row',
           stats: [
-            { value: '15%', label: 'Major Team threshold', sub: 'Of total members or budget — triggers mandatory Board rep' },
             { value: '1–2', label: 'Team Leads per Team', sub: 'Per §5.4.1' },
-            { value: '7%', label: 'Annual incubation reserve', sub: 'For new Teams (§5.2.1)' }
+            { value: 'Quarterly', label: 'Team progress reports', sub: 'Submitted to the Board' },
+            { value: 'stanfordssr.org', label: 'Current teams', sub: 'Public roster of active SSR teams' }
           ]
         },
         {
@@ -254,32 +254,17 @@ const initiation: TrainingModule = {
             '§3.1.3 names: Two Co-Presidents, Vice President, Financial Officer, Strategy Director, Outreach Lead, Secretary/Communications Officer, and Advisory Officer(s). "Treasurer" and "Chief of Staff" are not constitutional roles.'
         },
         {
-          prompt:
-            'A Team accounts for 18% of SSR’s overall annual budget but has no officer on the Executive Board. Per §3.7, what is required?',
+          prompt: 'Where can you find the current list of active SSR teams?',
           kind: 'single',
           options: [
-            'Nothing — only Teams above 25% of budget need representation',
-            'The Team must immediately appoint one of its members as a Co-President',
-            'The Board must initiate an audit and internal review of the Team within the first quarter of the new term',
-            'The Team is automatically dissolved'
-          ],
-          correctIndices: [2],
-          explanation:
-            '§3.7.1–§3.7.3: Teams exceeding 15% of members or budget must be represented on the Board. Failure triggers a Board audit and internal review within the first quarter of the new term.'
-        },
-        {
-          prompt:
-            'The Co-Presidents take an urgent action to protect compliance with a University deadline without first convening a Board vote. Per §4.2.2, what must they do?',
-          kind: 'single',
-          options: [
-            'Nothing — emergency action requires no follow-up',
-            'Notify the Board immediately and orally report the action at the next meeting for ratification',
-            'Hold a general membership referendum within seven days',
-            'Resign from their positions and trigger a special election'
+            'Only by attending a Board meeting in person',
+            'On the public site at stanfordssr.org',
+            'In a Slack channel restricted to the Executive Board',
+            'Posted to a Stanford-internal mailing list'
           ],
           correctIndices: [1],
           explanation:
-            '§4.2.2 allows the Co-Presidents to act in urgent matters, but they must notify the Board immediately and orally report the action at the next Board meeting for ratification.'
+            'The active teams roster lives on the public site at stanfordssr.org. Finding a Team whose project excites you is the most important step after this training.'
         },
         {
           prompt: 'Which of these are responsibilities of the Financial Officer? (Select all that apply.)',
@@ -306,7 +291,7 @@ const initiation: TrainingModule = {
         'SSR runs on shared trust. Every member is expected to treat people, tools, and space with the same care they would expect in return.',
       accent: '#0e6b4e',
       illustration: 'shield',
-      minSeconds: 120,
+      minSeconds: 90,
       blocks: [
         {
           type: 'heading',
@@ -437,7 +422,7 @@ const initiation: TrainingModule = {
         'Every dollar SSR spends is tracked. Even if you never touch the club credit card, you are expected to understand how the money moves.',
       accent: '#b06012',
       illustration: 'ledger',
-      minSeconds: 130,
+      minSeconds: 95,
       blocks: [
         {
           type: 'paragraph',
@@ -564,17 +549,17 @@ const initiation: TrainingModule = {
         },
         {
           prompt:
-            'A newly-recognized Team (under one year old) wants direct SSR credit-card access for its Lead. Under §5.5.2 / §5.5.3, what is the default position of the Board?',
+            'You paid out of pocket for a $30 part your Team needed urgently. What is the correct next step?',
           kind: 'single',
           options: [
-            'Approve card access automatically with the Team’s formation',
-            'Restrict the new Team to reimbursement-only purchases at the Board’s discretion until a track record is built',
-            'Grant card access only to the Strategy Director, not the Team Lead',
-            'Hold a general membership vote on whether to issue a card'
+            'Keep the part and absorb the cost personally — SSR cannot reimburse you',
+            'Submit the receipt to your Team Lead for reimbursement and so it can be logged in the ledger',
+            'Post a photo of the receipt on the SSR Instagram for transparency',
+            'Email all the Co-Presidents directly for personal approval before keeping the receipt'
           ],
           correctIndices: [1],
           explanation:
-            '§5.5.3 allows the Board to restrict Teams less than one year old, or those with Leads serving fewer than two full quarters, to reimbursement-only. §5.5.2 reserves direct card access for approved Leads with demonstrated responsibility.'
+            'Members who purchase out-of-pocket submit the receipt to their Team Lead for reimbursement (§5.5.2). The Team Lead then logs the expense in the shared ledger within the §5.5.1 timeline.'
         }
       ]
     },
@@ -587,7 +572,7 @@ const initiation: TrainingModule = {
         'When you wear an SSR shirt, post about a project, or stand at a sponsor demo, you are the club to whoever is watching. Treat it that way.',
       accent: '#1f5fa6',
       illustration: 'broadcast',
-      minSeconds: 100,
+      minSeconds: 75,
       blocks: [
         {
           type: 'heading',
@@ -707,7 +692,7 @@ const initiation: TrainingModule = {
         'SSR depends on the trust of the University, sponsors, and a broad membership. Institutional neutralism is how we keep that trust intact.',
       accent: '#444444',
       illustration: 'compass',
-      minSeconds: 100,
+      minSeconds: 70,
       blocks: [
         {
           type: 'paragraph',
@@ -769,17 +754,17 @@ const initiation: TrainingModule = {
         },
         {
           prompt:
-            'Which of the following are consistent with §4.6.3’s conflict-of-interest expectations and the spirit of institutional neutralism? (Select all that apply.)',
+            'Which of the following are consistent with SSR’s conflict-of-interest principle and the spirit of institutional neutralism? (Select all that apply.)',
           kind: 'multi',
           options: [
-            'An officer with a personal stake in an outside organization disclosing it and recusing from related votes',
-            'A member quietly steering an SSR sponsor relationship toward their personal startup',
-            'A Team Lead refusing to use SSR-branded materials at an unrelated personal political rally',
-            'An officer voting on a contract with a company they secretly co-founded'
+            'Being transparent about a personal stake in an outside organization before taking related action on SSR’s behalf',
+            'Quietly steering an SSR sponsor relationship toward your personal startup',
+            'Refusing to use SSR-branded materials at an unrelated personal political rally',
+            'Using SSR resources or relationships to advance an outside cause without telling anyone'
           ],
           correctIndices: [0, 2],
           explanation:
-            '§4.6.3 requires disclosure and recusal for conflicts. Routing SSR resources to personal ventures and voting on undisclosed conflicts violate both the letter and spirit of the rule.'
+            'The principle is simple: be transparent about conflicts and do not quietly route SSR resources or relationships toward personal agendas or outside causes.'
         },
         {
           prompt:
