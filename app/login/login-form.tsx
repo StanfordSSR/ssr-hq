@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase-browser';
 
 export function LoginForm() {
+  const [mode, setMode] = useState<'password' | 'magic_link'>('password');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +33,22 @@ export function LoginForm() {
 
     const supabase = createClient();
 
+    if (mode === 'password') {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      window.location.assign('/dashboard');
+      return;
+    }
+
     // Important: point to the site root, not /auth/callback
     // The email template will append /auth/confirm with token_hash.
     const redirectTo = window.location.origin;
@@ -54,6 +72,31 @@ export function LoginForm() {
 
   return (
     <form className="form-stack" onSubmit={handleLogin}>
+      <div className="hq-tab-row">
+        <button
+          className={`hq-tab-button${mode === 'password' ? ' hq-tab-button-active' : ''}`}
+          type="button"
+          onClick={() => {
+            setMode('password');
+            setMessage(null);
+            setError(null);
+          }}
+        >
+          Password
+        </button>
+        <button
+          className={`hq-tab-button${mode === 'magic_link' ? ' hq-tab-button-active' : ''}`}
+          type="button"
+          onClick={() => {
+            setMode('magic_link');
+            setMessage(null);
+            setError(null);
+          }}
+        >
+          Magic link
+        </button>
+      </div>
+
       <div className="field">
         <label className="label" htmlFor="email">
           Stanford email or approved team lead email
@@ -69,10 +112,28 @@ export function LoginForm() {
         />
       </div>
 
+      {mode === 'password' ? (
+        <div className="field">
+          <label className="label" htmlFor="password">
+            Password
+          </label>
+          <input
+            className="input"
+            id="password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Enter your password"
+            required
+          />
+        </div>
+      ) : null}
+
       <button className="button" type="submit" disabled={loading}>
-        {loading ? 'Sending link...' : 'Send magic link'}
+        {loading ? mode === 'password' ? 'Signing in...' : 'Sending link...' : mode === 'password' ? 'Sign in with password' : 'Send magic link'}
       </button>
 
+      {mode === 'password' ? <p className="helper">Magic-link login still works if you prefer not to use a password.</p> : null}
       {message ? <p className="helper">{message}</p> : null}
       {error ? <p className="helper" style={{ color: '#8c1515' }}>{error}</p> : null}
     </form>

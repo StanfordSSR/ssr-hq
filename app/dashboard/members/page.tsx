@@ -71,6 +71,7 @@ type AdminMemberRow = {
   sortGroup: number;
   sortName: string;
   sortJoined: number;
+  canManagePassword?: boolean;
 };
 
 function formatLastSeen(value: string) {
@@ -176,6 +177,7 @@ export default async function ManageMembersPage() {
       teams: (teamNamesByUser.get(profile.id) || []).join(', ') || 'None',
       accessLabel: loginMap.get(profile.id) ? 'Active' : 'Inactive',
       accessDetail: loginMap.get(profile.id) ? `Last login ${formatLastSeen(loginMap.get(profile.id)!)}` : 'Invite not accepted yet',
+      canManagePassword: isAdmin && Boolean(profile.email),
       canDeletePortal:
         isAdmin &&
         !profileHasAdminRole(profile) &&
@@ -197,6 +199,7 @@ export default async function ManageMembersPage() {
       teams: teamMap.get(member.team_id) || 'Unknown team',
       accessLabel: '',
       accessDetail: '',
+      canManagePassword: false,
       canDeletePortal: false,
       sortGroup: 4,
       sortName: member.full_name,

@@ -895,7 +895,12 @@ export async function logPurchaseAction(formData: FormData) {
         throw new Error('Amount must be greater than zero.');
       }
 
-      const { user } = await requireLeadTeam(teamId);
+      const { user, currentRole } = await requireActiveProfile();
+
+      if (currentRole !== 'admin' && currentRole !== 'financial_officer') {
+        await requireLeadTeam(teamId);
+      }
+
       const purchaseId = crypto.randomUUID();
       let receiptPath: string | null = null;
       let receiptFileName: string | null = null;
@@ -3114,6 +3119,79 @@ export async function deletePortalLeadAction(formData: FormData) {
     successMessage: 'Removed the lead from the portal.',
     action: async () => {
       await deletePortalLeadCore(formData);
+    }
+  });
+}
+
+async function setPortalUserPasswordCore(formData: FormData) {
+  const { user } = await requireAdmin();
+  const profileId = String(formData.get('profile_id') || '').trim();
+  const password = String(formData.get('password') || '');
+  const passwordConfirm = String(formData.get('password_confirm') || '');
+
+  if (!profileId) {
+    throw new Error('Missing portal user id.');
+  }
+
+  if (password.length < 8) {
+    throw new Error('Passwords must be at least 8 characters.');
+  }
+
+  if (password !== passwordConfirm) {
+    throw new Error('Passwords must match exactly.');
+  }
+
+  const admin = createAdminClient();
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id, full_name, email, active')
+    .eq('id', profileId)
+    .maybeSingle();
+
+  if (!profile || !profile.active) {
+    throw new Error('Portal user not found.');
+  }
+
+  if (!profile.email) {
+    throw new Error('That user does not have a portal email on file.');
+  }
+
+  const { error: updateError } = await admin.auth.admin.updateUserById(profileId, {
+    password
+  });
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.password_set',
+    targetType: 'profile',
+    targetId: profileId,
+    summary: `Set a new portal password for ${profile.full_name || profile.email}.`,
+    details: {
+      profileId,
+      fullName: profile.full_name,
+      email: profile.email
+    }
+  });
+
+  revalidatePaths(REVALIDATE_PATHS.members);
+
+  return { profileId };
+}
+
+export async function setPortalUserPasswordInlineAction(formData: FormData) {
+  return runInlineAction(() => setPortalUserPasswordCore(formData), 'Updated the portal password.');
+}
+
+export async function setPortalUserPasswordAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/members',
+    successMessage: 'Updated the portal password.',
+    action: async () => {
+      await setPortalUserPasswordCore(formData);
     }
   });
 }

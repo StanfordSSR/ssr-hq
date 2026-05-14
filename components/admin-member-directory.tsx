@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { deletePortalLeadInlineAction } from '@/app/dashboard/actions';
+import { deletePortalLeadInlineAction, setPortalUserPasswordInlineAction } from '@/app/dashboard/actions';
 
 type AdminMemberRow = {
   id: string;
@@ -15,6 +15,7 @@ type AdminMemberRow = {
   accessLabel?: string;
   accessDetail?: string;
   canDeletePortal?: boolean;
+  canManagePassword?: boolean;
 };
 
 type AdminMemberDirectoryProps = {
@@ -27,8 +28,11 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
   const searchParams = useSearchParams();
   const [tableRows, setTableRows] = useState(rows);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedMode, setExpandedMode] = useState<'delete' | 'password' | null>(null);
   const [confirmationPhrase, setConfirmationPhrase] = useState('');
   const [confirmationName, setConfirmationName] = useState('');
+  const [passwordValue, setPasswordValue] = useState('');
+  const [passwordConfirmValue, setPasswordConfirmValue] = useState('');
   const [isPending, startTransition] = useTransition();
 
   const showStatus = (status: 'success' | 'error', message: string) => {
@@ -49,8 +53,25 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
 
       setTableRows((current) => current.filter((row) => row.profileId !== result.data!.leadId));
       setExpandedId(null);
+      setExpandedMode(null);
       setConfirmationPhrase('');
       setConfirmationName('');
+      showStatus('success', result.message);
+    });
+  };
+
+  const handlePasswordSet = (formData: FormData) => {
+    startTransition(async () => {
+      const result = await setPortalUserPasswordInlineAction(formData);
+      if (!result.ok) {
+        showStatus('error', result.message);
+        return;
+      }
+
+      setExpandedId(null);
+      setExpandedMode(null);
+      setPasswordValue('');
+      setPasswordConfirmValue('');
       showStatus('success', result.message);
     });
   };
@@ -95,24 +116,54 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                   <td>{row.teams}</td>
                   <td>
                     {row.canDeletePortal && row.profileId ? (
-                      <button
-                        className="hq-inline-link hq-inline-link-danger"
-                        type="button"
-                        onClick={() => {
-                          setExpandedId(expanded ? null : row.id);
-                          setConfirmationPhrase('');
-                          setConfirmationName('');
-                        }}
-                      >
-                        Remove lead
-                      </button>
+                      <div className="hq-inline-editor-actions">
+                        {row.canManagePassword ? (
+                          <button
+                            className="hq-inline-link"
+                            type="button"
+                            onClick={() => {
+                              setExpandedId(expanded && expandedMode === 'password' ? null : row.id);
+                              setExpandedMode(expanded && expandedMode === 'password' ? null : 'password');
+                              setPasswordValue('');
+                              setPasswordConfirmValue('');
+                            }}
+                          >
+                            Set password
+                          </button>
+                        ) : null}
+                        <button
+                          className="hq-inline-link hq-inline-link-danger"
+                          type="button"
+                          onClick={() => {
+                            setExpandedId(expanded && expandedMode === 'delete' ? null : row.id);
+                            setExpandedMode(expanded && expandedMode === 'delete' ? null : 'delete');
+                            setConfirmationPhrase('');
+                            setConfirmationName('');
+                          }}
+                        >
+                          Remove lead
+                        </button>
+                      </div>
                     ) : (
-                      <span className="hq-member-static-note">No action</span>
+                      row.canManagePassword && row.profileId ? (
+                        <button
+                          className="hq-inline-link"
+                          type="button"
+                          onClick={() => {
+                            setExpandedId(expanded && expandedMode === 'password' ? null : row.id);
+                            setExpandedMode(expanded && expandedMode === 'password' ? null : 'password');
+                            setPasswordValue('');
+                            setPasswordConfirmValue('');
+                          }}
+                        >
+                          Set password
+                        </button>
+                      ) : <span className="hq-member-static-note">No action</span>
                     )}
                   </td>
                 </tr>
 
-                {expanded && row.canDeletePortal && row.profileId ? (
+                {expanded && expandedMode === 'delete' && row.canDeletePortal && row.profileId ? (
                   <tr key={`${row.id}-confirm`}>
                     <td colSpan={7}>
                       <form action={handleDelete} className="hq-admin-delete-form">
@@ -141,6 +192,44 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                             disabled={isPending || confirmationPhrase !== 'DELETE' || confirmationName !== row.name}
                           >
                             {isPending ? 'Removing...' : 'Confirm removal'}
+                          </button>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
+                ) : null}
+
+                {expanded && expandedMode === 'password' && row.canManagePassword && row.profileId ? (
+                  <tr key={`${row.id}-password`}>
+                    <td colSpan={7}>
+                      <form action={handlePasswordSet} className="hq-admin-delete-form">
+                        <input type="hidden" name="profile_id" value={row.profileId} />
+                        <input type="hidden" name="password" value={passwordValue} />
+                        <input type="hidden" name="password_confirm" value={passwordConfirmValue} />
+                        <p className="hq-roster-delete-copy">
+                          Set a new password for <strong>{row.name}</strong>. This updates their portal login immediately.
+                        </p>
+                        <div className="hq-admin-delete-grid">
+                          <input
+                            className="input"
+                            type="password"
+                            placeholder="New password"
+                            value={passwordValue}
+                            onChange={(event) => setPasswordValue(event.target.value)}
+                          />
+                          <input
+                            className="input"
+                            type="password"
+                            placeholder="Confirm password"
+                            value={passwordConfirmValue}
+                            onChange={(event) => setPasswordConfirmValue(event.target.value)}
+                          />
+                          <button
+                            className="button-secondary"
+                            type="submit"
+                            disabled={isPending || passwordValue.length < 8 || passwordValue !== passwordConfirmValue}
+                          >
+                            {isPending ? 'Saving...' : 'Save password'}
                           </button>
                         </div>
                       </form>

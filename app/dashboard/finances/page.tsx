@@ -1,8 +1,9 @@
 import type { CSSProperties } from 'react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear } from '@/lib/academic-calendar';
+import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/actions';
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
 import { getViewerContext } from '@/lib/auth';
@@ -25,10 +26,27 @@ type ClubBudget = {
 };
 
 type PurchaseLog = {
+  id?: string;
   team_id: string;
   amount_cents: number;
   purchased_at: string;
   category: 'equipment' | 'food' | 'travel';
+  description?: string;
+  person_name?: string | null;
+  payment_method?: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
+};
+
+const paymentMethodLabel: Record<'reimbursement' | 'credit_card' | 'amazon' | 'unknown', string> = {
+  credit_card: 'Credit card',
+  amazon: 'Amazon',
+  reimbursement: 'Reimbursement',
+  unknown: 'Unknown'
+};
+
+const categoryLabel: Record<'equipment' | 'food' | 'travel', string> = {
+  equipment: 'Equipment',
+  food: 'Food',
+  travel: 'Travel'
 };
 
 function readSingle(value: string | string[] | undefined) {
@@ -42,11 +60,12 @@ export default async function FinancesPage({
 }) {
   const params = (await searchParams) || {};
   const admin = createAdminClient();
-  const { currentRole } = await getViewerContext();
+  const { currentRole, profile } = await getViewerContext();
   if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'financial_officer') {
     redirect('/dashboard');
   }
   const canEdit = currentRole === 'admin';
+  const canLogPurchases = currentRole === 'admin' || currentRole === 'financial_officer';
 
   const cycle = await getCurrentAcademicYear();
   const selectedTeamId = readSingle(params.team) || 'all';
@@ -95,6 +114,14 @@ export default async function FinancesPage({
   const { data: rosterMembersData } = validSelectedTeamId !== 'all'
     ? await admin.from('team_roster_members').select('id').eq('team_id', validSelectedTeamId)
     : { data: [] };
+  const { data: selectedTeamPurchasesData } = validSelectedTeamId !== 'all'
+    ? await admin
+        .from('purchase_logs')
+        .select('id, team_id, description, amount_cents, purchased_at, person_name, payment_method, category')
+        .eq('team_id', validSelectedTeamId)
+        .order('purchased_at', { ascending: false })
+        .limit(25)
+    : { data: [] };
   const { data: teamMembershipsData } = validSelectedTeamId !== 'all'
     ? await admin
         .from('team_memberships')
@@ -136,6 +163,7 @@ export default async function FinancesPage({
   const selectedTeam = validSelectedTeamId === 'all' ? null : teams.find((team) => team.id === validSelectedTeamId) || null;
   const selectedTeamMemberCount =
     validSelectedTeamId === 'all' ? 0 : (rosterMembersData || []).length + (teamMembershipsData || []).length;
+  const selectedTeamPurchases = (selectedTeamPurchasesData || []) as PurchaseLog[];
   const costPerMember =
     selectedTeamMemberCount > 0 ? Math.round(filteredSpendTotal / selectedTeamMemberCount) : 0;
   const categoryColors = {
@@ -366,9 +394,12 @@ export default async function FinancesPage({
 
           <div className="hq-team-list hq-team-list-compact">
             {teams.map((team) => (
-              <div key={team.id} className="hq-team-row">
+              <div key={team.id} className={`hq-team-row${selectedTeam?.id === team.id ? ' hq-team-row-selected' : ''}`}>
                 <div className="hq-team-row-head">
-                  <div className="hq-team-heading">
+                  <Link
+                    href={`/dashboard/finances?team=${team.id}&range=${selectedRange}`}
+                    className="hq-team-heading hq-team-heading-link"
+                  >
                     <div className="hq-team-title-row">
                       {team.logo_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -380,7 +411,7 @@ export default async function FinancesPage({
                       )}
                       <h3>{team.name}</h3>
                     </div>
-                  </div>
+                  </Link>
                 </div>
 
                 <div className="hq-finance-team-row">
@@ -428,6 +459,62 @@ export default async function FinancesPage({
               </div>
             ))}
           </div>
+
+          {selectedTeam ? (
+            <section className="hq-finance-drilldown">
+              <div className="hq-block-head">
+                <div className="hq-section-head-copy">
+                  <p className="hq-eyebrow">Team purchases</p>
+                  <h3>{selectedTeam.name}</h3>
+                </div>
+                <Link href="/dashboard/finances" className="hq-inline-link">
+                  Back to all teams
+                </Link>
+              </div>
+
+              {canLogPurchases ? (
+                <section className="hq-question-card">
+                  <h3>Add purchase</h3>
+                  <ManualPurchaseForm
+                    academicYear={cycle}
+                    teams={[selectedTeam]}
+                    defaultPersonName={profile.full_name || ''}
+                  />
+                </section>
+              ) : null}
+
+              <div className="table-wrap">
+                {selectedTeamPurchases.length > 0 ? (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Item</th>
+                        <th>Amount</th>
+                        <th>Person</th>
+                        <th>Payment method</th>
+                        <th>Category</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedTeamPurchases.map((purchase) => (
+                        <tr key={purchase.id}>
+                          <td>{new Date(purchase.purchased_at).toLocaleDateString('en-US')}</td>
+                          <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
+                          <td>${(purchase.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td>{purchase.person_name || 'Unknown'}</td>
+                          <td>{purchase.payment_method ? paymentMethodLabel[purchase.payment_method] : 'Unknown'}</td>
+                          <td>{purchase.category ? categoryLabel[purchase.category] : 'Equipment'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="empty-note">No purchases have been logged for {selectedTeam.name} yet.</p>
+                )}
+              </div>
+            </section>
+          ) : null}
         </section>
       </div>
     </div>

@@ -31,7 +31,7 @@ export default async function LoginPage() {
             <p className="auth-kicker">Secure login</p>
             <h1 className="auth-title">Log in to HQ</h1>
             <p className="auth-subtitle">
-              Use your approved email to receive a secure sign-in link.
+              Use your approved email with a password or request a secure magic link.
             </p>
             <Link className="text-link" href="/">
               Back to home

@@ -1179,6 +1179,16 @@ tr:last-child td {
   font-weight: 650;
 }
 
+.hq-team-heading-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.hq-team-row-selected {
+  background: #faf7f7;
+}
+
 .hq-team-title-row {
   display: flex;
   align-items: center;
@@ -2177,6 +2187,14 @@ tr:last-child td {
 .hq-finance-team-row {
   display: grid;
   gap: 10px;
+}
+
+.hq-finance-drilldown {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 16px;
 }
 
 .hq-finance-team-budget .hq-summary-list,
