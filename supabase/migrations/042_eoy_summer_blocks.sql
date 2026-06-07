@@ -7,8 +7,8 @@ create table if not exists public.eoy_summer_blocks (
   created_at timestamptz not null default now()
 );
 
--- Flag Conservation Technology and Skyrunners (default warning message used).
+-- Flag Conservation Technology (default warning message used).
 insert into public.eoy_summer_blocks (team_id)
 select id from public.teams
-where name ilike '%conservation%' or name ilike '%skyrunner%'
+where name ilike '%conservation%'
 on conflict (team_id) do nothing;
