@@ -3893,33 +3893,64 @@ export async function inviteFinancialOfficerAction(formData: FormData) {
 }
 
 async function runStatementAutoMatch(admin: ReturnType<typeof createAdminClient>) {
+  // Largest items first so high-value purchases claim their match before smaller ones.
   const { data: pending } = await admin
     .from('statement_line_items')
     .select('id, amount_cents, description')
     .eq('status', 'unmatched')
-    .eq('direction', 'debit');
+    .eq('direction', 'debit')
+    .order('amount_cents', { ascending: false });
 
   if (!pending || pending.length === 0) {
     return 0;
   }
 
-  const { data: logs } = await admin.from('purchase_logs').select('id, description, amount_cents');
-  const purchases = (logs || []) as MatchablePurchase[];
+  const { data: logs } = await admin
+    .from('purchase_logs')
+    .select('id, description, amount_cents, team_id, teams(name)');
+
+  // A purchase already linked to (or created from) another statement line is off the table.
+  const { data: usedRows } = await admin
+    .from('statement_line_items')
+    .select('matched_purchase_log_id, created_purchase_log_id');
+  const used = new Set<string>();
+  for (const row of usedRows || []) {
+    if (row.matched_purchase_log_id) used.add(row.matched_purchase_log_id);
+    if (row.created_purchase_log_id) used.add(row.created_purchase_log_id);
+  }
+
+  const purchases: MatchablePurchase[] = ((logs || []) as Array<{
+    id: string;
+    description: string | null;
+    amount_cents: number;
+    teams?: { name: string } | { name: string }[] | null;
+  }>)
+    .filter((log) => !used.has(log.id))
+    .map((log) => ({
+      id: log.id,
+      description: log.description || '',
+      amount_cents: log.amount_cents,
+      teamName: Array.isArray(log.teams) ? log.teams[0]?.name || null : log.teams?.name || null
+    }));
+
   if (purchases.length === 0) {
     return 0;
   }
 
+  const usedNow = new Set<string>();
   let matched = 0;
   for (const item of pending) {
+    const candidates = purchases.filter((purchase) => !usedNow.has(purchase.id));
     const match = findStatementMatch(
       { amountCents: item.amount_cents, description: item.description || '' },
-      purchases
+      candidates
     );
     if (match) {
       await admin
         .from('statement_line_items')
         .update({ status: 'auto_matched', matched_purchase_log_id: match.id })
         .eq('id', item.id);
+      usedNow.add(match.id);
       matched += 1;
     }
   }

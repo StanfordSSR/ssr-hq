@@ -22,10 +22,11 @@ export type MatchablePurchase = {
   id: string;
   description: string;
   amount_cents: number;
+  teamName?: string | null;
 };
 
 // Auto-match tolerance: amounts must agree within this fraction.
-export const STATEMENT_MATCH_TOLERANCE = 0.03;
+export const STATEMENT_MATCH_TOLERANCE = 0.02;
 
 function splitCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -196,14 +197,32 @@ const STOPWORDS = new Set([
   'robotics'
 ]);
 
+// Generic team-name words that should not, on their own, link an item to a team.
+const TEAM_TOKEN_STOPWORDS = new Set(['stanford', 'technology', 'robotics', 'club', 'team', 'student']);
+
+function depluralize(token: string): string {
+  return token.length >= 4 && token.endsWith('s') ? token.slice(0, -1) : token;
+}
+
 export function tokenizeStatementText(value: string): Set<string> {
-  return new Set(
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter((token) => token.length >= 4 && !STOPWORDS.has(token))
-  );
+  const tokens = new Set<string>();
+  for (const raw of value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)) {
+    // Keep 3-char tokens (e.g. "esc", "pcb", "imu") that carry real meaning.
+    if (raw.length < 3 || STOPWORDS.has(raw)) continue;
+    tokens.add(raw);
+    const stem = depluralize(raw);
+    if (stem !== raw && stem.length >= 3) tokens.add(stem);
+  }
+  return tokens;
+}
+
+function teamNameTokens(teamName: string | null | undefined): string[] {
+  if (!teamName) return [];
+  return teamName
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !STOPWORDS.has(token) && !TEAM_TOKEN_STOPWORDS.has(token));
 }
 
 // Keyword groups used to pre-suggest where an unaccounted item belongs.
@@ -232,6 +251,13 @@ export function suggestStatementScope(description: string): StatementScopeSugges
 }
 
 // Find the best logged purchase for a statement item, or null when none is close enough.
+//
+// Amount is the primary signal: a candidate must agree within STATEMENT_MATCH_TOLERANCE.
+// Among those, a match is accepted only when something corroborates it —
+//   - a shared keyword (now including 3-char tokens like "esc"/"pcb" and singular/plural),
+//   - the statement text names the candidate's team (e.g. "Skyrunners equipment"), or
+//   - the amounts are exactly equal and the value is distinctive (non-round, >= $5),
+// which makes a coincidental collision very unlikely.
 export function findStatementMatch(
   item: { amountCents: number; description: string },
   purchases: MatchablePurchase[]
@@ -239,20 +265,33 @@ export function findStatementMatch(
   if (item.amountCents <= 0) return null;
   const itemTokens = tokenizeStatementText(item.description);
 
-  let best: { purchase: MatchablePurchase; diff: number; overlap: number } | null = null;
+  let best: { purchase: MatchablePurchase; score: number; diff: number } | null = null;
   for (const purchase of purchases) {
     const diff = Math.abs(purchase.amount_cents - item.amountCents);
     if (diff / item.amountCents > STATEMENT_MATCH_TOLERANCE) continue;
+
+    const exact = diff === 0;
+    const distinctive = item.amountCents % 100 !== 0 && item.amountCents >= 500;
 
     const purchaseTokens = tokenizeStatementText(purchase.description || '');
     let overlap = 0;
     for (const token of itemTokens) {
       if (purchaseTokens.has(token)) overlap += 1;
     }
-    if (overlap === 0) continue;
 
-    if (!best || diff < best.diff || (diff === best.diff && overlap > best.overlap)) {
-      best = { purchase, diff, overlap };
+    const teamMatch = teamNameTokens(purchase.teamName).some((token) => itemTokens.has(token));
+
+    const corroborated = overlap > 0 || teamMatch || (exact && distinctive);
+    if (!corroborated) continue;
+
+    let score = Math.round((1 - diff / item.amountCents) * 100);
+    if (exact) score += 200;
+    if (exact && distinctive) score += 100;
+    score += overlap * 60;
+    if (teamMatch) score += 80;
+
+    if (!best || score > best.score || (score === best.score && diff < best.diff)) {
+      best = { purchase, score, diff };
     }
   }
 
