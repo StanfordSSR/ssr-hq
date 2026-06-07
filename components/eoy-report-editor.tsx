@@ -468,6 +468,15 @@ export function EoyReportEditor({
         </div>
       </section>
 
+      {!readOnly ? (
+        <p className="eoy-retire-warning">
+          <strong>
+            Failure to submit an end-of-year report means your team is considered to be retiring. You will need
+            to apply as a new team in the fall to continue.
+          </strong>
+        </p>
+      ) : null}
+
       <div className="hq-question-stack">
         <div className="eoy-section-head">
           <h2>Part 1 · Team continuity</h2>

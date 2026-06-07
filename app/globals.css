@@ -1604,6 +1604,13 @@ tr:last-child td {
   margin-top: 22px;
 }
 
+.hq-lead-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
 .hq-quarter-spend-block {
   margin-top: 28px;
 }
@@ -6279,6 +6286,18 @@ tr:last-child td {
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
+}
+
+.eoy-retire-warning {
+  margin: 0;
+  padding: 14px 18px;
+  border: 1px solid var(--cardinal);
+  border-left: 4px solid var(--cardinal);
+  border-radius: 12px;
+  background: #fdf3f3;
+  color: var(--cardinal-dark);
+  font-size: 14.5px;
+  line-height: 1.55;
 }
 
 .eoy-ack-card {

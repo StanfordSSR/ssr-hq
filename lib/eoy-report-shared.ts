@@ -1,7 +1,7 @@
 // Pure constants, types, and helpers for the end-of-year report.
 // Kept free of server-only imports so client components can use them.
 
-export const EOY_REPORT_TITLE = 'End of year report and summer plans';
+export const EOY_REPORT_TITLE = 'End-of-Year Report & Summer Plans';
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const OPEN_WINDOW_DAYS = 45;
 export const BUDGET_WORD_THRESHOLD_CENTS = 10_000 * 100;

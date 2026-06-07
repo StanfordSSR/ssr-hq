@@ -1,6 +1,7 @@
 import { cache } from 'react';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getNextReportState } from '@/lib/academic-calendar';
+import { getEoyReportState } from '@/lib/eoy-report';
 
 export const getLeadTeamIds = cache(async function getLeadTeamIds(userId: string) {
   const admin = createAdminClient();
@@ -32,7 +33,8 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
     { data: taskCompletions },
     { count: allTeamsAnnouncementCount },
     { data: announcementRecipients },
-    reportState
+    reportState,
+    eoyState
   ] =
     await Promise.all([
       admin
@@ -56,7 +58,8 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
         .eq('recipient_scope', 'all_teams')
         .gte('event_at', staleThreshold),
       admin.from('announcement_recipients').select('announcement_id').in('team_id', myTeamIds),
-      getNextReportState()
+      getNextReportState(),
+      getEoyReportState()
     ]);
 
   const completedTaskIds = new Set((taskCompletions || []).map((entry) => entry.task_id));
@@ -81,7 +84,23 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
     hasPendingReport = !submittedReport;
   }
 
+  let hasPendingEoyReport = false;
+
+  if (eoyState.reportState === 'open') {
+    const { data: submittedEoyReport } = await admin
+      .from('eoy_reports')
+      .select('id')
+      .in('team_id', myTeamIds)
+      .eq('academic_year', eoyState.academicYear)
+      .eq('status', 'submitted')
+      .limit(1)
+      .maybeSingle();
+
+    hasPendingEoyReport = !submittedEoyReport;
+  }
+
   return {
-    hasPendingLeadTasks: hasAssignedTasks || hasPendingReceipts || hasPendingReport || hasAnnouncements
+    hasPendingLeadTasks:
+      hasAssignedTasks || hasPendingReceipts || hasPendingReport || hasPendingEoyReport || hasAnnouncements
   };
 });

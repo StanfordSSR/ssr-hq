@@ -630,6 +630,7 @@ export default async function DashboardPage() {
               </div>
             </section>
 
+            <div className="hq-lead-col">
             <section className="hq-lead-block">
               <div className="hq-block-head">
                 <h3>Next report due</h3>
@@ -689,6 +690,7 @@ export default async function DashboardPage() {
                 </div>
               </section>
             ) : null}
+            </div>
           </div>
 
           <section className="hq-lead-block hq-quarter-spend-block">

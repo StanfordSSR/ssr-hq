@@ -14,6 +14,7 @@ import { AnnouncementDeliveryProgress } from '@/components/announcement-delivery
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
+import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
 
 type Team = {
   id: string;
@@ -82,6 +83,7 @@ export default async function TasksPage() {
   const isPresident = currentRole === 'president';
   const isPrivilegedViewer = isAdmin || isPresident;
   const reportState = await getNextReportState();
+  const eoyState = await getEoyReportState();
 
   const { data: teamsData } = await admin.from('teams').select('id, name').order('name');
   const teams = (teamsData || []) as Team[];
@@ -172,6 +174,11 @@ export default async function TasksPage() {
     message: string;
     dueLabel: string;
   } | null = null;
+  let eoyReportTask: {
+    message: string;
+    dueLabel: string;
+    countdownLabel: string;
+  } | null = null;
 
   if (!isPrivilegedViewer) {
     const myTeamIds = new Set(await getLeadTeamIds(user.id));
@@ -222,6 +229,25 @@ export default async function TasksPage() {
           title: `${reportState.targetQuarter} report`,
           message: reportState.message,
           dueLabel: formatDateLabel(reportState.dueAt)
+        };
+      }
+    }
+
+    if (eoyState.reportState === 'open' && myTeamIds.size > 0) {
+      const { data: submittedEoyReport } = await admin
+        .from('eoy_reports')
+        .select('id')
+        .in('team_id', Array.from(myTeamIds))
+        .eq('academic_year', eoyState.academicYear)
+        .eq('status', 'submitted')
+        .limit(1)
+        .maybeSingle();
+
+      if (!submittedEoyReport) {
+        eoyReportTask = {
+          message: eoyState.message,
+          dueLabel: formatDateLabel(eoyState.dueAt),
+          countdownLabel: eoyState.countdownLabel
         };
       }
     }
@@ -393,19 +419,40 @@ export default async function TasksPage() {
               <span>Presidents can view all assigned tasks but cannot create or remove them.</span>
             </div>
           ) : (
-            <div className="hq-report-card">
-              <strong>{reportState.targetQuarter}</strong>
-              <span>{reportState.message}</span>
-              <p>
-                {reportState.reportState === 'open'
-                  ? `Submit by ${formatDateLabel(reportState.dueAt)}.`
-                  : `Submission opens on ${formatDateLabel(reportState.openAt)}.`}
-              </p>
-              {reportState.reportState === 'open' ? (
-                <div className="button-row">
-                  <Link href="/dashboard/reports" className="button">
-                    Open report
-                  </Link>
+            <div className="form-stack">
+              <div className="hq-report-card">
+                <strong>{reportState.targetQuarter}</strong>
+                <span>{reportState.message}</span>
+                <p>
+                  {reportState.reportState === 'open'
+                    ? `Submit by ${formatDateLabel(reportState.dueAt)}.`
+                    : `Submission opens on ${formatDateLabel(reportState.openAt)}.`}
+                </p>
+                {reportState.reportState === 'open' ? (
+                  <div className="button-row">
+                    <Link href="/dashboard/reports" className="button">
+                      Open report
+                    </Link>
+                  </div>
+                ) : null}
+              </div>
+
+              {eoyState.reportState !== 'closed' ? (
+                <div className="hq-report-card">
+                  <strong>{EOY_REPORT_TITLE}</strong>
+                  <span>{eoyState.message}</span>
+                  <p>
+                    {eoyState.reportState === 'open'
+                      ? `Submit by ${formatDateLabel(eoyState.dueAt)}.`
+                      : `Submission opens on ${formatDateLabel(eoyState.openAt)}.`}
+                  </p>
+                  {eoyState.reportState === 'open' ? (
+                    <div className="button-row">
+                      <Link href="/dashboard/reports/eoy" className="button">
+                        Open report
+                      </Link>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -532,6 +579,27 @@ export default async function TasksPage() {
                 </article>
               ) : null}
 
+              {eoyReportTask ? (
+                <article className="hq-task-card hq-task-card-report">
+                  <div className="hq-task-card-head">
+                    <div>
+                      <span className="hq-task-kicker">Report task</span>
+                      <h4>{EOY_REPORT_TITLE} submission is open</h4>
+                    </div>
+                    <Link href="/dashboard/reports/eoy" className="hq-task-arrow" aria-label="Open year-end report">
+                      →
+                    </Link>
+                  </div>
+
+                  <div className="hq-task-card-meta">
+                    <span>Report due {eoyReportTask.dueLabel}</span>
+                    <span>{eoyReportTask.countdownLabel} remaining</span>
+                  </div>
+
+                  <p>{eoyReportTask.message}</p>
+                </article>
+              ) : null}
+
               {pendingReceipts.map((purchase) => {
                 const receiptState = getReceiptTaskState({
                   paymentMethod: purchase.payment_method,
@@ -601,7 +669,7 @@ export default async function TasksPage() {
                 );
               })}
 
-              {pendingReceipts.length === 0 && visibleTasks.length === 0 && !reportTask ? (
+              {pendingReceipts.length === 0 && visibleTasks.length === 0 && !reportTask && !eoyReportTask ? (
                 <p className="empty-note">No tasks are assigned to your team yet.</p>
               ) : null}
             </div>
