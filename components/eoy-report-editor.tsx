@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { saveEoyReportDraftAction, submitEoyReportAction } from '@/app/dashboard/actions';
 import {
   EOY_CLASS_YEARS,
@@ -792,24 +793,43 @@ export function EoyReportEditor({
         </div>
       ) : null}
 
-      {!readOnly ? (
-        <div className="button-row eoy-submit-row">
-          <button className="button-secondary" formAction={saveEoyReportDraftAction}>
-            Save draft
-          </button>
-          <button className="button" formAction={submitEoyReportAction} disabled={!canSubmit}>
-            Submit report
-          </button>
-          {!canSubmit ? (
-            <span className="helper eoy-submit-hint">
-              {!hasSignature
-                ? 'Answer all required questions and sign the report to submit.'
-                : 'Complete all required questions to submit.'}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
+      {!readOnly ? <EoySubmitButtons canSubmit={canSubmit} hasSignature={hasSignature} /> : null}
     </form>
+  );
+}
+
+function EoySubmitButtons({ canSubmit, hasSignature }: { canSubmit: boolean; hasSignature: boolean }) {
+  const { pending } = useFormStatus();
+
+  // While a save is in flight, warn if the user tries to close or navigate away.
+  useEffect(() => {
+    if (!pending) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [pending]);
+
+  return (
+    <div className="button-row eoy-submit-row" aria-busy={pending}>
+      <button className="button-secondary" formAction={saveEoyReportDraftAction} disabled={pending}>
+        {pending ? 'Saving…' : 'Save draft'}
+      </button>
+      <button className="button" formAction={submitEoyReportAction} disabled={!canSubmit || pending}>
+        {pending ? 'Submitting…' : 'Submit report'}
+      </button>
+      {pending ? (
+        <span className="helper eoy-submit-hint">Saving your report — please keep this tab open for a moment.</span>
+      ) : !canSubmit ? (
+        <span className="helper eoy-submit-hint">
+          {!hasSignature
+            ? 'Answer all required questions and sign the report to submit.'
+            : 'Complete all required questions to submit.'}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

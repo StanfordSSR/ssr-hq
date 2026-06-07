@@ -2023,7 +2023,9 @@ async function saveEoyReport(formData: FormData, status: 'draft' | 'submitted') 
     }
   });
 
-  await syncQueueAndRevalidate(REVALIDATE_PATHS.eoyReports);
+  // Keep saving snappy: just revalidate. The reminder queue (which cancels a
+  // submitted team's nudges) reconciles on the next scheduled cron sync.
+  revalidatePaths(REVALIDATE_PATHS.eoyReports);
 }
 
 export async function saveEoyReportDraftAction(formData: FormData) {
