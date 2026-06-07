@@ -1876,7 +1876,12 @@ function validateEoySubmission(data: EoyReportData, options: { yearSummaryLimit:
   if (!data.yearSummary) {
     throw new Error('Please summarize your team’s work this year.');
   }
-  if (countWords(data.yearSummary) > options.yearSummaryLimit) {
+  const yearSummaryWords = countWords(data.yearSummary);
+  const yearSummaryMin = Math.ceil(options.yearSummaryLimit / 2);
+  if (yearSummaryWords < yearSummaryMin) {
+    throw new Error(`Your year summary must be at least ${yearSummaryMin} words.`);
+  }
+  if (yearSummaryWords > options.yearSummaryLimit) {
     throw new Error(`Your year summary exceeds its ${options.yearSummaryLimit} word limit.`);
   }
   if (data.summer.active !== 'yes' && data.summer.active !== 'no') {

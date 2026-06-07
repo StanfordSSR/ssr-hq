@@ -437,7 +437,8 @@ export function EoyReportEditor({
   };
 
   const ackCount = questions.acknowledgements.length;
-  const yearSummaryOk = data.yearSummary.trim().length > 0 && yearSummaryWords <= yearSummaryLimit;
+  const yearSummaryMin = Math.ceil(yearSummaryLimit / 2);
+  const yearSummaryOk = yearSummaryWords >= yearSummaryMin && yearSummaryWords <= yearSummaryLimit;
   const summerOk =
     data.summer.active === 'no' ||
     (data.summer.active === 'yes' &&
@@ -549,7 +550,7 @@ export function EoyReportEditor({
         <div className="hq-question-card">
           <div className="hq-block-head">
             <h3>Question 4</h3>
-            <span className="hq-inline-note">{yearSummaryLimit} words max</span>
+            <span className="hq-inline-note">{yearSummaryMin}–{yearSummaryLimit} words</span>
           </div>
           <p className="hq-question-prompt">{questions.yearSummary}</p>
           <textarea
@@ -559,8 +560,14 @@ export function EoyReportEditor({
             value={data.yearSummary}
             onChange={(event) => update({ yearSummary: event.target.value })}
           />
-          <span className={`helper${yearSummaryWords > yearSummaryLimit ? ' eoy-over-limit' : ''}`}>
-            {yearSummaryWords}/{yearSummaryLimit} words
+          <span
+            className={`helper${
+              yearSummaryWords > yearSummaryLimit || (yearSummaryWords > 0 && yearSummaryWords < yearSummaryMin)
+                ? ' eoy-over-limit'
+                : ''
+            }`}
+          >
+            {yearSummaryWords}/{yearSummaryLimit} words (minimum {yearSummaryMin})
           </span>
         </div>
 
