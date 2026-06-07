@@ -25,6 +25,8 @@ import {
 import { AcademicYearInitializerForm } from '@/components/academic-year-initializer-form';
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
+import { EoySettingsForm } from '@/components/eoy-settings-form';
+import { getEoyReportSettings } from '@/lib/eoy-report';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { SettingsTabs } from '@/components/settings-tabs';
 import {
@@ -63,7 +65,8 @@ export default async function SettingsPage() {
     queuedNotificationsResponse,
     auditEntriesResponse,
     allProfilesResponse,
-    rosterMembersResponse
+    rosterMembersResponse,
+    eoyReportSettings
   ] =
     await Promise.all([
       getAcademicCalendarSettings(),
@@ -82,7 +85,8 @@ export default async function SettingsPage() {
       admin
         .from('team_roster_members')
         .select('id, team_id, full_name, stanford_email, slack_user_id, teams(name)')
-        .order('full_name')
+        .order('full_name'),
+      getEoyReportSettings()
     ]);
   const currentAcademicYear = calendarSettings.effectiveAcademicYear;
   const nextAcademicYear = calendarSettings.nextAcademicYear;
@@ -689,6 +693,14 @@ export default async function SettingsPage() {
                       <h3>Quarterly report questions</h3>
                     </div>
                     <ReportQuestionEditor initialQuestions={reportQuestions} readOnly={!canEdit} />
+                  </section>
+
+                  <section className="hq-lead-block">
+                    <div className="hq-block-head">
+                      <h3>Year-end report &amp; summer plans</h3>
+                      <span className="hq-inline-note">Admins and presidents</span>
+                    </div>
+                    <EoySettingsForm settings={eoyReportSettings} />
                   </section>
                 </div>
               )

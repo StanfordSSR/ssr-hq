@@ -11,9 +11,26 @@ import {
   profileHasAdminRole,
   profileHasPresidentRole,
   requireAdmin,
+  requireAdminOrPresident,
   requireSignedInUser,
   type AppRole
 } from '@/lib/auth';
+import {
+  DEFAULT_EOY_QUESTIONS,
+  EOY_CLASS_YEARS,
+  EOY_REPORT_TITLE,
+  emptyEoyReportData,
+  eoyMemberKey,
+  getEoyReportSettings,
+  getEoyReportState,
+  getEoyTeamMembers,
+  getTeamAnnualBudgetCents,
+  getYearFundsSpentCents,
+  yearSummaryWordLimit,
+  type EoyMemberRef,
+  type EoyQuestionConfig,
+  type EoyReportData
+} from '@/lib/eoy-report';
 import {
   getAcademicCalendarSettings,
   getCurrentAcademicYear,
@@ -63,6 +80,7 @@ const REVALIDATE_PATHS = {
   purchases: ['/dashboard', '/dashboard/expenses', '/dashboard/purchases', '/dashboard/finances', '/dashboard/tasks'],
   purchaseReceipt: ['/dashboard', '/dashboard/expenses', '/dashboard/purchases', '/dashboard/tasks'],
   reports: ['/dashboard', '/dashboard/reports', '/dashboard/settings'],
+  eoyReports: ['/dashboard', '/dashboard/reports/eoy', '/dashboard/settings'],
   settings: ['/dashboard/settings'],
   settingsAndReports: ['/dashboard/settings', '/dashboard/reports'],
   settingsDashboardReportsTasks: ['/dashboard', '/dashboard/settings', '/dashboard/reports', '/dashboard/tasks'],
@@ -1725,6 +1743,339 @@ export async function submitTeamReportAction(formData: FormData) {
     successMessage: 'Submitted the report.',
     action: async () => {
       await saveTeamReport(formData, 'submitted');
+    }
+  });
+}
+
+function coerceEoyMemberRefs(raw: unknown, validByKey: Map<string, EoyMemberRef>, limit: number): EoyMemberRef[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const result: EoyMemberRef[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    const id = String((entry as { id?: unknown }).id || '').trim();
+    const source = String((entry as { source?: unknown }).source || '').trim();
+    if (!id || (source !== 'profile' && source !== 'roster')) {
+      continue;
+    }
+    const key = eoyMemberKey({ id, source });
+    if (seen.has(key)) {
+      continue;
+    }
+    const match = validByKey.get(key);
+    if (!match) {
+      continue;
+    }
+    seen.add(key);
+    result.push(match);
+    if (result.length >= limit) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+function normalizeEoyReportData(
+  raw: unknown,
+  options: {
+    members: EoyMemberRef[];
+    acknowledgementCount: number;
+    autofill: EoyReportData['autofill'];
+  }
+): EoyReportData {
+  const base = emptyEoyReportData();
+  const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const validByKey = new Map(options.members.map((member) => [eoyMemberKey(member), member]));
+
+  const reregister = record.reregister === 'yes' || record.reregister === 'no' ? record.reregister : '';
+
+  const classRaw =
+    record.classDistribution && typeof record.classDistribution === 'object'
+      ? (record.classDistribution as Record<string, unknown>)
+      : {};
+  const classDistribution = { ...base.classDistribution };
+  for (const year of EOY_CLASS_YEARS) {
+    const value = Number(classRaw[year.key]);
+    if (Number.isFinite(value)) {
+      classDistribution[year.key] = Math.max(0, Math.round(value));
+    }
+  }
+
+  const niceToHave = Array.isArray(record.niceToHave)
+    ? (record.niceToHave as unknown[]).map((entry) => String(entry || '').trim()).slice(0, 3)
+    : base.niceToHave;
+
+  const summerRaw =
+    record.summer && typeof record.summer === 'object' ? (record.summer as Record<string, unknown>) : {};
+  const summerActive = summerRaw.active === 'yes' || summerRaw.active === 'no' ? summerRaw.active : '';
+  const predictedSpendCents = Math.max(0, Math.round(Number(summerRaw.predictedSpendCents) || 0));
+
+  const justifications = Array.isArray(summerRaw.justifications)
+    ? (summerRaw.justifications as unknown[])
+        .map((entry) => {
+          const item = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
+          return {
+            category: String(item.category || '').trim(),
+            justification: String(item.justification || '').trim()
+          };
+        })
+        .filter((entry) => entry.category || entry.justification)
+    : [];
+
+  const acksRaw = Array.isArray(summerRaw.acknowledgements) ? (summerRaw.acknowledgements as unknown[]) : [];
+  const acknowledgements = Array.from({ length: options.acknowledgementCount }, (_, index) => Boolean(acksRaw[index]));
+
+  return {
+    reregister,
+    nextLeads: coerceEoyMemberRefs(record.nextLeads, validByKey, 2),
+    leadSelection: String(record.leadSelection || '').trim(),
+    yearSummary: String(record.yearSummary || '').trim(),
+    classDistribution,
+    niceToHave,
+    summer: {
+      active: summerActive,
+      members: coerceEoyMemberRefs(summerRaw.members, validByKey, 2),
+      predictedSpendCents,
+      plan: String(summerRaw.plan || '').trim(),
+      justifications,
+      acknowledgements
+    },
+    autofill: options.autofill
+  };
+}
+
+function validateEoySubmission(data: EoyReportData, options: { yearSummaryLimit: number }) {
+  if (data.reregister !== 'yes' && data.reregister !== 'no') {
+    throw new Error('Please answer whether you would like to re-register your team for next year.');
+  }
+  if (data.nextLeads.length !== 2) {
+    throw new Error('Please select exactly 2 team leads for next year.');
+  }
+  if (!data.leadSelection) {
+    throw new Error('Please describe how the new team leads were chosen.');
+  }
+  if (!data.yearSummary) {
+    throw new Error('Please summarize your team’s work this year.');
+  }
+  if (countWords(data.yearSummary) > options.yearSummaryLimit) {
+    throw new Error(`Your year summary exceeds its ${options.yearSummaryLimit} word limit.`);
+  }
+  if (data.summer.active !== 'yes' && data.summer.active !== 'no') {
+    throw new Error('Please answer whether your team plans to be active over summer.');
+  }
+  if (data.summer.active === 'yes') {
+    if (data.summer.members.length !== 2) {
+      throw new Error('Please select the 2 team members who will regularly be on campus over summer.');
+    }
+    if (data.summer.predictedSpendCents > data.autofill.remainingFundingCents) {
+      throw new Error('Predicted summer spend cannot exceed your remaining funding for the year.');
+    }
+    if (!data.summer.plan) {
+      throw new Error('Please describe how you plan to spend funds over summer.');
+    }
+    if (!data.summer.acknowledgements.every(Boolean)) {
+      throw new Error('Please confirm all of the summer spending acknowledgements before submitting.');
+    }
+  }
+}
+
+async function saveEoyReport(formData: FormData, status: 'draft' | 'submitted') {
+  const teamId = String(formData.get('team_id') || '').trim();
+  const academicYear = String(formData.get('academic_year') || '').trim();
+
+  if (!teamId || !academicYear) {
+    throw new Error('Missing report context.');
+  }
+
+  const { user } = await requireLeadTeam(teamId);
+
+  if (status === 'submitted') {
+    const state = await getEoyReportState();
+    if (state.reportState !== 'open' || state.academicYear !== academicYear) {
+      throw new Error('The end-of-year report is not currently open for submission.');
+    }
+  }
+
+  const settings = await getEoyReportSettings();
+  const [totalMembers, fundsSpentThisYearCents, annualBudgetCents, members] = await Promise.all([
+    getTeamMemberCount(teamId),
+    getYearFundsSpentCents(teamId, academicYear),
+    getTeamAnnualBudgetCents(teamId, academicYear),
+    getEoyTeamMembers(teamId)
+  ]);
+  const remainingFundingCents = Math.max(0, annualBudgetCents - fundsSpentThisYearCents);
+
+  const payloadRaw = String(formData.get('report_data') || '{}');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadRaw);
+  } catch {
+    throw new Error('Report data could not be parsed.');
+  }
+
+  const data = normalizeEoyReportData(parsed, {
+    members,
+    acknowledgementCount: settings.questions.acknowledgements.length,
+    autofill: { totalMembers, fundsSpentThisYearCents, annualBudgetCents, remainingFundingCents }
+  });
+
+  if (status === 'submitted') {
+    validateEoySubmission(data, { yearSummaryLimit: yearSummaryWordLimit(annualBudgetCents) });
+  }
+
+  const admin = createAdminClient();
+  const { data: report, error } = await admin
+    .from('eoy_reports')
+    .upsert(
+      {
+        team_id: teamId,
+        academic_year: academicYear,
+        status,
+        data,
+        submitted_at: status === 'submitted' ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      },
+      { onConflict: 'team_id,academic_year' }
+    )
+    .select('id')
+    .single();
+
+  if (error || !report) {
+    throw new Error(error?.message || 'Failed to save the end-of-year report.');
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: `eoy_report.${status}`,
+    targetType: 'eoy_report',
+    targetId: report.id,
+    summary: `${status === 'submitted' ? 'Submitted' : 'Saved draft for'} ${EOY_REPORT_TITLE}.`,
+    details: {
+      teamId,
+      academicYear,
+      totalMembers,
+      fundsSpentThisYearCents,
+      annualBudgetCents,
+      remainingFundingCents,
+      summerActive: data.summer.active
+    }
+  });
+
+  await syncQueueAndRevalidate(REVALIDATE_PATHS.eoyReports);
+}
+
+export async function saveEoyReportDraftAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/reports/eoy',
+    successMessage: 'Saved the end-of-year report draft.',
+    action: async () => {
+      await saveEoyReport(formData, 'draft');
+    }
+  });
+}
+
+export async function submitEoyReportAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/reports/eoy',
+    successMessage: 'Submitted the end-of-year report.',
+    action: async () => {
+      await saveEoyReport(formData, 'submitted');
+    }
+  });
+}
+
+function normalizeEoyQuestions(raw: unknown): EoyQuestionConfig {
+  const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const pick = (key: keyof EoyQuestionConfig) => {
+    const value = record[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : (DEFAULT_EOY_QUESTIONS[key] as string);
+  };
+  const acksRaw = Array.isArray(record.acknowledgements) ? (record.acknowledgements as unknown[]) : [];
+  const acknowledgements = acksRaw.map((entry) => String(entry || '').trim()).filter(Boolean);
+
+  return {
+    reregister: pick('reregister'),
+    nextLeads: pick('nextLeads'),
+    leadSelection: pick('leadSelection'),
+    yearSummary: pick('yearSummary'),
+    classDistribution: pick('classDistribution'),
+    niceToHave: pick('niceToHave'),
+    summerActive: pick('summerActive'),
+    summerMembers: pick('summerMembers'),
+    summerSpend: pick('summerSpend'),
+    summerPlan: pick('summerPlan'),
+    summerJustifications: pick('summerJustifications'),
+    acknowledgements: acknowledgements.length > 0 ? acknowledgements : DEFAULT_EOY_QUESTIONS.acknowledgements
+  };
+}
+
+export async function updateEoyReportSettingsAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Updated end-of-year report settings.',
+    action: async () => {
+      const { user } = await requireAdminOrPresident();
+      const dueMonthDay = String(formData.get('eoy_due_month_day') || '').trim();
+      if (!/^\d{2}-\d{2}$/.test(dueMonthDay)) {
+        throw new Error('Due date must use MM-DD format.');
+      }
+
+      const reminderDays = normalizeReminderDays([
+        formData.get('eoy_reminder_day_one')?.toString(),
+        formData.get('eoy_reminder_day_two')?.toString(),
+        formData.get('eoy_reminder_day_three')?.toString()
+      ]);
+      const emailEnabled = String(formData.get('eoy_email_enabled') || '') === 'on';
+      const slackEnabled = String(formData.get('eoy_slack_enabled') || '') === 'on';
+
+      let questions: EoyQuestionConfig | undefined;
+      const questionsRaw = formData.get('eoy_questions_json');
+      if (typeof questionsRaw === 'string' && questionsRaw.trim()) {
+        let parsedQuestions: unknown;
+        try {
+          parsedQuestions = JSON.parse(questionsRaw);
+        } catch {
+          throw new Error('Report questions payload could not be parsed.');
+        }
+        questions = normalizeEoyQuestions(parsedQuestions);
+      }
+
+      const admin = createAdminClient();
+      const payload: Record<string, unknown> = {
+        id: 1,
+        due_month_day: dueMonthDay,
+        email_enabled: emailEnabled,
+        slack_enabled: slackEnabled,
+        reminder_days: reminderDays,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      };
+      if (questions) {
+        payload.questions = questions;
+      }
+
+      const { error } = await admin.from('eoy_report_settings').upsert(payload);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'settings.eoy_report.updated',
+        targetType: 'eoy_report_settings',
+        targetId: '1',
+        summary: 'Updated end-of-year report settings.',
+        details: { dueMonthDay, emailEnabled, slackEnabled, reminderDays }
+      });
+
+      await syncQueueAndRevalidate(REVALIDATE_PATHS.eoyReports);
     }
   });
 }

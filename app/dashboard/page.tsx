@@ -6,6 +6,7 @@ import { getNextReportState, getCurrentAcademicYear, getReportingWindows, format
 import { updateLeadTeamDescriptionAction } from '@/app/dashboard/teams/actions';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { formatQuarterReportTitle } from '@/lib/reports';
+import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 
@@ -381,6 +382,15 @@ export default async function DashboardPage() {
     .eq('quarter', reportState.targetQuarter)
     .maybeSingle();
 
+  const eoyState = await getEoyReportState();
+  const { data: eoyRecord } = await admin
+    .from('eoy_reports')
+    .select('id, status')
+    .eq('team_id', team.id)
+    .eq('academic_year', eoyState.academicYear)
+    .maybeSingle();
+  const showEoyCard = eoyState.reportState !== 'closed' || eoyRecord?.status === 'submitted';
+
   return (
     <div className="hq-page">
       <section className="hq-page-head hq-page-head-lead">
@@ -644,6 +654,41 @@ export default async function DashboardPage() {
                 {reportRecord?.status === 'submitted' ? <p>Submitted for this quarter.</p> : null}
               </div>
             </section>
+
+            {showEoyCard ? (
+              <section className="hq-lead-block">
+                <div className="hq-block-head">
+                  <h3>Year-end report</h3>
+                  <span
+                    className={`hq-status-chip hq-status-${eoyState.reportState === 'open' ? 'open' : 'pending'}`}
+                  >
+                    {eoyRecord?.status === 'submitted'
+                      ? 'Submitted'
+                      : eoyState.reportState === 'open'
+                        ? 'Open now'
+                        : 'Not open yet'}
+                  </span>
+                </div>
+
+                <div className="hq-report-card">
+                  <strong>{EOY_REPORT_TITLE}</strong>
+                  <span>{eoyState.message}</span>
+                  <p>
+                    {eoyState.reportState === 'open'
+                      ? `Deadline in ${eoyState.countdownLabel}.`
+                      : `${eoyState.countdownLabel} until reporting opens.`}
+                  </p>
+                  {eoyState.reportState === 'open' && eoyRecord?.status !== 'submitted' ? (
+                    <div className="button-row">
+                      <Link href="/dashboard/reports/eoy" className="button">
+                        Open report
+                      </Link>
+                    </div>
+                  ) : null}
+                  {eoyRecord?.status === 'submitted' ? <p>Submitted for {eoyState.academicYear}.</p> : null}
+                </div>
+              </section>
+            ) : null}
           </div>
 
           <section className="hq-lead-block hq-quarter-spend-block">

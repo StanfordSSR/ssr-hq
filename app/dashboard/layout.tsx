@@ -13,6 +13,7 @@ const adminNav = [
   { href: '/dashboard/members', label: 'Users' },
   { href: '/dashboard/finances', label: 'Manage Finances' },
   { href: '/dashboard/reports', label: 'Team Reports' },
+  { href: '/dashboard/reports/eoy', label: 'Year-End Reports' },
   { href: '/dashboard/tasks', label: 'Assign Tasks' },
   { href: '/dashboard/settings', label: 'Club Settings' }
 ];
@@ -23,6 +24,7 @@ const presidentNav = [
   { href: '/dashboard/members', label: 'Users' },
   { href: '/dashboard/finances', label: 'Finances' },
   { href: '/dashboard/reports', label: 'Team Reports' },
+  { href: '/dashboard/reports/eoy', label: 'Year-End Reports' },
   { href: '/dashboard/tasks', label: 'Tasks' },
   { href: '/dashboard/purchases', label: 'Purchases' },
   { href: '/dashboard/expenses', label: 'Expense Log' },

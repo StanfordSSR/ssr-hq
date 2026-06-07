@@ -12,11 +12,12 @@ import { sendInviteReminderEmail, sendReceiptDigestEmail, sendReportReminderEmai
 import { normalizeReminderDays } from '@/lib/purchases';
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { formatQuarterKey, formatQuarterReportTitle } from '@/lib/reports';
+import { EOY_REPORT_TITLE, getEoyReportSettings, getEoyReportState } from '@/lib/eoy-report';
 import { sendSlackbotNotification } from '@/lib/slackbot';
 
 type QueueRow = {
   id: string;
-  notification_type: 'receipt' | 'report' | 'invite';
+  notification_type: 'receipt' | 'report' | 'invite' | 'eoy_report';
   team_id: string;
   source_key: string;
   scheduled_for: string;
@@ -307,6 +308,106 @@ async function syncReportQueue() {
   }
 }
 
+async function syncEoyReportQueue() {
+  const admin = createAdminClient();
+  const settings = await getEoyReportSettings();
+  const { data: existingRowsData } = await admin
+    .from('notification_queue')
+    .select('id, notification_type, team_id, source_key, scheduled_for, status, payload')
+    .eq('notification_type', 'eoy_report');
+  const existingRows = (existingRowsData || []) as QueueRow[];
+
+  const cancelAllQueued = async () => {
+    const queuedIds = existingRows.filter((row) => row.status === 'queued').map((row) => row.id);
+    if (queuedIds.length > 0) {
+      await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', queuedIds);
+    }
+  };
+
+  if (!settings.emailEnabled && !settings.slackEnabled) {
+    await cancelAllQueued();
+    return;
+  }
+  const reminderDays = normalizeReminderDays(settings.reminderDays);
+  if (reminderDays.length === 0) {
+    await cancelAllQueued();
+    return;
+  }
+  const state = await getEoyReportState(new Date());
+  if (state.reportState === 'closed') {
+    await cancelAllQueued();
+    return;
+  }
+  const academicYear = state.academicYear;
+
+  const { data: leadMemberships } = await admin
+    .from('team_memberships')
+    .select('team_id')
+    .eq('team_role', 'lead')
+    .eq('is_active', true);
+  const teamIds = Array.from(new Set((leadMemberships || []).map((membership) => membership.team_id)));
+
+  const { data: submittedReports } = await admin
+    .from('eoy_reports')
+    .select('team_id')
+    .eq('academic_year', academicYear)
+    .eq('status', 'submitted');
+  const submittedTeamIds = new Set((submittedReports || []).map((report) => report.team_id));
+
+  const validRows = teamIds
+    .filter((teamId) => !submittedTeamIds.has(teamId))
+    .flatMap((teamId) =>
+      reminderDays.map((reminderDay) => ({
+        notification_type: 'eoy_report' as const,
+        team_id: teamId,
+        source_key: `eoy_report:${teamId}:${academicYear}:${reminderDay}`,
+        scheduled_for: atPacificTime(
+          new Date(state.dueAt.getTime() - reminderDay * 24 * 60 * 60 * 1000),
+          18
+        ).toISOString(),
+        status: 'queued' as const,
+        payload: {
+          academicYear,
+          reminderDay,
+          dueAt: state.dueAt.toISOString()
+        }
+      }))
+    );
+
+  const validKeys = new Set(validRows.map((row) => row.source_key));
+
+  for (const row of validRows) {
+    const existing = existingRows.find((entry) => entry.source_key === row.source_key);
+    if (!existing) {
+      await admin.from('notification_queue').insert(row);
+      continue;
+    }
+
+    if (existing.status !== 'sent') {
+      await admin
+        .from('notification_queue')
+        .update({
+          team_id: row.team_id,
+          scheduled_for: row.scheduled_for,
+          status: 'queued',
+          payload: row.payload
+        })
+        .eq('id', existing.id);
+    }
+  }
+
+  const invalidQueuedIds = existingRows
+    .filter((row) => row.status === 'queued' && !validKeys.has(row.source_key))
+    .map((row) => row.id);
+  const staleQueuedIds = existingRows
+    .filter((row) => row.status === 'queued' && new Date(row.scheduled_for).getTime() < Date.now() - STALE_QUEUE_MS)
+    .map((row) => row.id);
+  const cancelIds = Array.from(new Set([...invalidQueuedIds, ...staleQueuedIds]));
+  if (cancelIds.length > 0) {
+    await admin.from('notification_queue').update({ status: 'cancelled' }).in('id', cancelIds);
+  }
+}
+
 export async function syncInviteQueue() {
   const admin = createAdminClient();
   const { data: inviteSettings } = await admin
@@ -429,6 +530,7 @@ export async function syncInviteQueue() {
 export async function syncNotificationQueue() {
   await syncReceiptQueue();
   await syncReportQueue();
+  await syncEoyReportQueue();
   await syncInviteQueue();
 }
 
@@ -436,10 +538,11 @@ export async function processQueuedNotificationsBatch(now = new Date()) {
   await syncNotificationQueue();
 
   const admin = createAdminClient();
-  const [receiptSettings, reportSettingsResponse, inviteSettingsResponse] = await Promise.all([
+  const [receiptSettings, reportSettingsResponse, inviteSettingsResponse, eoyReportSettings] = await Promise.all([
     getReceiptNotificationSettings(),
     admin.from('report_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle(),
-    admin.from('invite_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle()
+    admin.from('invite_notification_settings').select('email_enabled, slack_enabled').eq('id', 1).maybeSingle(),
+    getEoyReportSettings()
   ]);
   const reportSettings = {
     emailEnabled: reportSettingsResponse.data?.email_enabled ?? true,
@@ -666,6 +769,69 @@ export async function processQueuedNotificationsBatch(now = new Date()) {
             notificationType,
             academicYear: payload.academicYear,
             quarter: payload.quarter,
+            recipients: recipientEmails.length
+          }
+        });
+      }
+    }
+
+    if (notificationType === 'eoy_report') {
+      const latest = rows.sort(
+        (a, b) =>
+          new Date((a.payload as { dueAt: string }).dueAt).getTime() -
+          new Date((b.payload as { dueAt: string }).dueAt).getTime()
+      )[0]!;
+      const payload = latest.payload as { academicYear: string; dueAt: string };
+      const dueAt = new Date(payload.dueAt);
+
+      if (eoyReportSettings.slackEnabled) {
+        await sendSlackbotNotification({
+          idempotency_key: `queue-eoy-report:${teamId}:${rows.map((row) => row.id).sort().join(',')}`,
+          type: 'report_reminder',
+          team_id: teamId,
+          team_name: teamName,
+          recipient_emails: recipientEmails,
+          title: `${EOY_REPORT_TITLE} is due`,
+          message: `${teamName} still needs to submit the end-of-year report and summer plans. Due ${formatDateLabel(dueAt)}. ${formatCountdown(dueAt, now)} remaining.`,
+          cta_label: 'Open report',
+          cta_url: `${env.siteUrl}/dashboard/reports/eoy`,
+          metadata: {
+            academic_year: payload.academicYear,
+            report: 'eoy'
+          }
+        });
+
+        await recordAuditEvent({
+          actorId: null,
+          action: 'slack.sent',
+          targetType: 'notification_queue',
+          summary: `Sent Slack end-of-year report reminder batch for ${teamName}.`,
+          details: {
+            notificationType,
+            academicYear: payload.academicYear,
+            recipients: recipientEmails.length
+          }
+        });
+      }
+
+      if (eoyReportSettings.emailEnabled) {
+        await sendReportReminderEmail({
+          to: recipientEmails,
+          teamName,
+          reportTitle: EOY_REPORT_TITLE,
+          dueDateLabel: formatDateLabel(dueAt),
+          timeLeftLabel: formatCountdown(dueAt, now),
+          reportLink: `${env.siteUrl}/dashboard/reports/eoy`
+        });
+
+        await recordAuditEvent({
+          actorId: null,
+          action: 'email.sent',
+          targetType: 'notification_queue',
+          summary: `Sent end-of-year report reminder batch for ${teamName}.`,
+          details: {
+            notificationType,
+            academicYear: payload.academicYear,
             recipients: recipientEmails.length
           }
         });
