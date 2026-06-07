@@ -1831,6 +1831,9 @@ function normalizeEoyReportData(
   const acksRaw = Array.isArray(summerRaw.acknowledgements) ? (summerRaw.acknowledgements as unknown[]) : [];
   const acknowledgements = Array.from({ length: options.acknowledgementCount }, (_, index) => Boolean(acksRaw[index]));
 
+  const signatureRaw = typeof record.signature === 'string' ? record.signature : '';
+  const signature = signatureRaw.startsWith('data:image/') ? signatureRaw.slice(0, 1_000_000) : '';
+
   return {
     reregister,
     nextLeads: coerceEoyMemberRefs(record.nextLeads, validByKey, 2),
@@ -1846,6 +1849,7 @@ function normalizeEoyReportData(
       justifications,
       acknowledgements
     },
+    signature,
     autofill: options.autofill
   };
 }
@@ -1854,6 +1858,15 @@ function validateEoySubmission(data: EoyReportData, options: { yearSummaryLimit:
   if (data.reregister !== 'yes' && data.reregister !== 'no') {
     throw new Error('Please answer whether you would like to re-register your team for next year.');
   }
+
+  // Declining to re-register ends the report — the team will not continue next year.
+  if (data.reregister === 'no') {
+    if (!data.signature) {
+      throw new Error('Please sign the report before submitting.');
+    }
+    return;
+  }
+
   if (data.nextLeads.length !== 2) {
     throw new Error('Please select exactly 2 team leads for next year.');
   }
@@ -1882,6 +1895,9 @@ function validateEoySubmission(data: EoyReportData, options: { yearSummaryLimit:
     if (!data.summer.acknowledgements.every(Boolean)) {
       throw new Error('Please confirm all of the summer spending acknowledgements before submitting.');
     }
+  }
+  if (!data.signature) {
+    throw new Error('Please sign the report before submitting.');
   }
 }
 

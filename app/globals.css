@@ -6281,32 +6281,148 @@ tr:last-child td {
   color: var(--text);
 }
 
+.eoy-ack-card {
+  border: 1px solid var(--cardinal);
+  background: var(--panel-soft);
+}
+
+.eoy-ack-intro {
+  font-weight: 600;
+  color: var(--cardinal-dark);
+}
+
 .eoy-ack-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  margin-top: 6px;
 }
 
 .eoy-ack-item {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--text);
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.eoy-ack-item:hover {
+  border-color: var(--cardinal);
+}
+
+.eoy-ack-item:has(input:checked) {
+  border-color: var(--cardinal);
+  box-shadow: var(--shadow-soft);
 }
 
 .eoy-ack-item input[type='checkbox'] {
-  margin-top: 3px;
+  margin-top: 2px;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   accent-color: var(--cardinal);
 }
 
 .eoy-over-limit {
   color: var(--cardinal);
   font-weight: 600;
+}
+
+/* EOY signature */
+.eoy-sign {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.eoy-sign-preview {
+  max-width: 320px;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+}
+
+.eoy-sign-empty {
+  margin: 0;
+}
+
+.eoy-sign-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.eoy-sign-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(23, 20, 20, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 60;
+}
+
+.eoy-sign-modal {
+  background: #fff;
+  border-radius: 18px;
+  padding: 24px;
+  width: 100%;
+  max-width: 720px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.eoy-sign-modal h3 {
+  margin: 0;
+}
+
+.eoy-sign-canvas {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 640 / 220;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: #fff;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.eoy-sign-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.eoy-sign-modal-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+/* EOY submit row */
+.eoy-submit-row {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.eoy-submit-hint {
+  margin: 0;
+  flex-basis: 100%;
 }
 
 /* EOY settings editor */

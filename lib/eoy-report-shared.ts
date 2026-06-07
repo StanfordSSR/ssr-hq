@@ -76,6 +76,8 @@ export type EoyReportData = {
     justifications: EoySummerJustification[];
     acknowledgements: boolean[];
   };
+  // Team lead's hand-drawn signature, stored as a PNG data URL.
+  signature: string;
   // Snapshot of auto-filled values at the time of the last save.
   autofill: {
     totalMembers: number;
@@ -98,22 +100,25 @@ export const EOY_CLASS_YEARS: Array<{ key: keyof EoyClassDistribution; label: st
 export const EOY_JUSTIFICATION_CATEGORIES = ['Food', 'Registration', 'Travel'] as const;
 
 export const DEFAULT_EOY_QUESTIONS: EoyQuestionConfig = {
-  reregister: 'I would like to re-register my team for {nextYear} and confirm continuity.',
-  nextLeads: 'Please select 2 team leads for next year.',
-  leadSelection: 'In a couple of sentences, describe how the new team leads were chosen or nominated.',
+  reregister:
+    'Would you like to re-register {team} for the {nextYear} academic year? Confirming means your team intends to keep operating with active leadership next year.',
+  nextLeads:
+    'Who will lead {team} next year? Select the two members who will serve as team leads for {nextYear}.',
+  leadSelection: 'In a few sentences, tell us how these leads were chosen or nominated.',
   yearSummary:
-    'Please sum up the work, achievements, and sub-team milestones that {team} has accomplished this year.',
+    "Looking back on the year, summarize {team}'s most significant work, achievements, and sub-team milestones.",
   classDistribution:
-    'Roughly, what is the current class-year distribution of your team? Slide the markers to set the approximate share of each year.',
+    'Roughly how is {team} distributed across class years? Drag the markers to set the approximate share of each year.',
   niceToHave:
-    'What would be nice to have for your team provided by the robotics club next year (equipment, shared software, etc.)? List up to 3.',
+    'Is there anything that would help {team} next year that the robotics club could provide — equipment, shared software, space, and so on? List up to three.',
   summerActive:
-    'Do you plan to be active over summer? To be active and spend funds over summer, at least 2 team members must regularly be on campus over summer.',
-  summerMembers: 'Select the 2 team members who will regularly be on campus over summer.',
-  summerSpend: 'How much funding do you predict to spend over summer?',
-  summerPlan: 'Please describe in detail the major expenses and how you plan to spend funds over summer.',
+    'Does {team} plan to stay active over the summer? Spending funds over the summer requires at least two members who will regularly be on campus.',
+  summerMembers: 'Which two members will regularly be on campus over the summer?',
+  summerSpend: 'About how much funding do you expect {team} to spend over the summer?',
+  summerPlan:
+    "Describe the major expenses you're planning for the summer and how the funds will be used.",
   summerJustifications:
-    'If you plan to spend money that is not equipment and not pre-approved travel (e.g. food, registration, travel), list a justification for each category. Note: spending on food for team meetings can only occur with at least 3 team members present, and teams are discouraged from spending on food over summer as it is difficult to justify to ASSU.',
+    'For any spending that is not equipment or pre-approved travel (for example food, registration, or travel), give a short justification for each category below. Note: food for team meetings requires at least three members present, and summer food spending is discouraged as it is difficult to justify to the ASSU.',
   acknowledgements: [
     "Purchasing or reimbursing parts to work on at a team member's private residence is prohibited. If you ship something using a credit card, reimbursement, or our Amazon account to a location outside of Stanford, you must get approval from a president and justify why it is required (allowed reasons include buying something you would otherwise not be able to purchase at Stanford or during the regular academic year).",
     'I understand reimbursements may take longer than usual over summer.',
@@ -141,6 +146,7 @@ export function emptyEoyReportData(): EoyReportData {
       justifications: [],
       acknowledgements: DEFAULT_EOY_QUESTIONS.acknowledgements.map(() => false)
     },
+    signature: '',
     autofill: {
       totalMembers: 0,
       fundsSpentThisYearCents: 0,
