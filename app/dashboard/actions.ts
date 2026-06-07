@@ -23,6 +23,7 @@ import {
   eoyMemberKey,
   getEoyReportSettings,
   getEoyReportState,
+  getEoySummerBlock,
   getEoyTeamMembers,
   getTeamAnnualBudgetCents,
   getYearFundsSpentCents,
@@ -1944,11 +1945,12 @@ async function saveEoyReport(formData: FormData, status: 'draft' | 'submitted') 
   }
 
   const settings = await getEoyReportSettings();
-  const [totalMembers, fundsSpentThisYearCents, annualBudgetCents, members] = await Promise.all([
+  const [totalMembers, fundsSpentThisYearCents, annualBudgetCents, members, summerBlock] = await Promise.all([
     getTeamMemberCount(teamId),
     getYearFundsSpentCents(teamId, academicYear),
     getTeamAnnualBudgetCents(teamId, academicYear),
-    getEoyTeamMembers(teamId)
+    getEoyTeamMembers(teamId),
+    getEoySummerBlock(teamId)
   ]);
   const remainingFundingCents = Math.max(0, annualBudgetCents - fundsSpentThisYearCents);
 
@@ -1965,6 +1967,18 @@ async function saveEoyReport(formData: FormData, status: 'draft' | 'submitted') 
     acknowledgementCount: settings.questions.acknowledgements.length,
     autofill: { totalMembers, fundsSpentThisYearCents, annualBudgetCents, remainingFundingCents }
   });
+
+  // Blocked teams cannot record any summer spending, regardless of client input.
+  if (summerBlock) {
+    data.summer = {
+      active: 'no',
+      members: [],
+      predictedSpendCents: 0,
+      plan: '',
+      justifications: [],
+      acknowledgements: data.summer.acknowledgements.map(() => false)
+    };
+  }
 
   if (status === 'submitted') {
     validateEoySubmission(data, { yearSummaryLimit: yearSummaryWordLimit(annualBudgetCents) });

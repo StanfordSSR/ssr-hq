@@ -103,6 +103,17 @@ export async function getYearFundsSpentCents(teamId: string, academicYear: strin
   }, 0);
 }
 
+// Returns the summer-spending block for a team, or null when the team is in good standing.
+export async function getEoySummerBlock(teamId: string): Promise<{ reason: string | null } | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('eoy_summer_blocks')
+    .select('reason')
+    .eq('team_id', teamId)
+    .maybeSingle();
+  return data ? { reason: data.reason ?? null } : null;
+}
+
 export async function getTeamAnnualBudgetCents(teamId: string, academicYear: string) {
   const admin = createAdminClient();
   const { data } = await admin

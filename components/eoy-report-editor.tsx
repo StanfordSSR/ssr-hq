@@ -23,6 +23,7 @@ type EoyReportEditorProps = {
   autofill: EoyReportData['autofill'];
   yearSummaryLimit: number;
   initialData: EoyReportData;
+  summerBlockMessage?: string | null;
   readOnly?: boolean;
 };
 
@@ -406,13 +407,17 @@ export function EoyReportEditor({
   autofill,
   yearSummaryLimit,
   initialData,
+  summerBlockMessage,
   readOnly = false
 }: EoyReportEditorProps) {
+  const summerBlocked = Boolean(summerBlockMessage);
   const [data, setData] = useState<EoyReportData>(() => ({
     ...initialData,
     autofill,
     summer: {
       ...initialData.summer,
+      // A blocked team can never opt into summer spending, even from a stale draft.
+      active: summerBlocked && initialData.summer.active === 'yes' ? '' : initialData.summer.active,
       acknowledgements: questions.acknowledgements.map(
         (_, index) => initialData.summer.acknowledgements[index] ?? false
       )
@@ -619,6 +624,12 @@ export function EoyReportEditor({
           <h2>Part 2 · Summer funding approval</h2>
         </div>
 
+        {summerBlocked ? (
+          <p className="eoy-retire-warning">
+            <strong>{summerBlockMessage}</strong>
+          </p>
+        ) : null}
+
         <div className="hq-question-card">
           <div className="hq-block-head">
             <h3>Summer activity</h3>
@@ -627,8 +638,14 @@ export function EoyReportEditor({
           <YesNoToggle
             value={data.summer.active}
             disabled={readOnly}
+            disableYes={summerBlocked}
             onChange={(value) => updateSummer({ active: value })}
           />
+          {summerBlocked ? (
+            <p className="helper eoy-over-limit">
+              Summer spending is unavailable for {teamName} this year.
+            </p>
+          ) : null}
         </div>
 
         {data.summer.active === 'yes' ? (
@@ -796,10 +813,12 @@ export function EoyReportEditor({
 function YesNoToggle({
   value,
   disabled,
+  disableYes,
   onChange
 }: {
   value: 'yes' | 'no' | '';
   disabled?: boolean;
+  disableYes?: boolean;
   onChange: (value: 'yes' | 'no') => void;
 }) {
   return (
@@ -809,7 +828,7 @@ function YesNoToggle({
           key={option}
           type="button"
           className={`eoy-yesno-option${value === option ? ' is-active' : ''}`}
-          disabled={disabled}
+          disabled={disabled || (option === 'yes' && disableYes)}
           onClick={() => onChange(option)}
         >
           {option === 'yes' ? 'Yes' : 'No'}

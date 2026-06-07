@@ -247,6 +247,15 @@ export function applyEoyQuestionTokens(
   };
 }
 
+// Warning shown to teams that are barred from summer spending in the report.
+export function buildSummerBlockMessage(teamName: string, reason?: string | null): string {
+  if (reason && reason.trim()) {
+    return reason.trim();
+  }
+  const team = teamName || 'your team';
+  return `The SSR A.I. has reconciled over $4,000 in untracked expenses and several delayed credit receipts from ${team}. As a result, ${team} is ineligible to spend funding over the summer and must complete mandatory trainings in the fall to return to good standing.`;
+}
+
 export function eoyMemberKey(ref: { id: string; source: string }) {
   return `${ref.source}:${ref.id}`;
 }

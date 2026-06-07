@@ -6,10 +6,12 @@ import { formatDateLabel } from '@/lib/academic-calendar';
 import {
   EOY_REPORT_TITLE,
   applyEoyQuestionTokens,
+  buildSummerBlockMessage,
   emptyEoyReportData,
   formatEoyCurrency,
   getEoyReportSettings,
   getEoyReportState,
+  getEoySummerBlock,
   getEoyTeamMembers,
   getTeamAnnualBudgetCents,
   getYearFundsSpentCents,
@@ -76,6 +78,10 @@ export default async function EoyReportPage({
     if (selectedReport) {
       const teamName = teamNameMap.get(selectedReport.team_id) || 'Unknown team';
       const stored = { ...emptyEoyReportData(), ...selectedReport.data };
+      const reviewBlock = await getEoySummerBlock(selectedReport.team_id);
+      const reviewSummerBlockMessage = reviewBlock
+        ? buildSummerBlockMessage(teamName, reviewBlock.reason)
+        : undefined;
       const questions = applyEoyQuestionTokens(settings.questions, {
         team: teamName,
         nextYear: state.nextAcademicYear
@@ -109,6 +115,7 @@ export default async function EoyReportPage({
               autofill={stored.autofill}
               yearSummaryLimit={yearSummaryWordLimit(stored.autofill.annualBudgetCents)}
               initialData={stored}
+              summerBlockMessage={reviewSummerBlockMessage}
               readOnly
             />
           </section>
@@ -207,7 +214,7 @@ export default async function EoyReportPage({
   const { data: team } = await admin.from('teams').select('id, name').eq('id', teamId).single<Team>();
   const teamName = team?.name || 'Your team';
 
-  const [totalMembers, fundsSpentThisYearCents, annualBudgetCents, members, report] = await Promise.all([
+  const [totalMembers, fundsSpentThisYearCents, annualBudgetCents, members, report, summerBlock] = await Promise.all([
     getTeamMemberCount(teamId),
     getYearFundsSpentCents(teamId, state.academicYear),
     getTeamAnnualBudgetCents(teamId, state.academicYear),
@@ -218,9 +225,11 @@ export default async function EoyReportPage({
       .eq('team_id', teamId)
       .eq('academic_year', state.academicYear)
       .maybeSingle<EoyReportRow>()
-      .then((result) => result.data)
+      .then((result) => result.data),
+    getEoySummerBlock(teamId)
   ]);
   const remainingFundingCents = Math.max(0, annualBudgetCents - fundsSpentThisYearCents);
+  const summerBlockMessage = summerBlock ? buildSummerBlockMessage(teamName, summerBlock.reason) : undefined;
   const autofill = { totalMembers, fundsSpentThisYearCents, annualBudgetCents, remainingFundingCents };
 
   const questions = applyEoyQuestionTokens(settings.questions, {
@@ -281,6 +290,7 @@ export default async function EoyReportPage({
               autofill={initialData.autofill}
               yearSummaryLimit={yearSummaryWordLimit(initialData.autofill.annualBudgetCents)}
               initialData={initialData}
+              summerBlockMessage={summerBlockMessage}
               readOnly
             />
           </section>
@@ -304,6 +314,7 @@ export default async function EoyReportPage({
             autofill={autofill}
             yearSummaryLimit={yearSummaryWordLimit(annualBudgetCents)}
             initialData={initialData}
+            summerBlockMessage={summerBlockMessage}
           />
         </section>
       )}
