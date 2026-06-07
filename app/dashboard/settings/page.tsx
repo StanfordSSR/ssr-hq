@@ -218,15 +218,19 @@ export default async function SettingsPage() {
     status: string;
     direction: string;
   }>;
-  const unaccountedStatementItems = statementItems.filter(
-    (item) => item.direction === 'debit' && item.status === 'unmatched'
+  const statementDebits = statementItems.filter((item) => item.direction === 'debit');
+  const unaccountedStatementItems = statementDebits.filter((item) => item.status === 'unmatched');
+  const accountedStatementItems = statementDebits.filter(
+    (item) => item.status === 'auto_matched' || item.status === 'assigned'
   );
   const statementSummary = {
-    total: statementItems.length,
-    accounted: statementItems.filter((item) => item.status === 'auto_matched' || item.status === 'assigned').length,
+    total: statementDebits.length,
+    accounted: accountedStatementItems.length,
     unaccounted: unaccountedStatementItems.length,
-    disregarded: statementItems.filter((item) => item.status === 'disregarded').length,
-    unaccountedTotalCents: unaccountedStatementItems.reduce((sum, item) => sum + item.amount_cents, 0)
+    disregarded: statementDebits.filter((item) => item.status === 'disregarded').length,
+    unaccountedTotalCents: unaccountedStatementItems.reduce((sum, item) => sum + item.amount_cents, 0),
+    accountedTotalCents: accountedStatementItems.reduce((sum, item) => sum + item.amount_cents, 0),
+    sheetTotalCents: statementDebits.reduce((sum, item) => sum + item.amount_cents, 0)
   };
   const lastStatementImport = lastStatementImportData
     ? {

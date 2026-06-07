@@ -111,6 +111,14 @@ export default async function ExpenseLogPage({
   const rawRange = readSingle(params.range) || 'current_cycle';
   const rawAcademicYear = readSingle(params.academic_year);
   const currentPage = Math.max(1, Number(readSingle(params.page) || 1));
+  const rawQuery = readSingle(params.q).trim();
+  const searchQuery = rawQuery.toLowerCase();
+  const rawMin = readSingle(params.min).trim();
+  const rawMax = readSingle(params.max).trim();
+  const minAmount = Number(rawMin);
+  const maxAmount = Number(rawMax);
+  const hasMin = rawMin !== '' && Number.isFinite(minAmount);
+  const hasMax = rawMax !== '' && Number.isFinite(maxAmount);
   const selectedTeamIds =
     selectedTeamId === 'all' ? teams.map((team) => team.id) : teams.filter((team) => team.id === selectedTeamId).map((team) => team.id);
 
@@ -258,15 +266,28 @@ export default async function ExpenseLogPage({
   const chartBackground =
     pieSlices.length > 0 ? `conic-gradient(${pieSlices.join(', ')})` : 'conic-gradient(#dfd7d7 0 100%)';
 
-  const nonPendingPurchases = filteredPurchases.filter((purchase) => {
-    const receiptState = getReceiptTaskState({
-      paymentMethod: purchase.payment_method,
-      purchasedAt: purchase.purchased_at,
-      receiptPath: purchase.receipt_path,
-      receiptNotNeeded: purchase.receipt_not_needed
-    });
-    return !receiptState.pending;
-  });
+  const matchesSearch = (purchase: Purchase) => {
+    if (searchQuery) {
+      const haystack = `${purchase.description} ${purchase.person_name || ''} ${purchase.category} ${purchase.payment_method}`.toLowerCase();
+      if (!haystack.includes(searchQuery)) return false;
+    }
+    const dollars = purchase.amount_cents / 100;
+    if (hasMin && dollars < minAmount) return false;
+    if (hasMax && dollars > maxAmount) return false;
+    return true;
+  };
+
+  const nonPendingPurchases = filteredPurchases
+    .filter((purchase) => {
+      const receiptState = getReceiptTaskState({
+        paymentMethod: purchase.payment_method,
+        purchasedAt: purchase.purchased_at,
+        receiptPath: purchase.receipt_path,
+        receiptNotNeeded: purchase.receipt_not_needed
+      });
+      return !receiptState.pending;
+    })
+    .filter(matchesSearch);
   const totalPages = Math.max(1, Math.ceil(nonPendingPurchases.length / pageSize));
   const page = Math.min(currentPage, totalPages);
   const pagedPurchases = nonPendingPurchases.slice((page - 1) * pageSize, page * pageSize);
@@ -279,6 +300,9 @@ export default async function ExpenseLogPage({
     team: selectedTeamId,
     range: rawRange,
     academic_year: rawRange === 'academic_year' ? selectedAcademicYear : '',
+    q: rawQuery,
+    min: rawMin,
+    max: rawMax,
     page: String(page)
   };
 
@@ -391,6 +415,53 @@ export default async function ExpenseLogPage({
           </div>
 
           <form className="form-stack" method="get">
+            <div className="field">
+              <label className="label" htmlFor="expense-search">
+                Search
+              </label>
+              <input
+                className="input"
+                id="expense-search"
+                name="q"
+                type="search"
+                defaultValue={rawQuery}
+                placeholder="Item, person, category, payment method…"
+              />
+            </div>
+
+            <div className="hq-inline-grid">
+              <div className="field">
+                <label className="label" htmlFor="expense-min">
+                  Min amount ($)
+                </label>
+                <input
+                  className="input"
+                  id="expense-min"
+                  name="min"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={rawMin}
+                  placeholder="0"
+                />
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="expense-max">
+                  Max amount ($)
+                </label>
+                <input
+                  className="input"
+                  id="expense-max"
+                  name="max"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={rawMax}
+                  placeholder="Any"
+                />
+              </div>
+            </div>
+
             {isPrivilegedViewer ? (
               <div className="field">
                 <label className="label" htmlFor="expense-team">

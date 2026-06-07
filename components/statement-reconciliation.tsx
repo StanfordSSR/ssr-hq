@@ -23,6 +23,8 @@ type StatementReconciliationProps = {
     unaccounted: number;
     disregarded: number;
     unaccountedTotalCents: number;
+    accountedTotalCents: number;
+    sheetTotalCents: number;
   };
   lastImport: { fileName: string | null; itemCount: number; createdAt: string } | null;
 };
@@ -46,7 +48,9 @@ export function StatementReconciliation({ items, teams, canEdit, summary, lastIm
     <div className="form-stack">
       <div className="hq-block-head">
         <h3>Finance statement reconciliation</h3>
-        <span className="hq-inline-note">{summary.unaccounted} unaccounted</span>
+        <span className="hq-inline-note">
+          {formatCurrency(summary.accountedTotalCents)} of {formatCurrency(summary.sheetTotalCents)} reconciled
+        </span>
       </div>
 
       <p className="helper">
@@ -63,8 +67,10 @@ export function StatementReconciliation({ items, teams, canEdit, summary, lastIm
           </span>
         </div>
         <div className="hq-setting-tile">
-          <strong>Accounted for</strong>
-          <span>{summary.accounted} matched or assigned</span>
+          <strong>Reconciled from sheet</strong>
+          <span>
+            {summary.accounted} items · {formatCurrency(summary.accountedTotalCents)}
+          </span>
         </div>
         <div className="hq-setting-tile">
           <strong>Disregarded</strong>
