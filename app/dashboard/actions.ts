@@ -1843,7 +1843,7 @@ function normalizeEoyReportData(
     niceToHave,
     summer: {
       active: summerActive,
-      members: coerceEoyMemberRefs(summerRaw.members, validByKey, 2),
+      members: coerceEoyMemberRefs(summerRaw.members, validByKey, Math.max(2, options.members.length)),
       predictedSpendCents,
       plan: String(summerRaw.plan || '').trim(),
       justifications,
@@ -1883,8 +1883,8 @@ function validateEoySubmission(data: EoyReportData, options: { yearSummaryLimit:
     throw new Error('Please answer whether your team plans to be active over summer.');
   }
   if (data.summer.active === 'yes') {
-    if (data.summer.members.length !== 2) {
-      throw new Error('Please select the 2 team members who will regularly be on campus over summer.');
+    if (data.summer.members.length < 2) {
+      throw new Error('Please list at least 2 team members who will be on campus over summer.');
     }
     if (data.summer.predictedSpendCents > data.autofill.remainingFundingCents) {
       throw new Error('Predicted summer spend cannot exceed your remaining funding for the year.');

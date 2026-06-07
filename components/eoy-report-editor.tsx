@@ -45,6 +45,7 @@ function MemberPicker({
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const selectedKeys = new Set(selected.map(memberKey));
 
   const filtered = useMemo(() => {
@@ -55,10 +56,21 @@ function MemberPicker({
       .slice(0, 8);
   }, [members, query, selectedKeys]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [open]);
+
   const atMax = selected.length >= max;
 
   return (
-    <div className="eoy-picker">
+    <div className="eoy-picker" ref={containerRef}>
       <div className="eoy-chip-row">
         {selected.length === 0 ? <span className="helper">No one selected yet.</span> : null}
         {selected.map((member) => (
@@ -429,7 +441,7 @@ export function EoyReportEditor({
   const summerOk =
     data.summer.active === 'no' ||
     (data.summer.active === 'yes' &&
-      data.summer.members.length === 2 &&
+      data.summer.members.length >= 2 &&
       data.summer.predictedSpendCents <= autofill.remainingFundingCents &&
       data.summer.plan.trim().length > 0 &&
       data.summer.acknowledgements.length >= ackCount &&
@@ -617,13 +629,13 @@ export function EoyReportEditor({
             <div className="hq-question-card">
               <div className="hq-block-head">
                 <h3>On-campus members</h3>
-                <span className="hq-inline-note">Select 2</span>
+                <span className="hq-inline-note">At least 2</span>
               </div>
               <p className="hq-question-prompt">{questions.summerMembers}</p>
               <MemberPicker
                 members={members}
                 selected={data.summer.members}
-                max={2}
+                max={Math.max(2, members.length)}
                 disabled={readOnly}
                 onChange={(next) => updateSummer({ members: next })}
               />

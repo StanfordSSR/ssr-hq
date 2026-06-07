@@ -113,7 +113,8 @@ export const DEFAULT_EOY_QUESTIONS: EoyQuestionConfig = {
     'Is there anything that would help {team} next year that the robotics club could provide — equipment, shared software, space, and so on? List up to three.',
   summerActive:
     'Does {team} plan to stay active over the summer? Spending funds over the summer requires at least two members who will regularly be on campus.',
-  summerMembers: 'Which two members will regularly be on campus over the summer?',
+  summerMembers:
+    'List all members who will be on campus over the summer, and please include everyone who will be actively working on this.',
   summerSpend: 'About how much funding do you expect {team} to spend over the summer?',
   summerPlan:
     "Describe the major expenses you're planning for the summer and how the funds will be used.",
