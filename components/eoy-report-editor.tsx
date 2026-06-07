@@ -763,7 +763,10 @@ export function EoyReportEditor({
         ) : data.summer.active === 'no' ? (
           <div className="hq-question-card">
             <p className="helper">
-              No summer spending will be approved for {teamName}. You can submit the report now.
+              No summer spending will be approved for {teamName}, and no reimbursements will be approved during
+              summer quarter — including retrospective funding submitted in later quarters. I understand that any
+              expenses over the summer for {teamName} without explicit leadership approval will not be reimbursed.
+              You can submit the report now.
             </p>
           </div>
         ) : null}

@@ -6314,8 +6314,8 @@ tr:last-child td {
   border-radius: 12px;
   background: #fdf3f3;
   color: var(--cardinal-dark);
-  font-size: 14.5px;
-  line-height: 1.55;
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .eoy-ack-card {
