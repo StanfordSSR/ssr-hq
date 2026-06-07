@@ -6288,6 +6288,24 @@ tr:last-child td {
   color: var(--text);
 }
 
+.hq-statement-amount {
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hq-statement-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.hq-statement-actions .select {
+  max-width: 220px;
+}
+
 .eoy-retire-warning {
   margin: 0;
   padding: 14px 18px;

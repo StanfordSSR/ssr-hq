@@ -27,6 +27,7 @@ import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { EoySettingsForm } from '@/components/eoy-settings-form';
 import { getEoyReportSettings } from '@/lib/eoy-report';
+import { StatementReconciliation } from '@/components/statement-reconciliation';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { SettingsTabs } from '@/components/settings-tabs';
 import {
@@ -190,6 +191,50 @@ export default async function SettingsPage() {
   );
   const previousReturnedCents = Math.max(0, currentAllocatedCents - currentSpentCents);
   const previousClubBudgetCents = currentClubBudgetData.data?.total_budget_cents || 0;
+
+  const [{ data: statementTeamsData }, { data: statementItemsData }, { data: lastStatementImportData }] =
+    await Promise.all([
+      admin.from('teams').select('id, name').order('name'),
+      admin
+        .from('statement_line_items')
+        .select('id, description, person_name, amount_cents, statement_date, raw_date, reference_number, status, direction')
+        .order('amount_cents', { ascending: false }),
+      admin
+        .from('statement_imports')
+        .select('file_name, item_count, created_at')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    ]);
+  const statementTeams = (statementTeamsData || []) as Array<{ id: string; name: string }>;
+  const statementItems = (statementItemsData || []) as Array<{
+    id: string;
+    description: string;
+    person_name: string | null;
+    amount_cents: number;
+    statement_date: string | null;
+    raw_date: string;
+    reference_number: string | null;
+    status: string;
+    direction: string;
+  }>;
+  const unaccountedStatementItems = statementItems.filter(
+    (item) => item.direction === 'debit' && item.status === 'unmatched'
+  );
+  const statementSummary = {
+    total: statementItems.length,
+    accounted: statementItems.filter((item) => item.status === 'auto_matched' || item.status === 'assigned').length,
+    unaccounted: unaccountedStatementItems.length,
+    disregarded: statementItems.filter((item) => item.status === 'disregarded').length,
+    unaccountedTotalCents: unaccountedStatementItems.reduce((sum, item) => sum + item.amount_cents, 0)
+  };
+  const lastStatementImport = lastStatementImportData
+    ? {
+        fileName: lastStatementImportData.file_name,
+        itemCount: lastStatementImportData.item_count,
+        createdAt: lastStatementImportData.created_at
+      }
+    : null;
 
   return (
     <div className="hq-page">
@@ -703,6 +748,21 @@ export default async function SettingsPage() {
                     <EoySettingsForm settings={eoyReportSettings} />
                   </section>
                 </div>
+              )
+            },
+            {
+              id: 'reconciliation',
+              label: 'Reconciliation',
+              content: (
+                <section className="hq-lead-block">
+                  <StatementReconciliation
+                    items={unaccountedStatementItems}
+                    teams={statementTeams}
+                    canEdit={canEdit}
+                    summary={statementSummary}
+                    lastImport={lastStatementImport}
+                  />
+                </section>
               )
             },
             {

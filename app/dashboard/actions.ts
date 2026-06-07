@@ -73,6 +73,11 @@ import {
 import { recordAuditEvent } from '@/lib/audit';
 import { syncInviteQueue, syncNotificationQueue } from '@/lib/notification-queue';
 import { getSlackbotFallbackContext, sendSlackbotNotification } from '@/lib/slackbot';
+import {
+  findStatementMatch,
+  parseStatementCsv,
+  type MatchablePurchase
+} from '@/lib/statement-import';
 
 const REVALIDATE_PATHS = {
   dashboard: ['/dashboard'],
@@ -82,6 +87,7 @@ const REVALIDATE_PATHS = {
   reports: ['/dashboard', '/dashboard/reports', '/dashboard/settings'],
   eoyReports: ['/dashboard', '/dashboard/reports/eoy', '/dashboard/settings'],
   settings: ['/dashboard/settings'],
+  reconciliation: ['/dashboard/settings', '/dashboard/finances', '/dashboard/expenses', '/dashboard/purchases'],
   settingsAndReports: ['/dashboard/settings', '/dashboard/reports'],
   settingsDashboardReportsTasks: ['/dashboard', '/dashboard/settings', '/dashboard/reports', '/dashboard/tasks'],
   tasks: ['/dashboard', '/dashboard/tasks'],
@@ -3882,6 +3888,215 @@ export async function inviteFinancialOfficerAction(formData: FormData) {
       });
 
       revalidatePaths(REVALIDATE_PATHS.financialOfficerRole.concat(REVALIDATE_PATHS.presidentRole));
+    }
+  });
+}
+
+async function runStatementAutoMatch(admin: ReturnType<typeof createAdminClient>) {
+  const { data: pending } = await admin
+    .from('statement_line_items')
+    .select('id, amount_cents, description')
+    .eq('status', 'unmatched')
+    .eq('direction', 'debit');
+
+  if (!pending || pending.length === 0) {
+    return 0;
+  }
+
+  const { data: logs } = await admin.from('purchase_logs').select('id, description, amount_cents');
+  const purchases = (logs || []) as MatchablePurchase[];
+  if (purchases.length === 0) {
+    return 0;
+  }
+
+  let matched = 0;
+  for (const item of pending) {
+    const match = findStatementMatch(
+      { amountCents: item.amount_cents, description: item.description || '' },
+      purchases
+    );
+    if (match) {
+      await admin
+        .from('statement_line_items')
+        .update({ status: 'auto_matched', matched_purchase_log_id: match.id })
+        .eq('id', item.id);
+      matched += 1;
+    }
+  }
+
+  return matched;
+}
+
+export async function uploadStatementAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Imported the statement and ran auto-matching.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const file = formData.get('statement_csv');
+      if (!(file instanceof File) || file.size === 0) {
+        throw new Error('Choose a statement CSV to upload.');
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('Statement files must be under 5 MB.');
+      }
+
+      const text = await file.text();
+      const items = parseStatementCsv(text);
+      if (items.length === 0) {
+        throw new Error('No statement rows were found in that file.');
+      }
+
+      const admin = createAdminClient();
+      const importId = crypto.randomUUID();
+      await admin.from('statement_imports').insert({
+        id: importId,
+        file_name: file.name,
+        uploaded_by: user.id,
+        item_count: items.length
+      });
+
+      const rows = items.map((item) => ({
+        import_id: importId,
+        statement_date: item.statementDate,
+        raw_date: item.rawDate,
+        reference_number: item.referenceNumber,
+        person_name: item.personName,
+        description: item.description,
+        raw_reference: item.rawReference,
+        amount_cents: item.amountCents,
+        direction: item.direction,
+        dedupe_key: item.dedupeKey,
+        status: 'unmatched'
+      }));
+
+      const { error } = await admin
+        .from('statement_line_items')
+        .upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true });
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await runStatementAutoMatch(admin);
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'statement.imported',
+        targetType: 'statement_import',
+        targetId: importId,
+        summary: `Imported statement "${file.name}" with ${items.length} rows.`,
+        details: { fileName: file.name, itemCount: items.length }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.reconciliation);
+    }
+  });
+}
+
+export async function rematchStatementAction() {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Re-ran auto-matching against logged purchases.',
+    action: async () => {
+      await requireAdmin();
+      const admin = createAdminClient();
+      await runStatementAutoMatch(admin);
+      revalidatePaths(REVALIDATE_PATHS.reconciliation);
+    }
+  });
+}
+
+export async function resolveStatementItemAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Updated the statement line item.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const itemId = String(formData.get('item_id') || '').trim();
+      const decision = String(formData.get('decision') || '').trim();
+      const teamId = String(formData.get('team_id') || '').trim();
+      if (!itemId) {
+        throw new Error('Missing statement line item.');
+      }
+
+      const admin = createAdminClient();
+      const { data: item } = await admin
+        .from('statement_line_items')
+        .select('id, description, person_name, amount_cents, statement_date, direction')
+        .eq('id', itemId)
+        .maybeSingle();
+      if (!item) {
+        throw new Error('That statement line item no longer exists.');
+      }
+
+      const now = new Date().toISOString();
+
+      if (decision === 'disregard') {
+        await admin
+          .from('statement_line_items')
+          .update({ status: 'disregarded', resolved_by: user.id, resolved_at: now })
+          .eq('id', itemId);
+      } else if (decision === 'unknown') {
+        await admin
+          .from('statement_line_items')
+          .update({
+            status: 'assigned',
+            assigned_scope: 'unknown',
+            assigned_team_id: null,
+            resolved_by: user.id,
+            resolved_at: now
+          })
+          .eq('id', itemId);
+      } else if (decision === 'team' || decision === 'leadership') {
+        if (decision === 'team' && !teamId) {
+          throw new Error('Choose a team to assign this purchase to.');
+        }
+
+        const purchaseId = crypto.randomUUID();
+        const academicYear = await getCurrentAcademicYear();
+        const { error: insertError } = await admin.from('purchase_logs').insert({
+          id: purchaseId,
+          team_id: decision === 'team' ? teamId : null,
+          expense_type: decision === 'team' ? 'team' : 'leadership',
+          created_by: user.id,
+          academic_year: academicYear,
+          amount_cents: item.amount_cents,
+          description: item.description,
+          person_name: item.person_name || null,
+          purchased_at: item.statement_date ? `${item.statement_date}T12:00:00Z` : now,
+          payment_method: 'unknown',
+          category: detectPurchaseCategory(item.description),
+          receipt_not_needed: true
+        });
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
+
+        await admin
+          .from('statement_line_items')
+          .update({
+            status: 'assigned',
+            assigned_scope: decision,
+            assigned_team_id: decision === 'team' ? teamId : null,
+            created_purchase_log_id: purchaseId,
+            resolved_by: user.id,
+            resolved_at: now
+          })
+          .eq('id', itemId);
+      } else {
+        throw new Error('Unknown reconciliation action.');
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'statement.resolved',
+        targetType: 'statement_line_item',
+        targetId: itemId,
+        summary: `Reconciled statement item "${item.description}" as ${decision}.`,
+        details: { decision, teamId: decision === 'team' ? teamId : null, amountCents: item.amount_cents }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.reconciliation);
     }
   });
 }
