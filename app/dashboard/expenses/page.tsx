@@ -24,7 +24,8 @@ type TeamBudget = {
 
 type Purchase = {
   id: string;
-  team_id: string;
+  team_id: string | null;
+  expense_type: 'team' | 'leadership';
   academic_year: string;
   description: string;
   amount_cents: number;
@@ -104,21 +105,40 @@ export default async function ExpenseLogPage({
   const rawTeam = readSingle(params.team);
   const defaultTeamSelection = isPrivilegedViewer ? 'all' : teams[0]!.id;
   const selectedTeamId =
-    rawTeam === 'all' || teams.some((team) => team.id === rawTeam) ? rawTeam || defaultTeamSelection : defaultTeamSelection;
+    rawTeam === 'all' || (rawTeam === 'leadership' && isPrivilegedViewer) || teams.some((team) => team.id === rawTeam)
+      ? rawTeam || defaultTeamSelection
+      : defaultTeamSelection;
   const rawRange = readSingle(params.range) || 'current_cycle';
   const rawAcademicYear = readSingle(params.academic_year);
   const currentPage = Math.max(1, Number(readSingle(params.page) || 1));
   const selectedTeamIds =
     selectedTeamId === 'all' ? teams.map((team) => team.id) : teams.filter((team) => team.id === selectedTeamId).map((team) => team.id);
 
-  const { data: purchasesData } = await admin
-    .from('purchase_logs')
-    .select(
-      'id, team_id, academic_year, description, amount_cents, purchased_at, person_name, payment_method, category, receipt_path, receipt_file_name, receipt_not_needed'
-    )
-    .in('team_id', selectedTeamIds)
-    .order('purchased_at', { ascending: false });
-  const purchases = (purchasesData || []) as Purchase[];
+  const onlyLeadership = selectedTeamId === 'leadership';
+  const includeLeadership = isPrivilegedViewer && (selectedTeamId === 'all' || onlyLeadership);
+  const purchaseColumns =
+    'id, team_id, expense_type, academic_year, description, amount_cents, purchased_at, person_name, payment_method, category, receipt_path, receipt_file_name, receipt_not_needed';
+
+  const [{ data: teamPurchasesData }, { data: leadershipPurchasesData }] = await Promise.all([
+    onlyLeadership
+      ? Promise.resolve({ data: [] as Purchase[] })
+      : admin
+          .from('purchase_logs')
+          .select(purchaseColumns)
+          .in('team_id', selectedTeamIds)
+          .order('purchased_at', { ascending: false }),
+    includeLeadership
+      ? admin
+          .from('purchase_logs')
+          .select(purchaseColumns)
+          .eq('expense_type', 'leadership')
+          .order('purchased_at', { ascending: false })
+      : Promise.resolve({ data: [] as Purchase[] })
+  ]);
+  const purchases = [
+    ...((teamPurchasesData || []) as Purchase[]),
+    ...((leadershipPurchasesData || []) as Purchase[])
+  ].sort((a, b) => new Date(b.purchased_at).getTime() - new Date(a.purchased_at).getTime());
 
   const academicYearOptions = Array.from(new Set(purchases.map((purchase) => purchase.academic_year)))
     .filter(Boolean)
@@ -378,6 +398,7 @@ export default async function ExpenseLogPage({
                 </label>
                 <select className="select" id="expense-team" name="team" defaultValue={selectedTeamId}>
                   <option value="all">All accessible teams</option>
+                  <option value="leadership">Leadership / Operations</option>
                   {teams.map((team) => (
                     <option key={team.id} value={team.id}>
                       {team.name}
@@ -470,7 +491,11 @@ export default async function ExpenseLogPage({
                   </div>
 
                   <div className="hq-task-card-meta">
-                    <span>{teamNameMap.get(purchase.team_id) || 'Unknown team'}</span>
+                    <span>
+                      {purchase.expense_type === 'leadership'
+                        ? 'Leadership / Operations'
+                        : teamNameMap.get(purchase.team_id || '') || 'Unknown team'}
+                    </span>
                     <span>{formatDateLabel(new Date(purchase.purchased_at))}</span>
                     <span>${(purchase.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   </div>
@@ -540,7 +565,11 @@ export default async function ExpenseLogPage({
                         'Not required'
                       )}
                       </td>
-                      <td>{teamNameMap.get(purchase.team_id) || 'Unknown team'}</td>
+                      <td>
+                        {purchase.expense_type === 'leadership'
+                          ? 'Leadership / Operations'
+                          : teamNameMap.get(purchase.team_id || '') || 'Unknown team'}
+                      </td>
                       {!isReadOnlyFinanceViewer ? (
                         <td>
                           <PurchaseEntryActions

@@ -891,6 +891,8 @@ export async function logPurchaseAction(formData: FormData) {
     fallbackPath: '/dashboard/purchases',
     successMessage: 'Logged the purchase.',
     action: async () => {
+      const expenseType =
+        String(formData.get('expense_type') || 'team').trim() === 'leadership' ? 'leadership' : 'team';
       const teamId = String(formData.get('team_id') || '').trim();
       const amount = parsePurchaseAmount(formData.get('amount'));
       const description = String(formData.get('description') || '').trim();
@@ -905,8 +907,8 @@ export async function logPurchaseAction(formData: FormData) {
           ? categoryValue
           : detectPurchaseCategory(description);
 
-      if (!teamId || !description) {
-        throw new Error('Team and description are required.');
+      if (!description) {
+        throw new Error('A description is required.');
       }
 
       if (!Number.isFinite(amount) || amount <= 0) {
@@ -915,10 +917,20 @@ export async function logPurchaseAction(formData: FormData) {
 
       const { user, currentRole } = await requireActiveProfile();
 
-      if (currentRole !== 'admin' && currentRole !== 'financial_officer') {
-        await requireLeadTeam(teamId);
+      if (expenseType === 'leadership') {
+        if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'financial_officer') {
+          throw new Error('Only financial officers, presidents, or admins can log leadership expenses.');
+        }
+      } else {
+        if (!teamId) {
+          throw new Error('Team and description are required.');
+        }
+        if (currentRole !== 'admin' && currentRole !== 'financial_officer') {
+          await requireLeadTeam(teamId);
+        }
       }
 
+      const effectiveTeamId = expenseType === 'leadership' ? null : teamId;
       const purchaseId = crypto.randomUUID();
       let receiptPath: string | null = null;
       let receiptFileName: string | null = null;
@@ -927,7 +939,7 @@ export async function logPurchaseAction(formData: FormData) {
       if (receiptFile instanceof File && receiptFile.size > 0) {
         const uploaded = await uploadReceiptToStorage({
           purchaseId,
-          teamId,
+          teamId: effectiveTeamId || 'leadership',
           file: receiptFile
         });
         receiptPath = uploaded.path;
@@ -939,7 +951,8 @@ export async function logPurchaseAction(formData: FormData) {
       const amountCents = Math.round(amount * 100);
       const { error } = await admin.from('purchase_logs').insert({
         id: purchaseId,
-        team_id: teamId,
+        team_id: effectiveTeamId,
+        expense_type: expenseType,
         created_by: user.id,
         academic_year: academicYear,
         amount_cents: amountCents,
@@ -962,9 +975,10 @@ export async function logPurchaseAction(formData: FormData) {
         action: 'purchase.logged',
         targetType: 'purchase_log',
         targetId: purchaseId,
-        summary: `Logged purchase "${description}".`,
+        summary: `Logged ${expenseType === 'leadership' ? 'leadership' : 'team'} purchase "${description}".`,
         details: {
-          teamId,
+          teamId: effectiveTeamId,
+          expenseType,
           academicYear,
           amountCents,
           paymentMethod,
@@ -981,7 +995,7 @@ export async function logPurchaseAction(formData: FormData) {
           targetId: purchaseId,
           summary: `Uploaded receipt for "${description}".`,
           details: {
-            teamId,
+            teamId: effectiveTeamId,
             fileName: receiptFileName,
             receiptPath
           }

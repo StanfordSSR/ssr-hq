@@ -82,10 +82,12 @@ export default async function FinancesPage({
     .maybeSingle();
   const purchaseScopeQuery = admin
     .from('purchase_logs')
-    .select('team_id, amount_cents, purchased_at, category, academic_year');
+    .select('team_id, amount_cents, purchased_at, category, academic_year')
+    .eq('expense_type', 'team');
   const filteredPurchaseQuery = admin
     .from('purchase_logs')
-    .select('team_id, amount_cents, purchased_at, category, academic_year');
+    .select('team_id, amount_cents, purchased_at, category, academic_year')
+    .eq('expense_type', 'team');
 
   const teams = (teamsData || []) as Team[];
   const validSelectedTeamId = selectedTeamId === 'all' || teams.some((team) => team.id === selectedTeamId) ? selectedTeamId : 'all';
@@ -100,11 +102,31 @@ export default async function FinancesPage({
     filteredPurchaseQuery.gte('purchased_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
   }
 
-  const [{ data: purchasesData }, { data: filteredPurchasesData }, { data: cyclePurchasesData }] = await Promise.all([
+  const [
+    { data: purchasesData },
+    { data: filteredPurchasesData },
+    { data: cyclePurchasesData },
+    { data: leadershipCycleData },
+    { data: leadershipRecentData }
+  ] = await Promise.all([
     purchaseScopeQuery,
     filteredPurchaseQuery,
-    admin.from('purchase_logs').select('team_id, amount_cents').eq('academic_year', cycle)
+    admin.from('purchase_logs').select('team_id, amount_cents').eq('academic_year', cycle).eq('expense_type', 'team'),
+    admin.from('purchase_logs').select('amount_cents').eq('expense_type', 'leadership').eq('academic_year', cycle),
+    admin
+      .from('purchase_logs')
+      .select('id, description, amount_cents, purchased_at, person_name, payment_method, category')
+      .eq('expense_type', 'leadership')
+      .order('purchased_at', { ascending: false })
+      .limit(25)
   ]);
+  const leadershipCycleSpentCents = ((leadershipCycleData || []) as Array<{ amount_cents: number }>).reduce(
+    (sum, entry) => sum + entry.amount_cents,
+    0
+  );
+  const leadershipRecent = (leadershipRecentData || []) as PurchaseLog[];
+  const canLogLeadership =
+    currentRole === 'admin' || currentRole === 'president' || currentRole === 'financial_officer';
   const teamBudgets = new Map(
     ((teamBudgetsData || []) as TeamBudget[]).map((entry) => [entry.team_id, entry.annual_budget_cents])
   );
@@ -459,6 +481,66 @@ export default async function FinancesPage({
               </div>
             ))}
           </div>
+
+          {!selectedTeam ? (
+            <section className="hq-finance-drilldown">
+              <div className="hq-block-head">
+                <div className="hq-section-head-copy">
+                  <p className="hq-eyebrow">Leadership / Operations</p>
+                  <h3>Club leadership expenses</h3>
+                </div>
+                <strong>${(leadershipCycleSpentCents / 100).toLocaleString()} this cycle</strong>
+              </div>
+
+              <p className="helper">
+                Operations spending that is not tied to a specific team. Visible to financial officers, presidents,
+                and admins.
+              </p>
+
+              {canLogLeadership ? (
+                <section className="hq-question-card">
+                  <h3>Add leadership expense</h3>
+                  <ManualPurchaseForm
+                    academicYear={cycle}
+                    teams={[]}
+                    leadership
+                    defaultPersonName={profile.full_name || ''}
+                  />
+                </section>
+              ) : null}
+
+              <div className="table-wrap">
+                {leadershipRecent.length > 0 ? (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Item</th>
+                        <th>Amount</th>
+                        <th>Person</th>
+                        <th>Payment method</th>
+                        <th>Category</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leadershipRecent.map((purchase) => (
+                        <tr key={purchase.id}>
+                          <td>{new Date(purchase.purchased_at).toLocaleDateString('en-US')}</td>
+                          <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
+                          <td>${(purchase.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td>{purchase.person_name || 'Unknown'}</td>
+                          <td>{purchase.payment_method ? paymentMethodLabel[purchase.payment_method] : 'Unknown'}</td>
+                          <td>{purchase.category ? categoryLabel[purchase.category] : 'Equipment'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="empty-note">No leadership expenses have been logged for {cycle} yet.</p>
+                )}
+              </div>
+            </section>
+          ) : null}
 
           {selectedTeam ? (
             <section className="hq-finance-drilldown">

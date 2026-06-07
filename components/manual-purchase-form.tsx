@@ -12,12 +12,13 @@ type ManualPurchaseFormProps = {
   academicYear: string;
   teams: TeamOption[];
   defaultPersonName: string;
+  leadership?: boolean;
 };
 
 const missingReceiptWarning =
   'Not submitting a receipt within 2 weeks of purchase may result in a 6 month suspension of credit card privileges. Do you want to continue without uploading one right now?';
 
-export function ManualPurchaseForm({ academicYear, teams, defaultPersonName }: ManualPurchaseFormProps) {
+export function ManualPurchaseForm({ academicYear, teams, defaultPersonName, leadership = false }: ManualPurchaseFormProps) {
   const [paymentMethod, setPaymentMethod] = useState<'credit_card' | 'reimbursement' | 'amazon' | 'unknown'>('credit_card');
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -37,18 +38,22 @@ export function ManualPurchaseForm({ academicYear, teams, defaultPersonName }: M
       }}
     >
       <input type="hidden" name="academic_year" value={academicYear} />
-      <div className="field">
-        <label className="label" htmlFor="purchase-team">
-          Team
-        </label>
-        <select className="select" id="purchase-team" name="team_id" defaultValue={teams[0]?.id || ''} required>
-          {teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {leadership ? (
+        <input type="hidden" name="expense_type" value="leadership" />
+      ) : (
+        <div className="field">
+          <label className="label" htmlFor="purchase-team">
+            Team
+          </label>
+          <select className="select" id="purchase-team" name="team_id" defaultValue={teams[0]?.id || ''} required>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="hq-inline-grid">
         <div className="field">

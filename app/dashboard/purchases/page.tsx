@@ -14,7 +14,8 @@ type Team = {
 
 type Purchase = {
   id: string;
-  team_id: string;
+  team_id: string | null;
+  expense_type: 'team' | 'leadership';
   description: string;
   amount_cents: number;
   purchased_at: string;
@@ -72,15 +73,27 @@ export default async function PurchasesPage() {
   const accessibleTeamIds = teams.map((team) => team.id);
   const teamNameMap = new Map<string, string>(teams.map((team) => [team.id, team.name]));
 
-  const { data: purchasesData } = await admin
-    .from('purchase_logs')
-    .select(
-      'id, team_id, description, amount_cents, purchased_at, person_name, payment_method, category, receipt_path, receipt_not_needed'
-    )
-    .in('team_id', accessibleTeamIds)
-    .order('purchased_at', { ascending: false });
+  const purchaseColumns =
+    'id, team_id, expense_type, description, amount_cents, purchased_at, person_name, payment_method, category, receipt_path, receipt_not_needed';
+  const [{ data: purchasesData }, { data: leadershipPurchasesData }] = await Promise.all([
+    admin
+      .from('purchase_logs')
+      .select(purchaseColumns)
+      .in('team_id', accessibleTeamIds)
+      .order('purchased_at', { ascending: false }),
+    isPrivilegedViewer
+      ? admin
+          .from('purchase_logs')
+          .select(purchaseColumns)
+          .eq('expense_type', 'leadership')
+          .order('purchased_at', { ascending: false })
+      : Promise.resolve({ data: [] as Purchase[] })
+  ]);
 
-  const purchases = (purchasesData || []) as Purchase[];
+  const purchases = [
+    ...((purchasesData || []) as Purchase[]),
+    ...((leadershipPurchasesData || []) as Purchase[])
+  ].sort((a, b) => new Date(b.purchased_at).getTime() - new Date(a.purchased_at).getTime());
   const totalLogged = purchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0) / 100;
 
   return (
@@ -176,7 +189,11 @@ export default async function PurchasesPage() {
                         return receiptState.overdue ? 'Overdue' : 'Pending';
                       })()}
                     </td>
-                    <td>{teamNameMap.get(purchase.team_id) || 'Unknown team'}</td>
+                    <td>
+                      {purchase.expense_type === 'leadership'
+                        ? 'Leadership / Operations'
+                        : teamNameMap.get(purchase.team_id || '') || 'Unknown team'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
