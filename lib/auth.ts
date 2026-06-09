@@ -99,7 +99,16 @@ function getDefaultRole(roles: AppRole[]) {
 }
 
 export const getViewerContext = cache(async function getViewerContext() {
-  const { supabase, user } = await requireSignedInUser();
+  const supabase = await createClient();
+  // getClaims() verifies the JWT locally (no network round-trip) when the
+  // project uses asymmetric JWT keys; the middleware already refreshes the
+  // token on every request, so we don't need a second getUser() network call.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const sub = claimsData?.claims?.sub as string | undefined;
+  if (!sub) {
+    redirect('/login');
+  }
+  const user = { id: sub, email: (claimsData?.claims?.email as string | undefined) ?? null };
   const admin = createAdminClient();
   const [{ data: profile }, { count: leadMembershipCount }] = await Promise.all([
     supabase
