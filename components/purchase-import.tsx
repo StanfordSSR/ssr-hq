@@ -6,7 +6,8 @@ import {
   detectPurchaseCategory,
   normalizePaymentMethod,
   normalizePurchaseDate,
-  parsePurchaseAmount
+  parsePurchaseAmount,
+  type PurchaseCategory
 } from '@/lib/purchases';
 
 type TeamOption = {
@@ -43,7 +44,7 @@ type PreparedPurchase = {
   personName?: string;
   purchasedAt?: string;
   paymentMethod: PaymentMethod;
-  category: 'equipment' | 'food' | 'travel';
+  category: PurchaseCategory;
 };
 
 const initialState = {

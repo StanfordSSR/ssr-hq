@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { deletePurchaseAction, updatePurchaseDetailsAction } from '@/app/dashboard/actions';
+import type { PurchaseCategory } from '@/lib/purchases';
 
 type PurchaseEntryActionsProps = {
   purchaseId: string;
@@ -10,7 +11,7 @@ type PurchaseEntryActionsProps = {
   purchasedAt: string;
   personName: string | null;
   paymentMethod: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel';
+  category: PurchaseCategory;
 };
 
 export function PurchaseEntryActions({
@@ -70,7 +71,11 @@ export function PurchaseEntryActions({
             <select className="select" name="category" defaultValue={category}>
               <option value="equipment">Equipment</option>
               <option value="food">Food</option>
-              <option value="travel">Travel</option>
+              <option value="gas">Gas</option>
+              <option value="car_rental">Car Rental</option>
+              <option value="accommodation">Accommodation</option>
+              <option value="travel_fares">Travel Fares</option>
+              <option value="other">Other</option>
             </select>
           </div>
 

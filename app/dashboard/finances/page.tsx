@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear } from '@/lib/academic-calendar';
 import { getActiveBudgetPlan, getBudgetSetupState } from '@/lib/budget-plan';
+import { isTravelCategory } from '@/lib/purchases';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/actions';
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
@@ -31,7 +32,7 @@ type PurchaseLog = {
   team_id: string;
   amount_cents: number;
   purchased_at: string;
-  category: 'equipment' | 'food' | 'travel';
+  category: 'equipment' | 'food' | 'gas' | 'car_rental' | 'accommodation' | 'travel_fares' | 'other';
   description?: string;
   person_name?: string | null;
   payment_method?: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
@@ -44,10 +45,17 @@ const paymentMethodLabel: Record<'reimbursement' | 'credit_card' | 'amazon' | 'u
   unknown: 'Unknown'
 };
 
-const categoryLabel: Record<'equipment' | 'food' | 'travel', string> = {
+const categoryLabel: Record<
+  'equipment' | 'food' | 'gas' | 'car_rental' | 'accommodation' | 'travel_fares' | 'other',
+  string
+> = {
   equipment: 'Equipment',
   food: 'Food',
-  travel: 'Travel'
+  gas: 'Gas',
+  car_rental: 'Car Rental',
+  accommodation: 'Accommodation',
+  travel_fares: 'Travel Fares',
+  other: 'Other'
 };
 
 function readSingle(value: string | string[] | undefined) {
@@ -208,7 +216,7 @@ export default async function FinancesPage({
       .filter((purchase) => purchase.category === 'food')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
     travel: filteredPurchases
-      .filter((purchase) => purchase.category === 'travel')
+      .filter((purchase) => isTravelCategory(purchase.category))
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0)
   };
 

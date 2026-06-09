@@ -21,7 +21,7 @@ type Purchase = {
   purchased_at: string;
   person_name: string | null;
   payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel';
+  category: 'equipment' | 'food' | 'gas' | 'car_rental' | 'accommodation' | 'travel_fares' | 'other';
   receipt_path: string | null;
   receipt_not_needed: boolean;
 };
@@ -36,7 +36,11 @@ const paymentMethodLabel: Record<Purchase['payment_method'], string> = {
 const categoryLabel: Record<Purchase['category'], string> = {
   equipment: 'Equipment',
   food: 'Food',
-  travel: 'Travel'
+  gas: 'Gas',
+  car_rental: 'Car Rental',
+  accommodation: 'Accommodation',
+  travel_fares: 'Travel Fares',
+  other: 'Other'
 };
 
 export default async function PurchasesPage() {
