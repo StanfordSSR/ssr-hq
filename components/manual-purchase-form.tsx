@@ -114,11 +114,7 @@ export function ManualPurchaseForm({ academicYear, teams, defaultPersonName, lea
         <select className="select" id="purchase-category" name="category" defaultValue="equipment">
           <option value="equipment">Equipment</option>
           <option value="food">Food</option>
-          <option value="gas">Gas</option>
-          <option value="car_rental">Car Rental</option>
-          <option value="accommodation">Accommodation</option>
-          <option value="travel_fares">Travel Fares</option>
-          <option value="other">Other</option>
+          <option value="travel">Travel</option>
         </select>
       </div>
 

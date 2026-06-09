@@ -82,10 +82,7 @@ type Props = {
 const CATEGORY_LABELS: Record<string, string> = {
   equipment: 'Equipment',
   food: 'Food',
-  gas: 'Gas',
-  car_rental: 'Car Rental',
-  accommodation: 'Accommodation',
-  travel_fares: 'Travel Fares',
+  travel: 'Travel',
   other: 'Other'
 };
 const SOURCE_KIND_LABELS: Record<string, string> = {
@@ -99,10 +96,7 @@ const CATEGORY_OPTIONS: Array<[string, string]> = [
   ['', '—'],
   ['equipment', 'Equipment'],
   ['food', 'Food'],
-  ['gas', 'Gas'],
-  ['car_rental', 'Car Rental'],
-  ['accommodation', 'Accommodation'],
-  ['travel_fares', 'Travel Fares'],
+  ['travel', 'Travel'],
   ['other', 'Other']
 ];
 
@@ -119,24 +113,8 @@ function autoSave(event: { currentTarget: { form: HTMLFormElement | null } }) {
   event.currentTarget.form?.requestSubmit();
 }
 
-const CATEGORY_RANK: Record<string, number> = {
-  equipment: 0,
-  food: 1,
-  gas: 2,
-  car_rental: 3,
-  accommodation: 4,
-  travel_fares: 5,
-  other: 6
-};
-const AG_ABBR: Record<string, string> = {
-  equipment: 'equi',
-  food: 'food',
-  gas: 'gas',
-  car_rental: 'rental',
-  accommodation: 'acc',
-  travel_fares: 'trav',
-  other: 'other'
-};
+const CATEGORY_RANK: Record<string, number> = { equipment: 0, food: 1, travel: 2, other: 3 };
+const AG_ABBR: Record<string, string> = { equipment: 'equi', food: 'food', travel: 'trav', other: 'other' };
 const SHEET_HEAD_LABELS = ['Type', 'Line item', 'Team / kind', 'Category', 'Lock', 'Amount', 'Funded by / notes', ''];
 const DEFAULT_COLS = [78, 230, 146, 110, 100, 116, 250, 56];
 

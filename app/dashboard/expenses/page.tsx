@@ -7,7 +7,7 @@ import { PurchaseCategoryForm } from '@/components/purchase-category-form';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { PurchaseEntryActions } from '@/components/purchase-entry-actions';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
-import { getReceiptTaskState, isTravelCategory } from '@/lib/purchases';
+import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 
@@ -32,7 +32,7 @@ type Purchase = {
   purchased_at: string;
   person_name: string | null;
   payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'gas' | 'car_rental' | 'accommodation' | 'travel_fares' | 'other';
+  category: 'equipment' | 'food' | 'travel';
   receipt_path: string | null;
   receipt_file_name: string | null;
   receipt_not_needed: boolean;
@@ -48,14 +48,10 @@ const paymentMethodLabel: Record<Purchase['payment_method'], string> = {
 const categoryLabel: Record<Purchase['category'], string> = {
   equipment: 'Equipment',
   food: 'Food',
-  gas: 'Gas',
-  car_rental: 'Car Rental',
-  accommodation: 'Accommodation',
-  travel_fares: 'Travel Fares',
-  other: 'Other'
+  travel: 'Travel'
 };
 
-const categoryColors: Record<'equipment' | 'food' | 'travel' | 'unused', string> = {
+const categoryColors: Record<Purchase['category'] | 'unused', string> = {
   equipment: '#8c1515',
   food: '#d17c3f',
   travel: '#3f6e8f',
@@ -241,13 +237,13 @@ export default async function ExpenseLogPage({
       .filter((purchase) => purchase.category === 'food')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
     travel: summaryPurchases
-      .filter((purchase) => isTravelCategory(purchase.category))
+      .filter((purchase) => purchase.category === 'travel')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0)
   };
 
   const pieSlices: string[] = [];
   let cursor = 0;
-  for (const [key, amount] of Object.entries(categoryTotals) as Array<['equipment' | 'food' | 'travel', number]>) {
+  for (const [key, amount] of Object.entries(categoryTotals) as Array<[Purchase['category'], number]>) {
     if (budgetTotalCents <= 0 || amount <= 0) {
       continue;
     }

@@ -1,11 +1,4 @@
-export type PurchaseCategory =
-  | 'equipment'
-  | 'food'
-  | 'gas'
-  | 'car_rental'
-  | 'accommodation'
-  | 'travel_fares'
-  | 'other';
+export type PurchaseCategory = 'equipment' | 'food' | 'travel';
 export type PurchasePaymentMethod = 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
 export type ReceiptNotificationSettings = {
   emailEnabled: boolean;
@@ -19,40 +12,18 @@ export const RECEIPT_ALLOWED_TYPES = ['application/pdf', 'image/png', 'image/jpe
 
 const FOOD_PATTERN =
   /(pizza|boba|food|meal|snack|lunch|dinner|breakfast|coffee|cafe|restaurant|doordash|ubereats)/;
-const GAS_PATTERN = /(gas|fuel|petrol|shell|chevron|exxon|arco|76\b)/;
-const ACCOMMODATION_PATTERN = /(hotel|motel|hostel|airbnb|lodg|accommodation|\binn\b|resort)/;
-const CAR_RENTAL_PATTERN = /(zipcar|hertz|avis|enterprise|rental car|car rental|budget rent|getaround|turo)/;
-const TRAVEL_FARES_PATTERN = /(flight|airfare|uber|lyft|train|caltrain|amtrak|bart|mileage|parking|toll|fare|transit)/;
-
-export const PURCHASE_CATEGORIES: PurchaseCategory[] = [
-  'equipment',
-  'food',
-  'gas',
-  'car_rental',
-  'accommodation',
-  'travel_fares',
-  'other'
-];
-
-export function isPurchaseCategory(value: unknown): value is PurchaseCategory {
-  return typeof value === 'string' && (PURCHASE_CATEGORIES as string[]).includes(value);
-}
-
-// Travel sub-categories grouped under a single "Travel" bucket for summaries.
-export const TRAVEL_CATEGORIES: PurchaseCategory[] = ['gas', 'car_rental', 'accommodation', 'travel_fares'];
-
-export function isTravelCategory(value: unknown): boolean {
-  return typeof value === 'string' && (TRAVEL_CATEGORIES as string[]).includes(value);
-}
+const TRAVEL_PATTERN = /(zipcar|hertz|uber|lyft|flight|gas|fuel|hotel|mileage|parking|train|travel|car\b)/;
 
 export function detectPurchaseCategory(description: string): PurchaseCategory {
   const value = description.toLowerCase();
 
-  if (FOOD_PATTERN.test(value)) return 'food';
-  if (CAR_RENTAL_PATTERN.test(value)) return 'car_rental';
-  if (ACCOMMODATION_PATTERN.test(value)) return 'accommodation';
-  if (GAS_PATTERN.test(value)) return 'gas';
-  if (TRAVEL_FARES_PATTERN.test(value)) return 'travel_fares';
+  if (FOOD_PATTERN.test(value)) {
+    return 'food';
+  }
+
+  if (TRAVEL_PATTERN.test(value)) {
+    return 'travel';
+  }
 
   return 'equipment';
 }
