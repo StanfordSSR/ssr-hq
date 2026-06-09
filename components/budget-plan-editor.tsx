@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useOptimistic, useState, useTransition } from 'react';
+import { useEffect, useOptimistic, useRef, useState, useTransition } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -114,7 +114,7 @@ function autoSave(event: { currentTarget: { form: HTMLFormElement | null } }) {
 
 const CATEGORY_RANK: Record<string, number> = { equipment: 0, food: 1, travel: 2, other: 3 };
 const SHEET_HEAD_LABELS = ['Type', 'Line item', 'Team / kind', 'Category', 'Lock', 'Amount', 'Funded by', ''];
-const DEFAULT_COLS = [78, 240, 150, 116, 104, 116, 200, 56];
+const DEFAULT_COLS = [78, 230, 146, 110, 100, 116, 250, 56];
 
 function sourceSortKey(s: Source): string {
   const group = s.kind === 'annual_grant' ? '0' : '1';
@@ -715,42 +715,61 @@ function FundedByCell({
   editable: boolean;
   sourceLabelById: (id: string) => string;
 }) {
-  const summary =
-    allocations.length === 0
-      ? remainderCents > 0
-        ? `Grant ${usd(remainderCents)}`
-        : '—'
-      : `${allocations.length} source${allocations.length > 1 ? 's' : ''}${remainderCents > 0 ? ' + grant' : ''}`;
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: PointerEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open]);
 
-  if (!editable && allocations.length === 0) {
-    return <span className="hq-sheet-dim">{summary}</span>;
+  // Itemized summary: each source with its amount, then the annual grant remainder.
+  const parts: string[] = allocations.map((a) => `${sourceLabelById(a.sourceId)} (${usd(a.amountCents)})`);
+  if (remainderCents > 0) parts.push(`Annual grant (${usd(remainderCents)})`);
+  const summary = parts.length > 0 ? parts.join(', ') : '—';
+
+  if (!editable) {
+    return <span className="hq-sheet-dim hq-funded-summary" title={summary}>{summary}</span>;
   }
 
   return (
-    <details className="hq-sheet-funded">
-      <summary>{summary}</summary>
-      <div className="hq-sheet-funded-body">
-        {allocations.map((a) => (
-          <span key={a.sourceId} className="hq-sheet-chip">
-            {sourceLabelById(a.sourceId)} {usd(a.amountCents)}
-            {editable ? (
-              <form action={upsertAllocationAction}>
-                <input type="hidden" name="plan_id" value={planId} />
-                <input type="hidden" name="source_id" value={a.sourceId} />
-                <input type="hidden" name="expense_id" value={expenseId} />
-                <input type="hidden" name="amount" value="0" />
-                <button className="hq-sheet-chip-x" type="submit" title="Remove" aria-label="Remove allocation">
-                  ✕
-                </button>
-              </form>
-            ) : null}
-          </span>
-        ))}
-        {remainderCents > 0 ? <span className="hq-sheet-dim">Grant covers {usd(remainderCents)}</span> : null}
-        {editable ? (
+    <div className="hq-funded" ref={ref}>
+      <button type="button" className="hq-funded-trigger" title={summary} onClick={() => setOpen((o) => !o)}>
+        {summary}
+      </button>
+      {open ? (
+        <div className="hq-funded-pop">
+          {allocations.length > 0 ? (
+            <div className="hq-funded-rows">
+              {allocations.map((a) => (
+                <div key={a.sourceId} className="hq-funded-row">
+                  <span className="hq-funded-name">{sourceLabelById(a.sourceId)}</span>
+                  <span className="hq-funded-amt">{usd(a.amountCents)}</span>
+                  <form action={upsertAllocationAction} className="hq-funded-x">
+                    <input type="hidden" name="plan_id" value={planId} />
+                    <input type="hidden" name="source_id" value={a.sourceId} />
+                    <input type="hidden" name="expense_id" value={expenseId} />
+                    <input type="hidden" name="amount" value="0" />
+                    <button className="hq-sheet-chip-x" type="submit" title="Remove" aria-label="Remove allocation">
+                      ✕
+                    </button>
+                  </form>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {remainderCents > 0 ? (
+            <div className="hq-funded-row hq-funded-grant">
+              <span className="hq-funded-name">Annual grant</span>
+              <span className="hq-funded-amt">{usd(remainderCents)}</span>
+            </div>
+          ) : null}
           <form
             action={upsertAllocationAction}
-            className="hq-sheet-funded-add"
+            className="hq-funded-add"
             onSubmit={(event) => {
               const form = event.currentTarget;
               const srcId = (form.elements.namedItem('source_id') as HTMLSelectElement).value;
@@ -776,7 +795,7 @@ function FundedByCell({
             <input type="hidden" name="expense_id" value={expenseId} />
             <select className="hq-sheet-input" name="source_id" required defaultValue="">
               <option value="" disabled>
-                Source…
+                Add a source…
               </option>
               {sources
                 .filter((s) => !s.isDefaultPool)
@@ -786,14 +805,16 @@ function FundedByCell({
                   </option>
                 ))}
             </select>
-            <input className="hq-sheet-input" name="amount" type="number" min="0" step="0.01" placeholder="$" required />
-            <button className="hq-sheet-save" type="submit" title="Allocate" aria-label="Allocate">
-              +
-            </button>
+            <div className="hq-funded-add-amount">
+              <input className="hq-sheet-input" name="amount" type="number" min="0" step="0.01" placeholder="Amount" required />
+              <button className="button-secondary hq-funded-add-btn" type="submit">
+                Add
+              </button>
+            </div>
           </form>
-        ) : null}
-      </div>
-    </details>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

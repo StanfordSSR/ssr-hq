@@ -6853,7 +6853,7 @@ tr:last-child td {
   position: relative;
 }
 .hq-sheet-block-team {
-  box-shadow: 0 0 0 1px rgba(110, 97, 97, 0.16);
+  box-shadow: 0 0 0 1px rgba(95, 83, 83, 0.32);
   border-radius: 6px;
 }
 .hq-sheet-block-dragging {
@@ -6905,4 +6905,96 @@ tr:last-child td {
 /* Rows inside a team/event block read as one card — no internal separators. */
 .hq-sheet-block .hq-sheet-row {
   border-bottom: none;
+}
+
+/* Funded-by cell — inline collapsible card */
+.hq-funded {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.hq-funded-summary {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hq-funded-trigger {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 5px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hq-funded-trigger:hover {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+.hq-funded-pop {
+  margin: 4px 4px 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hq-funded-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hq-funded-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.hq-funded-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hq-funded-amt {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.hq-funded-grant .hq-funded-name {
+  color: var(--muted);
+}
+.hq-funded-x {
+  display: inline-flex;
+}
+.hq-funded-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.hq-funded-add .hq-sheet-input {
+  width: 100%;
+  max-width: none;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.hq-funded-add-amount {
+  display: flex;
+  gap: 6px;
+}
+.hq-funded-add-amount .hq-sheet-input {
+  flex: 1;
+}
+.hq-funded-add-btn {
+  white-space: nowrap;
+  padding: 6px 12px;
 }
