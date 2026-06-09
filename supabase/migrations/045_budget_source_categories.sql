@@ -1,9 +1,11 @@
 -- Funding sources gain a category and richer kinds (annual grants come in
 -- categorized line items, e.g. ASSU equipment grant vs food grant).
 
+-- Drop the old constraint FIRST so the rename below is allowed.
+alter table public.budget_funding_sources drop constraint if exists budget_funding_sources_kind_check;
+
 update public.budget_funding_sources set kind = 'reserve_grant' where kind = 'grant_reserves';
 
-alter table public.budget_funding_sources drop constraint if exists budget_funding_sources_kind_check;
 alter table public.budget_funding_sources
   add constraint budget_funding_sources_kind_check
   check (kind in ('annual_grant', 'reserve_grant', 'grant', 'sponsorship', 'other'));
