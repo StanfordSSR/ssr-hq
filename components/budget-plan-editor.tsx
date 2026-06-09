@@ -253,6 +253,9 @@ export function BudgetPlanEditor(props: Props) {
   }
   blocks.sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1));
   const blockIds = blocks.map((b) => b.id);
+  const usedTeamCategories = new Set(
+    optimisticExpenses.filter((e) => e.kind === 'team' && e.teamId && e.category).map((e) => `${e.teamId}:${e.category}`)
+  );
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -408,6 +411,7 @@ export function BudgetPlanEditor(props: Props) {
           <FundedByCell
             planId={planId}
             expenseId={e.id}
+            expenseAmountCents={e.effectiveCents}
             allocations={allocByExpense(e.id)}
             sources={sources}
             remainderCents={e.remainderFromGrantCents}
@@ -549,7 +553,9 @@ export function BudgetPlanEditor(props: Props) {
             </SortableContext>
           </DndContext>
 
-          {draftEditable ? <AddRow planId={planId} teams={teams} onAdd={handleAdd} /> : null}
+          {draftEditable ? (
+            <AddRow planId={planId} teams={teams} onAdd={handleAdd} usedTeamCategories={usedTeamCategories} />
+          ) : null}
         </div>
       </div>
 
@@ -576,13 +582,36 @@ function tempIdSeed() {
   return `${tempCounter}`;
 }
 
-function AddRow({ planId, teams, onAdd }: { planId: string; teams: Team[]; onAdd: (formData: FormData) => void | Promise<void> }) {
+function AddRow({
+  planId,
+  teams,
+  onAdd,
+  usedTeamCategories
+}: {
+  planId: string;
+  teams: Team[];
+  onAdd: (formData: FormData) => void | Promise<void>;
+  usedTeamCategories: Set<string>;
+}) {
   const [type, setType] = useState<'team' | 'event' | 'operations' | 'source'>('team');
   const isSource = type === 'source';
   const isTeam = type === 'team';
 
   return (
-    <form className="hq-sheet-row hq-sheet-add" action={onAdd}>
+    <form
+      className="hq-sheet-row hq-sheet-add"
+      action={onAdd}
+      onSubmit={(event) => {
+        if (type !== 'team') return;
+        const form = event.currentTarget;
+        const teamId = (form.elements.namedItem('team_id') as HTMLSelectElement)?.value;
+        const category = (form.elements.namedItem('category') as HTMLSelectElement)?.value;
+        if (teamId && category && usedTeamCategories.has(`${teamId}:${category}`)) {
+          event.preventDefault();
+          window.alert(`${teams.find((t) => t.id === teamId)?.name || 'That team'} already has a ${category} budget. Edit the existing row instead.`);
+        }
+      }}
+    >
       <input type="hidden" name="plan_id" value={planId} />
       <input type="hidden" name="__row_kind" value={type} />
       {!isSource ? <input type="hidden" name="kind" value={type} /> : null}
@@ -670,6 +699,7 @@ function AddRow({ planId, teams, onAdd }: { planId: string; teams: Team[]; onAdd
 function FundedByCell({
   planId,
   expenseId,
+  expenseAmountCents,
   allocations,
   sources,
   remainderCents,
@@ -678,6 +708,7 @@ function FundedByCell({
 }: {
   planId: string;
   expenseId: string;
+  expenseAmountCents: number;
   allocations: Allocation[];
   sources: Source[];
   remainderCents: number;
@@ -717,7 +748,30 @@ function FundedByCell({
         ))}
         {remainderCents > 0 ? <span className="hq-sheet-dim">Grant covers {usd(remainderCents)}</span> : null}
         {editable ? (
-          <form action={upsertAllocationAction} className="hq-sheet-funded-add">
+          <form
+            action={upsertAllocationAction}
+            className="hq-sheet-funded-add"
+            onSubmit={(event) => {
+              const form = event.currentTarget;
+              const srcId = (form.elements.namedItem('source_id') as HTMLSelectElement).value;
+              const amt = Math.round((Number((form.elements.namedItem('amount') as HTMLInputElement).value) || 0) * 100);
+              if (!srcId || amt <= 0) {
+                event.preventDefault();
+                return;
+              }
+              const otherToExpense = allocations.filter((a) => a.sourceId !== srcId).reduce((sum, a) => sum + a.amountCents, 0);
+              if (amt + otherToExpense > expenseAmountCents) {
+                event.preventDefault();
+                window.alert(`That exceeds the line item amount (${usd(expenseAmountCents)}). Set or raise the line amount first.`);
+                return;
+              }
+              const src = sources.find((s) => s.id === srcId);
+              if (src && amt > src.remainingCents) {
+                event.preventDefault();
+                window.alert(`Only ${usd(src.remainingCents)} is left in ${src.label}.`);
+              }
+            }}
+          >
             <input type="hidden" name="plan_id" value={planId} />
             <input type="hidden" name="expense_id" value={expenseId} />
             <select className="hq-sheet-input" name="source_id" required defaultValue="">

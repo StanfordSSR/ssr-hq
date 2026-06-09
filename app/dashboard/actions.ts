@@ -4448,6 +4448,17 @@ export async function upsertExpenseItemAction(formData: FormData) {
   let resolvedLabel = label;
   if (kind === 'team') {
     if (!teamId) return;
+    // One row per (team, category) per plan.
+    const { data: existingForTeam } = await admin
+      .from('budget_expense_items')
+      .select('id, category')
+      .eq('plan_id', planId)
+      .eq('team_id', teamId)
+      .eq('kind', 'team');
+    const conflict = (existingForTeam || []).some((row) => row.id !== expenseId && row.category === category);
+    if (conflict) {
+      throw new Error(`That team already has a ${category || 'category'} budget. Edit the existing one instead.`);
+    }
     const { data: team } = await admin.from('teams').select('name').eq('id', teamId).maybeSingle();
     const categoryLabel = { equipment: 'Equipment', food: 'Food', travel: 'Travel', other: 'Other' }[category || 'other'];
     resolvedLabel = `${team?.name || 'Team'} — ${categoryLabel}`;
