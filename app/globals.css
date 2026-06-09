@@ -6901,3 +6901,8 @@ tr:last-child td {
 .hq-sheet-block {
   margin-top: 7px;
 }
+
+/* Rows inside a team/event block read as one card — no internal separators. */
+.hq-sheet-block .hq-sheet-row {
+  border-bottom: none;
+}
