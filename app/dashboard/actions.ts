@@ -54,6 +54,15 @@ import {
 import { env } from '@/lib/env';
 import { buildInviteConfirmLink } from '@/lib/invite-links';
 import {
+  buildSignatureProfile,
+  extractSignatureFeatures,
+  MIN_ENROLL_SAMPLES,
+  parseStrokes,
+  verifySignature,
+  type SignatureProfile,
+  type SignatureStroke
+} from '@/lib/signature-verify';
+import {
   detectPurchaseCategory,
   normalizeReminderDays,
   normalizePaymentMethod,
@@ -4780,6 +4789,107 @@ async function requireSigningPresident() {
   return { user, profile };
 }
 
+// --- Signature verification ---------------------------------------------
+
+function canEnrollSignature(profile: { role?: string | null; is_president?: boolean | null; is_financial_officer?: boolean | null }) {
+  return (
+    profile.role === 'president' ||
+    profile.role === 'financial_officer' ||
+    Boolean(profile.is_president) ||
+    Boolean(profile.is_financial_officer)
+  );
+}
+
+export async function enrollSignatureAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/profile',
+    successMessage: 'Signature enrolled. Future approvals will be verified against it.',
+    action: async () => {
+      const { user, profile } = await getViewerContext();
+      if (!canEnrollSignature(profile)) {
+        throw new Error('Only presidents and financial officers enroll a verification signature.');
+      }
+
+      let raw: unknown;
+      try {
+        raw = JSON.parse(String(formData.get('samples') || '[]'));
+      } catch {
+        throw new Error('Could not read the captured signatures. Please try again.');
+      }
+      const sampleStrokes = Array.isArray(raw) ? (raw as SignatureStroke[][]) : [];
+      const featureList = sampleStrokes
+        .map((strokes) => extractSignatureFeatures(parseStrokes(strokes)))
+        .filter((f): f is number[] => Array.isArray(f));
+
+      if (featureList.length < MIN_ENROLL_SAMPLES) {
+        throw new Error(`Please capture at least ${MIN_ENROLL_SAMPLES} clear signatures before enrolling.`);
+      }
+
+      const signatureProfile = buildSignatureProfile(featureList);
+      const admin = createAdminClient();
+      await admin.from('signature_profiles').upsert(
+        {
+          user_id: user.id,
+          profile: signatureProfile,
+          sample_count: signatureProfile.sampleCount,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'user_id' }
+      );
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'signature.enrolled',
+        targetType: 'profile',
+        targetId: user.id,
+        summary: `Enrolled a verification signature (${signatureProfile.sampleCount} samples).`,
+        details: { samples: signatureProfile.sampleCount }
+      });
+
+      revalidatePath('/dashboard/profile');
+    }
+  });
+}
+
+export async function resetSignatureEnrollmentAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/profile',
+    successMessage: 'Removed your enrolled signature.',
+    action: async () => {
+      const { user } = await getViewerContext();
+      const targetId = String(formData.get('user_id') || '').trim() || user.id;
+      // Admins may reset anyone's enrollment; everyone else only their own.
+      if (targetId !== user.id) {
+        await requireAdmin();
+      }
+      const admin = createAdminClient();
+      await admin.from('signature_profiles').delete().eq('user_id', targetId);
+      revalidatePath('/dashboard/profile');
+      revalidatePath('/dashboard/settings');
+    }
+  });
+}
+
+// Verify the strokes submitted with a signature against the signer's enrolled
+// profile. Throws (blocking the signature) on mismatch or missing enrollment.
+async function verifyEnrolledSignature(admin: AdminClient, userId: string, formData: FormData) {
+  const { data } = await admin.from('signature_profiles').select('profile').eq('user_id', userId).maybeSingle();
+  if (!data) {
+    throw new Error('Enroll your signature in Personal settings before you can approve.');
+  }
+  const features = extractSignatureFeatures(parseStrokes(formData.get('strokes')));
+  if (!features) {
+    throw new Error('That signature was too brief to verify — please sign again.');
+  }
+  const result = verifySignature(data.profile as SignatureProfile, features);
+  if (!result.ok) {
+    throw new Error(
+      'Signature verification failed — this does not match your enrolled signature. Sign again, or re-enroll in Personal settings.'
+    );
+  }
+  return result;
+}
+
 export async function signBudgetPlanAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/finances/plan',
@@ -4794,6 +4904,8 @@ export async function signBudgetPlanAction(formData: FormData) {
       const admin = createAdminClient();
       const plan = await loadBudgetPlanRow(admin, planId);
       if (plan.status !== 'pending_approval') throw new Error('This plan is not awaiting approval.');
+
+      await verifyEnrolledSignature(admin, user.id, formData);
 
       await admin.from('budget_approvals').upsert(
         {
@@ -5077,6 +5189,8 @@ export async function signQuarterDeclarationAction(formData: FormData) {
         .maybeSingle();
       if (!decl) throw new Error('Declaration not found.');
       if (decl.status !== 'pending_approval') throw new Error('This declaration is not awaiting approval.');
+
+      await verifyEnrolledSignature(admin, user.id, formData);
 
       await admin.from('budget_approvals').upsert(
         {

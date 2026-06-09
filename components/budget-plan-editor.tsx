@@ -12,6 +12,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { SignaturePad } from '@/components/signature-pad';
+import type { SignatureStroke } from '@/lib/signature-verify';
 import {
   deleteExpenseItemAction,
   deleteFundingSourceAction,
@@ -1296,6 +1297,7 @@ export function BudgetApprovalPanel({
   uncoveredCents: number;
 }) {
   const [signature, setSignature] = useState('');
+  const [signatureStrokes, setSignatureStrokes] = useState<SignatureStroke[]>([]);
   const mySigned = approvals.some((a) => a.presidentId === currentUserId && a.hasSignature);
 
   return (
@@ -1351,14 +1353,17 @@ export function BudgetApprovalPanel({
           <SignaturePad
             value={signature}
             onChange={setSignature}
+            onStrokesChange={setSignatureStrokes}
             actionLabel="Sign to approve"
             title="Sign the budget approval"
             altText="President signature"
           />
+          <p className="helper">Your signature is verified against your enrolled signature in Personal settings.</p>
           {mySigned ? <p className="helper">You have already signed.</p> : null}
           <form action={signBudgetPlanAction} className="button-row">
             <input type="hidden" name="plan_id" value={targetId} />
             <input type="hidden" name="signature" value={signature} />
+            <input type="hidden" name="strokes" value={JSON.stringify(signatureStrokes)} />
             <button className="button" type="submit" disabled={!signature}>
               Submit signature
             </button>
@@ -1391,6 +1396,7 @@ export function QuarterlyDeclarationPanel({
   presidents: President[];
 }) {
   const [signature, setSignature] = useState('');
+  const [signatureStrokes, setSignatureStrokes] = useState<SignatureStroke[]>([]);
   const editable = canEdit && (status === 'draft' || status === 'pending_approval');
 
   return (
@@ -1451,6 +1457,7 @@ export function QuarterlyDeclarationPanel({
           <SignaturePad
             value={signature}
             onChange={setSignature}
+            onStrokesChange={setSignatureStrokes}
             actionLabel="Sign to approve"
             title={`Sign the ${quarter} budget`}
             altText="President signature"
@@ -1458,6 +1465,7 @@ export function QuarterlyDeclarationPanel({
           <form action={signQuarterDeclarationAction} className="button-row">
             <input type="hidden" name="declaration_id" value={declarationId} />
             <input type="hidden" name="signature" value={signature} />
+            <input type="hidden" name="strokes" value={JSON.stringify(signatureStrokes)} />
             <button className="button" type="submit" disabled={!signature}>
               Submit signature
             </button>

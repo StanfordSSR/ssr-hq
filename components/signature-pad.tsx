@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { SignatureStroke } from '@/lib/signature-verify';
 
-// Mouse/trackpad signature capture. Stores the drawing as a PNG data URL.
+// Mouse/trackpad signature capture. Stores the drawing as a PNG data URL and,
+// optionally, the raw timed pen strokes (for signature verification).
 export function SignaturePad({
   value,
   disabled,
   onChange,
+  onStrokesChange,
   actionLabel = 'Sign',
   title = 'Add your signature',
   description = 'Draw your signature in the box below using your mouse or trackpad.',
@@ -15,6 +18,7 @@ export function SignaturePad({
   value: string;
   disabled?: boolean;
   onChange: (next: string) => void;
+  onStrokesChange?: (strokes: SignatureStroke[]) => void;
   actionLabel?: string;
   title?: string;
   description?: string;
@@ -25,6 +29,7 @@ export function SignaturePad({
   const drawingRef = useRef(false);
   const dirtyRef = useRef(false);
   const lastRef = useRef<{ x: number; y: number } | null>(null);
+  const strokesRef = useRef<SignatureStroke[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -37,6 +42,7 @@ export function SignaturePad({
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#171414';
     dirtyRef.current = false;
+    strokesRef.current = [];
   }, [open]);
 
   const pointFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -52,7 +58,9 @@ export function SignaturePad({
   const startStroke = (event: React.PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault();
     drawingRef.current = true;
-    lastRef.current = pointFromEvent(event);
+    const point = pointFromEvent(event);
+    lastRef.current = point;
+    strokesRef.current.push([{ x: point.x, y: point.y, t: Math.round(performance.now()) }]);
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
@@ -68,6 +76,8 @@ export function SignaturePad({
     ctx.stroke();
     lastRef.current = next;
     dirtyRef.current = true;
+    const current = strokesRef.current[strokesRef.current.length - 1];
+    if (current) current.push({ x: next.x, y: next.y, t: Math.round(performance.now()) });
   };
 
   const endStroke = () => {
@@ -81,12 +91,14 @@ export function SignaturePad({
     if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     dirtyRef.current = false;
+    strokesRef.current = [];
   };
 
   const save = () => {
     const canvas = canvasRef.current;
     if (!canvas || !dirtyRef.current) return;
     onChange(canvas.toDataURL('image/png'));
+    onStrokesChange?.(strokesRef.current.map((s) => s.map((p) => ({ ...p }))));
     setOpen(false);
   };
 

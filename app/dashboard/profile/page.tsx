@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { updateOwnDisplayNameAction } from '@/app/dashboard/actions';
+import { SignatureEnrollment } from '@/components/signature-enrollment';
 
 export default async function PersonalProfilePage() {
   const supabase = await createClient();
@@ -14,9 +16,27 @@ export default async function PersonalProfilePage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, full_name, role, active')
+    .select('id, full_name, role, active, is_president, is_financial_officer')
     .eq('id', user.id)
     .single();
+
+  const canEnrollSignature =
+    profile?.role === 'president' ||
+    profile?.role === 'financial_officer' ||
+    Boolean(profile?.is_president) ||
+    Boolean(profile?.is_financial_officer);
+
+  let signatureEnrolled = false;
+  let signatureSampleCount = 0;
+  if (canEnrollSignature) {
+    const { data: sig } = await createAdminClient()
+      .from('signature_profiles')
+      .select('sample_count')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    signatureEnrolled = Boolean(sig);
+    signatureSampleCount = sig?.sample_count || 0;
+  }
 
   return (
     <div className="hq-page">
@@ -78,6 +98,23 @@ export default async function PersonalProfilePage() {
           </div>
         </form>
       </section>
+
+      {canEnrollSignature ? (
+        <section className="hq-panel hq-surface-muted">
+          <div className="hq-section-head">
+            <div className="hq-section-head-copy">
+              <p className="hq-eyebrow">Security</p>
+              <h2 className="hq-section-title hq-section-title-compact">Digital signature verification</h2>
+              <p className="hq-subtitle">
+                As a {profile?.role === 'financial_officer' ? 'financial officer' : 'president'}, your approval signatures are
+                verified against an enrolled reference of your handwriting. Enroll a few sample signatures here; every
+                future approval you sign is automatically checked against them.
+              </p>
+            </div>
+          </div>
+          <SignatureEnrollment enrolled={signatureEnrolled} sampleCount={signatureSampleCount} />
+        </section>
+      ) : null}
     </div>
   );
 }
