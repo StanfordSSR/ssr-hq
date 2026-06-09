@@ -3844,17 +3844,24 @@ export async function removeFinancialOfficerRoleAction(formData: FormData) {
       const admin = createAdminClient();
       const { data: profile } = await admin
         .from('profiles')
-        .select('id, full_name, is_financial_officer')
+        .select('id, full_name, role, is_financial_officer, is_admin, is_president')
         .eq('id', profileId)
         .maybeSingle();
 
-      if (!profile || !profile.is_financial_officer) {
-        throw new Error('Financial Officer not found.');
+      // If the profile is gone there's nothing to remove — treat as success.
+      if (!profile) {
+        revalidatePaths(REVALIDATE_PATHS.financialOfficerRole.concat(REVALIDATE_PATHS.presidentRole));
+        return;
       }
+
+      // Clearing the flag isn't enough when financial_officer is their PRIMARY
+      // role — demote the role column to their next-highest remaining role.
+      const fallbackRole = profile.is_admin ? 'admin' : profile.is_president ? 'president' : 'team_lead';
+      const nextRole = profile.role === 'financial_officer' ? fallbackRole : profile.role;
 
       const { error } = await admin
         .from('profiles')
-        .update({ is_financial_officer: false })
+        .update({ is_financial_officer: false, role: nextRole })
         .eq('id', profileId);
 
       if (error) {
