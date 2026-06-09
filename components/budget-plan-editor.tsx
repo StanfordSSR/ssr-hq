@@ -222,11 +222,32 @@ export function BudgetPlanEditor(props: Props) {
 
   const [optimisticSources, addOptimisticSource] = useOptimistic(sources, (state, item: Source) => [...state, item]);
   const [optimisticExpenses, addOptimisticExpense] = useOptimistic(expenses, (state, item: Expense) => [...state, item]);
+  const [optimisticAllocations, applyAllocation] = useOptimistic(
+    allocations,
+    (state, action: { kind: 'set' | 'remove'; sourceId: string; expenseId: string; amountCents: number }) => {
+      const without = state.filter((a) => !(a.sourceId === action.sourceId && a.expenseId === action.expenseId));
+      if (action.kind === 'remove') return without;
+      return [
+        ...without,
+        { id: `temp-${action.sourceId}-${action.expenseId}`, sourceId: action.sourceId, expenseId: action.expenseId, amountCents: action.amountCents }
+      ];
+    }
+  );
 
   const draftEditable = canEdit && (status === 'draft' || status === 'pending_approval');
   const teamName = (id: string | null) => teams.find((t) => t.id === id)?.name || '';
   const sourceLabelById = (id: string) => sources.find((s) => s.id === id)?.label || 'Source';
-  const allocByExpense = (expenseId: string) => allocations.filter((a) => a.expenseId === expenseId);
+  const allocByExpense = (expenseId: string) => optimisticAllocations.filter((a) => a.expenseId === expenseId);
+
+  const commitAllocation = async (sourceId: string, expenseId: string, amountCents: number) => {
+    applyAllocation({ kind: amountCents > 0 ? 'set' : 'remove', sourceId, expenseId, amountCents });
+    const fd = new FormData();
+    fd.set('plan_id', planId);
+    fd.set('source_id', sourceId);
+    fd.set('expense_id', expenseId);
+    fd.set('amount', String(amountCents / 100));
+    await upsertAllocationAction(fd);
+  };
 
   const sortedSources = [...optimisticSources]
     .filter((s) => !removed.has(s.id))
@@ -409,14 +430,12 @@ export function BudgetPlanEditor(props: Props) {
           <span className="hq-sheet-dim">—</span>
         ) : (
           <FundedByCell
-            planId={planId}
-            expenseId={e.id}
             expenseAmountCents={e.effectiveCents}
             allocations={allocByExpense(e.id)}
             sources={sources}
-            remainderCents={e.remainderFromGrantCents}
             editable={draftEditable}
             sourceLabelById={sourceLabelById}
+            onAllocate={(sourceId, amountCents) => commitAllocation(sourceId, e.id, amountCents)}
           />
         )}
         <span className="hq-sheet-actions">
@@ -697,23 +716,19 @@ function AddRow({
 }
 
 function FundedByCell({
-  planId,
-  expenseId,
   expenseAmountCents,
   allocations,
   sources,
-  remainderCents,
   editable,
-  sourceLabelById
+  sourceLabelById,
+  onAllocate
 }: {
-  planId: string;
-  expenseId: string;
   expenseAmountCents: number;
   allocations: Allocation[];
   sources: Source[];
-  remainderCents: number;
   editable: boolean;
   sourceLabelById: (id: string) => string;
+  onAllocate: (sourceId: string, amountCents: number) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -725,6 +740,10 @@ function FundedByCell({
     document.addEventListener('pointerdown', onDown);
     return () => document.removeEventListener('pointerdown', onDown);
   }, [open]);
+
+  // Remainder is computed from the (optimistic) allocations so it stays in sync.
+  const allocated = allocations.reduce((sum, a) => sum + a.amountCents, 0);
+  const remainderCents = Math.max(0, expenseAmountCents - allocated);
 
   // Itemized summary: each source with its amount, then the annual grant remainder.
   const parts: string[] = allocations.map((a) => `${sourceLabelById(a.sourceId)} (${usd(a.amountCents)})`);
@@ -748,11 +767,7 @@ function FundedByCell({
                 <div key={a.sourceId} className="hq-funded-row">
                   <span className="hq-funded-name">{sourceLabelById(a.sourceId)}</span>
                   <span className="hq-funded-amt">{usd(a.amountCents)}</span>
-                  <form action={upsertAllocationAction} className="hq-funded-x">
-                    <input type="hidden" name="plan_id" value={planId} />
-                    <input type="hidden" name="source_id" value={a.sourceId} />
-                    <input type="hidden" name="expense_id" value={expenseId} />
-                    <input type="hidden" name="amount" value="0" />
+                  <form action={() => onAllocate(a.sourceId, 0)} className="hq-funded-x">
                     <button className="hq-sheet-chip-x" type="submit" title="Remove" aria-label="Remove allocation">
                       ✕
                     </button>
@@ -768,31 +783,24 @@ function FundedByCell({
             </div>
           ) : null}
           <form
-            action={upsertAllocationAction}
             className="hq-funded-add"
-            onSubmit={(event) => {
-              const form = event.currentTarget;
-              const srcId = (form.elements.namedItem('source_id') as HTMLSelectElement).value;
-              const amt = Math.round((Number((form.elements.namedItem('amount') as HTMLInputElement).value) || 0) * 100);
-              if (!srcId || amt <= 0) {
-                event.preventDefault();
-                return;
-              }
+            action={(formData: FormData) => {
+              const srcId = String(formData.get('source_id') || '');
+              const amt = Math.round((Number(formData.get('amount')) || 0) * 100);
+              if (!srcId || amt <= 0) return;
               const otherToExpense = allocations.filter((a) => a.sourceId !== srcId).reduce((sum, a) => sum + a.amountCents, 0);
               if (amt + otherToExpense > expenseAmountCents) {
-                event.preventDefault();
                 window.alert(`That exceeds the line item amount (${usd(expenseAmountCents)}). Set or raise the line amount first.`);
                 return;
               }
               const src = sources.find((s) => s.id === srcId);
               if (src && amt > src.remainingCents) {
-                event.preventDefault();
                 window.alert(`Only ${usd(src.remainingCents)} is left in ${src.label}.`);
+                return;
               }
+              return onAllocate(srcId, amt);
             }}
           >
-            <input type="hidden" name="plan_id" value={planId} />
-            <input type="hidden" name="expense_id" value={expenseId} />
             <select className="hq-sheet-input" name="source_id" required defaultValue="">
               <option value="" disabled>
                 Add a source…
