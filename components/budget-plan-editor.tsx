@@ -646,8 +646,15 @@ export function BudgetPlanEditor(props: Props) {
 
     const combined = new Map<string, number>();
     for (const c of children) for (const a of allocByExpense(c.id)) combined.set(a.sourceId, (combined.get(a.sourceId) || 0) + a.amountCents);
+    // Break the annual-grant remainder down by the sub-item's category so it's
+    // clear which category grant each portion draws from.
+    const agByCat = new Map<string, number>();
+    for (const c of children) {
+      const rem = Math.max(0, c.effectiveCents - Math.min(c.effectiveCents, childTotal(c)));
+      if (rem > 0) agByCat.set(c.category || 'other', (agByCat.get(c.category || 'other') || 0) + rem);
+    }
     const combinedParts = Array.from(combined.entries()).map(([sid, amt]) => `${sourceLabelById(sid)} (${usd(amt)})`);
-    if (aggRemainder > 0) combinedParts.push(`AG (${usd(aggRemainder)})`);
+    for (const [cat, amt] of agByCat) combinedParts.push(`AG-${AG_ABBR[cat] || cat} (${usd(amt)})`);
     const combinedSummary = combinedParts.length > 0 ? combinedParts.join(', ') : '—';
 
     return (
