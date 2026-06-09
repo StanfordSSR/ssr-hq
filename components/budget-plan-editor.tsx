@@ -113,6 +113,7 @@ function autoSave(event: { currentTarget: { form: HTMLFormElement | null } }) {
 }
 
 const CATEGORY_RANK: Record<string, number> = { equipment: 0, food: 1, travel: 2, other: 3 };
+const AG_ABBR: Record<string, string> = { equipment: 'equi', food: 'food', travel: 'trav', other: 'other' };
 const SHEET_HEAD_LABELS = ['Type', 'Line item', 'Team / kind', 'Category', 'Lock', 'Amount', 'Funded by / notes', ''];
 const DEFAULT_COLS = [78, 230, 146, 110, 100, 116, 250, 56];
 
@@ -282,6 +283,11 @@ export function BudgetPlanEditor(props: Props) {
   const usedTeamCategories = new Set(
     optimisticExpenses.filter((e) => e.kind === 'team' && e.teamId && e.category).map((e) => `${e.teamId}:${e.category}`)
   );
+  // An annual grant category is "over" when its remaining balance is negative.
+  const grantOverByCategory = new Map<string, boolean>();
+  for (const s of optimisticSources) {
+    if (s.kind === 'annual_grant') grantOverByCategory.set(s.category || 'other', s.remainingCents < 0);
+  }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -379,7 +385,9 @@ export function BudgetPlanEditor(props: Props) {
         {rowEditable && !isTeam ? (
           <input form={rowId} className="hq-sheet-input" name="label" defaultValue={e.label} aria-label="Name" onBlur={autoSave} />
         ) : (
-          <span className="hq-sheet-cell">{e.label}</span>
+          <span className="hq-sheet-cell">
+            {isTeam ? `${teamName(e.teamId)} — ${CATEGORY_LABELS[e.category || 'other']}` : e.label}
+          </span>
         )}
         {isTeam ? (
           rowEditable ? (
@@ -437,6 +445,8 @@ export function BudgetPlanEditor(props: Props) {
           <FundedByCell
             expenseAmountCents={e.effectiveCents}
             expenseCategory={e.category}
+            agLabel={`AG-${AG_ABBR[e.category || 'other']}`}
+            grantOver={grantOverByCategory.get(e.category || 'other') || false}
             allocations={allocByExpense(e.id)}
             sources={sources}
             editable={draftEditable}
@@ -509,8 +519,13 @@ export function BudgetPlanEditor(props: Props) {
           {sortedSources.map((s) => {
             const rowId = `src-${s.id}`;
             const temp = s.id.startsWith('temp-');
+            const overCommitted = s.remainingCents < 0;
             return (
-              <div className={`hq-sheet-row${temp ? ' hq-sheet-row-pending' : ''}`} role="row" key={s.id}>
+              <div
+                className={`hq-sheet-row${temp ? ' hq-sheet-row-pending' : ''}${overCommitted ? ' hq-sheet-row-over-amt' : ''}`}
+                role="row"
+                key={s.id}
+              >
                 <form id={rowId} action={upsertFundingSourceAction} hidden />
                 <input form={rowId} type="hidden" name="plan_id" value={planId} />
                 <input form={rowId} type="hidden" name="source_id" value={s.id} />
@@ -543,7 +558,15 @@ export function BudgetPlanEditor(props: Props) {
                 ) : (
                   <span className="hq-sheet-cell">{s.category ? CATEGORY_LABELS[s.category] : '—'}</span>
                 )}
-                <span className="hq-sheet-dim">{s.kind === 'annual_grant' ? 'permanent' : '—'}</span>
+                <span className={`hq-sheet-dim${overCommitted ? ' hq-funded-over' : ''}`}>
+                  {s.kind === 'annual_grant'
+                    ? overCommitted
+                      ? `over ${usd(-s.remainingCents)}`
+                      : 'permanent'
+                    : overCommitted
+                      ? `over ${usd(-s.remainingCents)}`
+                      : '—'}
+                </span>
                 {draftEditable && !temp ? (
                   <span className="hq-sheet-amount">
                     <span>$</span>
@@ -724,6 +747,8 @@ function AddRow({
 function FundedByCell({
   expenseAmountCents,
   expenseCategory,
+  agLabel,
+  grantOver,
   allocations,
   sources,
   editable,
@@ -732,6 +757,8 @@ function FundedByCell({
 }: {
   expenseAmountCents: number;
   expenseCategory: string | null;
+  agLabel: string;
+  grantOver: boolean;
   allocations: Allocation[];
   sources: Source[];
   editable: boolean;
@@ -755,16 +782,26 @@ function FundedByCell({
 
   // Itemized summary: each source with its amount, then the annual grant remainder.
   const parts: string[] = allocations.map((a) => `${sourceLabelById(a.sourceId)} (${usd(a.amountCents)})`);
-  if (remainderCents > 0) parts.push(`AG (${usd(remainderCents)})`);
+  if (remainderCents > 0) parts.push(`${agLabel} (${usd(remainderCents)})`);
   const summary = parts.length > 0 ? parts.join(', ') : '—';
+  const shortfall = remainderCents > 0 && grantOver;
 
   if (!editable) {
-    return <span className="hq-sheet-dim hq-funded-summary" title={summary}>{summary}</span>;
+    return (
+      <span className={`hq-sheet-dim hq-funded-summary${shortfall ? ' hq-funded-over' : ''}`} title={summary}>
+        {summary}
+      </span>
+    );
   }
 
   return (
     <div className="hq-funded" ref={ref}>
-      <button type="button" className="hq-funded-trigger" title={summary} onClick={() => setOpen((o) => !o)}>
+      <button
+        type="button"
+        className={`hq-funded-trigger${shortfall ? ' hq-funded-over' : ''}`}
+        title={shortfall ? `${agLabel} is over budget — add more to that annual grant.` : summary}
+        onClick={() => setOpen((o) => !o)}
+      >
         {summary}
       </button>
       {open ? (
@@ -785,8 +822,8 @@ function FundedByCell({
             </div>
           ) : null}
           {remainderCents > 0 ? (
-            <div className="hq-funded-row hq-funded-grant">
-              <span className="hq-funded-name">AG (Annual grant)</span>
+            <div className={`hq-funded-row hq-funded-grant${grantOver ? ' hq-funded-over' : ''}`}>
+              <span className="hq-funded-name">{agLabel}{grantOver ? ' · over budget' : ''}</span>
               <span className="hq-funded-amt">{usd(remainderCents)}</span>
             </div>
           ) : null}

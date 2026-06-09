@@ -6998,3 +6998,14 @@ tr:last-child td {
   white-space: nowrap;
   padding: 6px 12px;
 }
+
+.hq-funded-over,
+.hq-funded-over .hq-funded-name,
+.hq-funded-over .hq-funded-amt {
+  color: var(--cardinal);
+  font-weight: 600;
+}
+.hq-sheet-row-over-amt .hq-sheet-amount input,
+.hq-sheet-row-over-amt .hq-sheet-num {
+  color: var(--cardinal);
+}
