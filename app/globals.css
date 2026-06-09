@@ -6853,7 +6853,8 @@ tr:last-child td {
   position: relative;
 }
 .hq-sheet-block-team {
-  box-shadow: inset 2px 0 0 0 rgba(140, 21, 21, 0.22);
+  box-shadow: 0 0 0 1px rgba(110, 97, 97, 0.16);
+  border-radius: 6px;
 }
 .hq-sheet-block-dragging {
   box-shadow: 0 8px 22px rgba(23, 20, 20, 0.16);

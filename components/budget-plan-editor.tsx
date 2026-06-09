@@ -1,6 +1,6 @@
 'use client';
 
-import { useOptimistic, useState, useTransition } from 'react';
+import { useEffect, useOptimistic, useState, useTransition } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -176,6 +176,27 @@ export function BudgetPlanEditor(props: Props) {
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const hide = (id: string) => setRemoved((prev) => new Set(prev).add(id));
   const [cols, setCols] = useState<number[]>(DEFAULT_COLS);
+  // Load saved column widths after mount (avoids hydration mismatch).
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('ssr-budget-cols');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length === DEFAULT_COLS.length && parsed.every((n) => typeof n === 'number')) {
+          setCols(parsed);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('ssr-budget-cols', JSON.stringify(cols));
+    } catch {
+      /* ignore */
+    }
+  }, [cols]);
   const startResize = (event: React.PointerEvent<HTMLSpanElement>, index: number) => {
     event.preventDefault();
     const startX = event.clientX;
