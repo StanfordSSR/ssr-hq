@@ -6829,3 +6829,7 @@ tr:last-child td {
   color: var(--cardinal);
   font-weight: 700;
 }
+
+.hq-sheet-row-pending {
+  opacity: 0.55;
+}

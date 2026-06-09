@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useOptimistic, useState } from 'react';
 import { SignaturePad } from '@/components/signature-pad';
 import {
   deleteExpenseItemAction,
@@ -121,10 +121,59 @@ export function BudgetPlanEditor(props: Props) {
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const hide = (id: string) => setRemoved((prev) => new Set(prev).add(id));
 
+  const [optimisticSources, addOptimisticSource] = useOptimistic(sources, (state, item: Source) => [...state, item]);
+  const [optimisticExpenses, addOptimisticExpense] = useOptimistic(expenses, (state, item: Expense) => [...state, item]);
+
   const draftEditable = canEdit && (status === 'draft' || status === 'pending_approval');
   const teamName = (id: string | null) => teams.find((t) => t.id === id)?.name || '';
   const sourceLabelById = (id: string) => sources.find((s) => s.id === id)?.label || 'Source';
   const allocByExpense = (expenseId: string) => allocations.filter((a) => a.expenseId === expenseId);
+
+  // Optimistically add the new row, then run the matching server action.
+  async function handleAdd(formData: FormData) {
+    const rowKind = String(formData.get('__row_kind') || 'team');
+    const label = String(formData.get('label') || '').trim();
+    if (!label) return;
+    const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+    const tempId = `temp-${tempIdSeed()}`;
+    if (rowKind === 'source') {
+      addOptimisticSource({
+        id: tempId,
+        label,
+        kind: String(formData.get('kind') || 'sponsorship'),
+        category: String(formData.get('category') || '') || null,
+        notes: String(formData.get('notes') || '') || null,
+        amountCents,
+        isDefaultPool: false,
+        committedCents: 0,
+        remainingCents: amountCents
+      });
+      await upsertFundingSourceAction(formData);
+    } else {
+      addOptimisticExpense({
+        id: tempId,
+        kind: rowKind,
+        teamId: String(formData.get('team_id') || '') || null,
+        category: String(formData.get('category') || '') || null,
+        label,
+        amountCents,
+        lockCadence: String(formData.get('lock_cadence') || 'yearly'),
+        effectiveCents: amountCents,
+        allocatedCents: 0,
+        remainderFromGrantCents: amountCents,
+        spentCents: 0
+      });
+      await upsertExpenseItemAction(formData);
+    }
+  }
+
+  const confirmDelete = (id: string) => (event: { preventDefault: () => void }) => {
+    if (!window.confirm('Delete this line item? This cannot be undone.')) {
+      event.preventDefault();
+      return;
+    }
+    hide(id);
+  };
 
   return (
     <div className="form-stack hq-budget-plan">
@@ -153,23 +202,24 @@ export function BudgetPlanEditor(props: Props) {
             <span aria-hidden="true" />
           </div>
 
-          {sources
+          {optimisticSources
             .filter((s) => !removed.has(s.id))
             .map((s) => {
               const rowId = `src-${s.id}`;
+              const temp = s.id.startsWith('temp-');
               return (
-                <div className="hq-sheet-row" role="row" key={s.id}>
+                <div className={`hq-sheet-row${temp ? ' hq-sheet-row-pending' : ''}`} role="row" key={s.id}>
                   <form id={rowId} action={upsertFundingSourceAction} hidden />
                   <input form={rowId} type="hidden" name="plan_id" value={planId} />
                   <input form={rowId} type="hidden" name="source_id" value={s.id} />
                   <input form={rowId} type="hidden" name="is_default_pool" value={s.isDefaultPool ? 'on' : ''} />
                   <span className="hq-sheet-type hq-sheet-type-source">Source</span>
-                  {draftEditable ? (
+                  {draftEditable && !temp ? (
                     <input form={rowId} className="hq-sheet-input" name="label" defaultValue={s.label} aria-label="Name" onBlur={autoSave} />
                   ) : (
                     <span className="hq-sheet-cell">{s.label}</span>
                   )}
-                  {draftEditable ? (
+                  {draftEditable && !temp ? (
                     <select form={rowId} className="hq-sheet-input" name="kind" defaultValue={s.kind} aria-label="Kind" onChange={autoSave}>
                       {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
                         <option key={v} value={v}>
@@ -180,7 +230,7 @@ export function BudgetPlanEditor(props: Props) {
                   ) : (
                     <span className="hq-sheet-cell">{SOURCE_KIND_LABELS[s.kind] || s.kind}</span>
                   )}
-                  {draftEditable ? (
+                  {draftEditable && !temp ? (
                     <select form={rowId} className="hq-sheet-input" name="category" defaultValue={s.category || ''} aria-label="Category" onChange={autoSave}>
                       {CATEGORY_OPTIONS.map(([v, l]) => (
                         <option key={v} value={v}>
@@ -192,7 +242,7 @@ export function BudgetPlanEditor(props: Props) {
                     <span className="hq-sheet-cell">{s.category ? CATEGORY_LABELS[s.category] : '—'}</span>
                   )}
                   <span className="hq-sheet-dim">{s.isDefaultPool ? 'default' : '—'}</span>
-                  {draftEditable ? (
+                  {draftEditable && !temp ? (
                     <span className="hq-sheet-amount">
                       <span>$</span>
                       <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(s.amountCents)} aria-label="Amount" onBlur={autoSave} />
@@ -200,14 +250,14 @@ export function BudgetPlanEditor(props: Props) {
                   ) : (
                     <span className="hq-sheet-cell hq-sheet-num">{usd(s.amountCents)}</span>
                   )}
-                  {draftEditable ? (
+                  {draftEditable && !temp ? (
                     <input form={rowId} className="hq-sheet-input" name="notes" defaultValue={s.notes || ''} placeholder="From (e.g. ASSU)" aria-label="Funded by" onBlur={autoSave} />
                   ) : (
                     <span className="hq-sheet-dim">{s.notes || '—'}</span>
                   )}
                   <span className="hq-sheet-actions">
-                    {draftEditable && !s.isDefaultPool ? (
-                      <button form={rowId} formAction={deleteFundingSourceAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={() => hide(s.id)}>
+                    {draftEditable && !temp && !s.isDefaultPool ? (
+                      <button form={rowId} formAction={deleteFundingSourceAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={confirmDelete(s.id)}>
                         ✕
                       </button>
                     ) : null}
@@ -216,15 +266,16 @@ export function BudgetPlanEditor(props: Props) {
               );
             })}
 
-          {expenses
+          {optimisticExpenses
             .filter((e) => !removed.has(e.id))
             .map((e) => {
               const rowId = `exp-${e.id}`;
+              const temp = e.id.startsWith('temp-');
               const isTeam = e.kind === 'team';
-              const rowEditable = draftEditable || (canEdit && status === 'approved' && e.lockCadence === 'unlocked');
+              const rowEditable = (draftEditable || (canEdit && status === 'approved' && e.lockCadence === 'unlocked')) && !temp;
               const typeLabel = isTeam ? 'Team' : e.kind === 'operations' ? 'Ops' : e.kind === 'general' ? 'General' : 'Event';
               return (
-                <div className="hq-sheet-row" role="row" key={e.id}>
+                <div className={`hq-sheet-row${temp ? ' hq-sheet-row-pending' : ''}`} role="row" key={e.id}>
                   <form id={rowId} action={upsertExpenseItemAction} hidden />
                   <input form={rowId} type="hidden" name="plan_id" value={planId} />
                   <input form={rowId} type="hidden" name="expense_id" value={e.id} />
@@ -285,18 +336,22 @@ export function BudgetPlanEditor(props: Props) {
                   ) : (
                     <span className="hq-sheet-cell hq-sheet-num">{usd(e.effectiveCents)}</span>
                   )}
-                  <FundedByCell
-                    planId={planId}
-                    expenseId={e.id}
-                    allocations={allocByExpense(e.id)}
-                    sources={sources}
-                    remainderCents={e.remainderFromGrantCents}
-                    editable={draftEditable}
-                    sourceLabelById={sourceLabelById}
-                  />
+                  {temp ? (
+                    <span className="hq-sheet-dim">—</span>
+                  ) : (
+                    <FundedByCell
+                      planId={planId}
+                      expenseId={e.id}
+                      allocations={allocByExpense(e.id)}
+                      sources={sources}
+                      remainderCents={e.remainderFromGrantCents}
+                      editable={draftEditable}
+                      sourceLabelById={sourceLabelById}
+                    />
+                  )}
                   <span className="hq-sheet-actions">
-                    {draftEditable ? (
-                      <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={() => hide(e.id)}>
+                    {draftEditable && !temp ? (
+                      <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={confirmDelete(e.id)}>
                         ✕
                       </button>
                     ) : null}
@@ -305,7 +360,7 @@ export function BudgetPlanEditor(props: Props) {
               );
             })}
 
-          {draftEditable ? <AddRow planId={planId} teams={teams} /> : null}
+          {draftEditable ? <AddRow planId={planId} teams={teams} onAdd={handleAdd} /> : null}
         </div>
       </div>
 
@@ -326,15 +381,21 @@ export function BudgetPlanEditor(props: Props) {
   );
 }
 
-function AddRow({ planId, teams }: { planId: string; teams: Team[] }) {
+let tempCounter = 0;
+function tempIdSeed() {
+  tempCounter += 1;
+  return `${tempCounter}`;
+}
+
+function AddRow({ planId, teams, onAdd }: { planId: string; teams: Team[]; onAdd: (formData: FormData) => void | Promise<void> }) {
   const [type, setType] = useState<'team' | 'event' | 'operations' | 'source'>('team');
   const isSource = type === 'source';
   const isTeam = type === 'team';
-  const action = isSource ? upsertFundingSourceAction : upsertExpenseItemAction;
 
   return (
-    <form className="hq-sheet-row hq-sheet-add" action={action}>
+    <form className="hq-sheet-row hq-sheet-add" action={onAdd}>
       <input type="hidden" name="plan_id" value={planId} />
+      <input type="hidden" name="__row_kind" value={type} />
       {!isSource ? <input type="hidden" name="kind" value={type} /> : null}
       <select
         className="hq-sheet-input"
