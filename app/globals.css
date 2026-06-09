@@ -7053,3 +7053,14 @@ tr:last-child td {
 .hq-sheet-section-gap {
   height: 16px;
 }
+
+.hq-sheet-amount-ro {
+  width: 100%;
+  text-align: right;
+  padding: 5px 4px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.hq-funded-summary {
+  padding: 5px 6px;
+}

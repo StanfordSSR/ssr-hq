@@ -648,7 +648,10 @@ export function BudgetPlanEditor(props: Props) {
             <span className={`hq-budget-tag hq-budget-tag-${parent.lockCadence}`}>{parent.lockCadence}</span>
           )}
           {hasChildren ? (
-            <span className="hq-sheet-cell hq-sheet-num">{usd(aggEffective)}</span>
+            <span className="hq-sheet-amount">
+              <span>$</span>
+              <span className="hq-sheet-amount-ro">{dollars(aggEffective)}</span>
+            </span>
           ) : rowEditable ? (
             <span className="hq-sheet-amount">
               <span>$</span>
