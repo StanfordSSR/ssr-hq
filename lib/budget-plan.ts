@@ -340,12 +340,22 @@ export async function computePlanRollup(planId: string, academicYear: string, no
     committedBySource.set(alloc.sourceId, (committedBySource.get(alloc.sourceId) || 0) + alloc.amountCents);
   }
 
+  // Each category's annual-grant source covers the remainder of expenses in that
+  // category (events/operations fall back to the "other" grant).
+  const grantByCategory = new Map<string, string>();
+  for (const source of sources) {
+    if (source.kind === 'annual_grant') {
+      grantByCategory.set(source.category || 'other', source.id);
+    }
+  }
+  const grantFor = (category: string | null) =>
+    grantByCategory.get(category || 'other') || grantByCategory.get('other') || null;
   const defaultPool = sources.find((source) => source.isDefaultPool) || null;
 
   const perExpense: PlanRollup['perExpense'] = new Map();
   const perTeam: PlanRollup['perTeam'] = new Map();
+  const remainderByGrant = new Map<string, number>();
   let totalExpenseCents = 0;
-  let remainderToDefaultPool = 0;
 
   for (const expense of expenses) {
     const effectiveCents =
@@ -354,7 +364,10 @@ export async function computePlanRollup(planId: string, academicYear: string, no
         : expense.amountCents;
     const allocatedCents = Math.min(effectiveCents, allocatedByExpense.get(expense.id) || 0);
     const remainderFromGrantCents = Math.max(0, effectiveCents - allocatedCents);
-    remainderToDefaultPool += remainderFromGrantCents;
+    const grantId = grantFor(expense.category);
+    if (grantId && remainderFromGrantCents > 0) {
+      remainderByGrant.set(grantId, (remainderByGrant.get(grantId) || 0) + remainderFromGrantCents);
+    }
 
     const spentCents = expense.teamId
       ? spendByTeamCategory.get(`${expense.teamId}:${expense.category || 'other'}`) || 0
@@ -380,10 +393,7 @@ export async function computePlanRollup(planId: string, academicYear: string, no
   const perSource: PlanRollup['perSource'] = new Map();
   const overAllocatedSources: string[] = [];
   for (const source of sources) {
-    let committed = committedBySource.get(source.id) || 0;
-    if (defaultPool && source.id === defaultPool.id) {
-      committed += remainderToDefaultPool;
-    }
+    const committed = (committedBySource.get(source.id) || 0) + (remainderByGrant.get(source.id) || 0);
     perSource.set(source.id, { committedCents: committed, remainingCents: source.amountCents - committed });
     if (committed > source.amountCents) {
       overAllocatedSources.push(source.id);

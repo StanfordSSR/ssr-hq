@@ -436,6 +436,7 @@ export function BudgetPlanEditor(props: Props) {
         ) : (
           <FundedByCell
             expenseAmountCents={e.effectiveCents}
+            expenseCategory={e.category}
             allocations={allocByExpense(e.id)}
             sources={sources}
             editable={draftEditable}
@@ -542,7 +543,7 @@ export function BudgetPlanEditor(props: Props) {
                 ) : (
                   <span className="hq-sheet-cell">{s.category ? CATEGORY_LABELS[s.category] : '—'}</span>
                 )}
-                <span className="hq-sheet-dim">{s.isDefaultPool ? 'default' : '—'}</span>
+                <span className="hq-sheet-dim">{s.kind === 'annual_grant' ? 'permanent' : '—'}</span>
                 {draftEditable && !temp ? (
                   <span className="hq-sheet-amount">
                     <span>$</span>
@@ -557,7 +558,7 @@ export function BudgetPlanEditor(props: Props) {
                   <span className="hq-sheet-dim">{s.notes || '—'}</span>
                 )}
                 <span className="hq-sheet-actions">
-                  {draftEditable && !temp && !s.isDefaultPool ? (
+                  {draftEditable && !temp && s.kind !== 'annual_grant' ? (
                     <button form={rowId} formAction={deleteFundingSourceAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={confirmDelete(s.id)}>
                       ✕
                     </button>
@@ -722,6 +723,7 @@ function AddRow({
 
 function FundedByCell({
   expenseAmountCents,
+  expenseCategory,
   allocations,
   sources,
   editable,
@@ -729,6 +731,7 @@ function FundedByCell({
   onAllocate
 }: {
   expenseAmountCents: number;
+  expenseCategory: string | null;
   allocations: Allocation[];
   sources: Source[];
   editable: boolean;
@@ -811,10 +814,12 @@ function FundedByCell({
                 Add a source…
               </option>
               {sources
-                .filter((s) => !s.isDefaultPool)
+                .filter((s) => s.kind !== 'annual_grant')
+                .filter((s) => !expenseCategory || !s.category || s.category === expenseCategory)
                 .map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.label}
+                    {s.category ? ` · ${s.category}` : ''}
                   </option>
                 ))}
             </select>

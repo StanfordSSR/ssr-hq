@@ -4317,14 +4317,18 @@ export async function createBudgetPlanAction(formData: FormData) {
       });
       if (error) throw new Error(error.message);
 
-      await admin.from('budget_funding_sources').insert({
-        plan_id: planId,
-        label: 'Annual grant',
-        kind: 'annual_grant',
-        amount_cents: 0,
-        is_default_pool: true,
-        sort_order: 0
-      });
+      // Four permanent annual-grant rows — one per category.
+      await admin.from('budget_funding_sources').insert(
+        (['equipment', 'food', 'travel', 'other'] as const).map((category, index) => ({
+          plan_id: planId,
+          label: 'Annual grant',
+          kind: 'annual_grant',
+          category,
+          amount_cents: 0,
+          is_default_pool: index === 0,
+          sort_order: index
+        }))
+      );
 
       const { data: teams } = await admin.from('teams').select('id, name').eq('is_active', true).order('name');
       const categoryRows: Array<Record<string, unknown>> = [];
@@ -4422,11 +4426,11 @@ export async function deleteFundingSourceAction(formData: FormData) {
   await ensureEditableDraft(admin, planId, plan.status);
   const { data: source } = await admin
     .from('budget_funding_sources')
-    .select('is_default_pool')
+    .select('kind')
     .eq('id', sourceId)
     .maybeSingle();
-  if (source?.is_default_pool) {
-    throw new Error('The annual grant (default pool) cannot be removed.');
+  if (source?.kind === 'annual_grant') {
+    throw new Error('Annual grant rows are permanent and cannot be removed.');
   }
   await admin.from('budget_funding_sources').delete().eq('id', sourceId);
   revalidateBudgetPlan();
@@ -4540,6 +4544,13 @@ export async function upsertAllocationAction(formData: FormData) {
   const source = sources.find((s) => s.id === sourceId);
   const expense = expenses.find((e) => e.id === expenseId);
   if (!source || !expense) throw new Error('Unknown source or line item.');
+  if (source.kind === 'annual_grant') {
+    throw new Error('The annual grant funds the remainder automatically — pick a sponsorship/grant/other source.');
+  }
+  // A categorized line item can only draw from a matching-category or uncategorized source.
+  if (expense.category && source.category && source.category !== expense.category) {
+    throw new Error(`A ${expense.category} line item can only be funded by a ${expense.category} or uncategorized source.`);
+  }
   const otherFromSource = allocations
     .filter((a) => a.sourceId === sourceId && a.expenseId !== expenseId)
     .reduce((sum, a) => sum + a.amountCents, 0);
