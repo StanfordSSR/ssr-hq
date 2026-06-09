@@ -4518,6 +4518,12 @@ export async function upsertExpenseItemAction(formData: FormData) {
   } else {
     await admin.from('budget_expense_items').insert(payload);
   }
+  // Once a parent has sub-items, its own amount/funding is replaced by the
+  // sub-items — clear them so nothing is double-counted.
+  if (isSubItem) {
+    await admin.from('budget_expense_items').update({ amount_cents: 0 }).eq('id', parentId).gt('amount_cents', 0);
+    await admin.from('budget_allocations').delete().eq('expense_id', parentId);
+  }
   if (plan.status === 'approved') {
     await writePlanThrough(admin, planId, plan.academic_year);
   }
