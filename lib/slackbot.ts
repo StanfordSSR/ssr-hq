@@ -1,11 +1,17 @@
 import { env } from '@/lib/env';
 
-const SLACKBOT_SYSTEM_TEAM_ID = '00000000-0000-0000-0000-000000000000';
-const SLACKBOT_SYSTEM_TEAM_NAME = 'SSR HQ';
+export const SLACKBOT_SYSTEM_TEAM_ID = '00000000-0000-0000-0000-000000000000';
+export const SLACKBOT_SYSTEM_TEAM_NAME = 'SSR HQ';
 
 type SlackbotNotifyPayload = {
   idempotency_key: string;
-  type: 'manual_message' | 'receipt_reminder' | 'report_reminder' | 'task_assigned' | 'invite_reminder';
+  type:
+    | 'manual_message'
+    | 'receipt_reminder'
+    | 'report_reminder'
+    | 'task_assigned'
+    | 'invite_reminder'
+    | 'budget_approval';
   team_id: string;
   team_name: string;
   recipient_emails: string[];

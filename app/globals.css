@@ -6493,3 +6493,127 @@ tr:last-child td {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Budget planner */
+.hq-budget-plan {
+  gap: 18px;
+}
+.hq-budget-cta {
+  border-left: 4px solid var(--cardinal);
+}
+.hq-budget-line-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hq-budget-line {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.hq-budget-line-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.hq-budget-line-amount {
+  font-size: 16px;
+  white-space: nowrap;
+}
+.hq-budget-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--panel-soft);
+  color: var(--muted);
+  vertical-align: middle;
+}
+.hq-budget-tag-yearly {
+  background: #efe6e6;
+  color: var(--cardinal-dark);
+}
+.hq-budget-tag-quarterly {
+  background: #e6eef5;
+  color: #2563a8;
+}
+.hq-budget-tag-unlocked {
+  background: #e7f0ea;
+  color: #2f7d5b;
+}
+.hq-budget-edit,
+.hq-budget-add {
+  margin-top: 6px;
+}
+.hq-budget-edit > summary,
+.hq-budget-add > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--cardinal);
+  font-weight: 600;
+}
+.hq-budget-edit[open],
+.hq-budget-add[open] {
+  grid-column: 1 / -1;
+}
+.hq-budget-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+.hq-budget-form .input,
+.hq-budget-form .select {
+  max-width: 220px;
+}
+.hq-budget-inline-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.hq-budget-inline-form .input {
+  max-width: 140px;
+}
+.hq-budget-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.hq-budget-team {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.hq-budget-team:first-of-type {
+  border-top: none;
+}
+.hq-budget-team-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.hq-budget-cat {
+  padding: 8px 0 10px;
+}
+.hq-budget-cat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.hq-budget-cat-head strong {
+  margin-left: auto;
+}

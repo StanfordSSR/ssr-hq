@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear } from '@/lib/academic-calendar';
+import { getActiveBudgetPlan, getBudgetSetupState } from '@/lib/budget-plan';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/actions';
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
@@ -68,6 +69,10 @@ export default async function FinancesPage({
   const canLogPurchases = currentRole === 'admin' || currentRole === 'financial_officer';
 
   const cycle = await getCurrentAcademicYear();
+  const [budgetSetup, activeBudgetPlan] = await Promise.all([getBudgetSetupState(), getActiveBudgetPlan(cycle)]);
+  const planManagesBudgets = activeBudgetPlan?.status === 'approved';
+  const canEditBudgets = canEdit && !planManagesBudgets;
+  const showPlanCta = budgetSetup.setupState !== 'upcoming';
   const selectedTeamId = readSingle(params.team) || 'all';
   const selectedRange = readSingle(params.range) || 'current_cycle';
   const { data: teamsData } = await admin.from('teams').select('id, name, logo_url').order('name');
@@ -285,6 +290,24 @@ export default async function FinancesPage({
         </div>
       </section>
 
+      {showPlanCta ? (
+        <section className="hq-panel hq-surface-muted hq-budget-cta">
+          <div className="hq-block-head">
+            <h3>{planManagesBudgets ? 'Budgets are managed by the approved plan' : `Plan the ${budgetSetup.nextAcademicYear} budget`}</h3>
+          </div>
+          <p className="helper">
+            {planManagesBudgets
+              ? 'Team and club budgets below come from the approved budget plan. Edit them in the planner.'
+              : budgetSetup.message}
+          </p>
+          <div className="button-row">
+            <Link href="/dashboard/finances/plan" className="button">
+              Open budget plan
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
       <div className="hq-finance-layout">
         <aside className="hq-panel hq-lead-sidebar hq-surface-muted hq-finance-overview">
           <div className="hq-section-head">
@@ -355,7 +378,7 @@ export default async function FinancesPage({
             </div>
           </div>
 
-          {canEdit ? (
+          {canEditBudgets ? (
             <InlineBudgetEditor
               action={updateClubBudgetAction}
               academicYear={cycle}
@@ -438,7 +461,7 @@ export default async function FinancesPage({
 
                 <div className="hq-finance-team-row">
                   <div className="hq-finance-team-budget">
-                    {canEdit ? (
+                    {canEditBudgets ? (
                       <InlineBudgetEditor
                         action={updateTeamBudgetAction}
                         academicYear={cycle}

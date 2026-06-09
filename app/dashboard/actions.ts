@@ -73,12 +73,25 @@ import {
 } from '@/lib/reports';
 import { recordAuditEvent } from '@/lib/audit';
 import { syncInviteQueue, syncNotificationQueue } from '@/lib/notification-queue';
-import { getSlackbotFallbackContext, sendSlackbotNotification } from '@/lib/slackbot';
+import {
+  getSlackbotFallbackContext,
+  sendSlackbotNotification,
+  SLACKBOT_SYSTEM_TEAM_ID,
+  SLACKBOT_SYSTEM_TEAM_NAME
+} from '@/lib/slackbot';
 import {
   findStatementMatch,
   parseStatementCsv,
   type MatchablePurchase
 } from '@/lib/statement-import';
+import {
+  computePlanRollup,
+  getActiveBudgetPlan,
+  getBudgetPlanSettings,
+  getBudgetSetupState,
+  getPlanBundle,
+  getQuarterDeclarationState
+} from '@/lib/budget-plan';
 
 const REVALIDATE_PATHS = {
   dashboard: ['/dashboard'],
@@ -89,6 +102,7 @@ const REVALIDATE_PATHS = {
   eoyReports: ['/dashboard', '/dashboard/reports/eoy', '/dashboard/settings'],
   settings: ['/dashboard/settings'],
   reconciliation: ['/dashboard/settings', '/dashboard/finances', '/dashboard/expenses', '/dashboard/purchases'],
+  budgetPlan: ['/dashboard/finances', '/dashboard/finances/plan', '/dashboard'],
   settingsAndReports: ['/dashboard/settings', '/dashboard/reports'],
   settingsDashboardReportsTasks: ['/dashboard', '/dashboard/settings', '/dashboard/reports', '/dashboard/tasks'],
   tasks: ['/dashboard', '/dashboard/tasks'],
@@ -4144,6 +4158,812 @@ export async function resolveStatementItemAction(formData: FormData) {
       });
 
       revalidatePaths(REVALIDATE_PATHS.reconciliation);
+    }
+  });
+}
+
+// ───────────────────────────── Budget planner ─────────────────────────────
+
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+function formatCentsUsd(cents: number) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+}
+
+async function getActivePresidentProfiles(admin: AdminClient) {
+  const { data } = await admin
+    .from('profiles')
+    .select('id, full_name, email, role, is_president')
+    .eq('active', true);
+  return ((data || []) as Array<{ id: string; full_name: string | null; email: string | null; role: string; is_president: boolean }>)
+    .filter((profile) => profile.role === 'president' || profile.is_president)
+    .filter((profile) => Boolean(profile.email));
+}
+
+async function requireExactlyTwoPresidents(admin: AdminClient) {
+  const presidents = await getActivePresidentProfiles(admin);
+  if (presidents.length !== 2) {
+    throw new Error(
+      `Budget approval requires exactly two active presidents (currently ${presidents.length}). Update president roles in Club Settings first.`
+    );
+  }
+  return presidents;
+}
+
+async function loadBudgetPlanRow(admin: AdminClient, planId: string) {
+  const { data } = await admin
+    .from('budget_plans')
+    .select('id, academic_year, version, status')
+    .eq('id', planId)
+    .maybeSingle();
+  if (!data) {
+    throw new Error('Budget plan not found.');
+  }
+  return data as { id: string; academic_year: string; version: number; status: string };
+}
+
+// A draft/pending plan is freely editable; editing a pending plan reverts it to
+// draft and clears collected signatures. Approved plans are not bulk-editable.
+async function ensureEditableDraft(admin: AdminClient, planId: string, status: string) {
+  if (status === 'approved') {
+    throw new Error('This plan is approved. Start a revision to change it.');
+  }
+  if (status === 'pending_approval') {
+    await admin.from('budget_plans').update({ status: 'draft' }).eq('id', planId);
+    await admin.from('budget_approvals').delete().eq('target_type', 'plan').eq('target_id', planId);
+  }
+}
+
+async function pushBudgetApprovalSlack(opts: {
+  targetType: 'plan' | 'quarter';
+  targetId: string;
+  academicYear: string;
+  quarter?: string | null;
+  title: string;
+  message: string;
+  presidents: Array<{ email: string | null }>;
+}) {
+  const settings = await getBudgetPlanSettings();
+  if (!settings.slackEnabled) return;
+  const emails = opts.presidents.map((p) => (p.email || '').toLowerCase()).filter(Boolean);
+  if (emails.length === 0) return;
+  try {
+    await sendSlackbotNotification({
+      idempotency_key: `budget_approval:${opts.targetType}:${opts.targetId}`,
+      type: 'budget_approval',
+      team_id: SLACKBOT_SYSTEM_TEAM_ID,
+      team_name: SLACKBOT_SYSTEM_TEAM_NAME,
+      recipient_emails: emails,
+      title: opts.title,
+      message: opts.message,
+      cta_label: 'Review & sign',
+      cta_url: `${env.siteUrl}/dashboard/finances/plan`,
+      metadata: {
+        target_type: opts.targetType,
+        target_id: opts.targetId,
+        academic_year: opts.academicYear,
+        quarter: opts.quarter ?? null
+      }
+    });
+  } catch (error) {
+    console.error('Budget approval Slack push failed:', error);
+  }
+}
+
+// Writes approved plan amounts into the legacy team_budgets/club_budgets tables
+// so existing spend tracking keeps working.
+async function writePlanThrough(admin: AdminClient, planId: string, academicYear: string) {
+  const rollup = await computePlanRollup(planId, academicYear);
+  const teamRows = Array.from(rollup.perTeam.entries()).map(([teamId, value]) => ({
+    team_id: teamId,
+    academic_year: academicYear,
+    annual_budget_cents: value.budgetCents
+  }));
+  if (teamRows.length > 0) {
+    await admin.from('team_budgets').upsert(teamRows, { onConflict: 'team_id,academic_year' });
+  }
+  await admin
+    .from('club_budgets')
+    .upsert({ academic_year: academicYear, total_budget_cents: rollup.totalFundingCents });
+}
+
+async function finalizeBudgetPlan(admin: AdminClient, planId: string, academicYear: string) {
+  const now = new Date().toISOString();
+  await admin.from('budget_plans').update({ status: 'approved', approved_at: now, updated_at: now }).eq('id', planId);
+  // Supersede any other non-superseded plan for the same year.
+  await admin
+    .from('budget_plans')
+    .update({ status: 'superseded' })
+    .eq('academic_year', academicYear)
+    .neq('id', planId)
+    .neq('status', 'superseded');
+  // Lock everything except explicitly-unlocked (event) items.
+  await admin.from('budget_expense_items').update({ locked: true }).eq('plan_id', planId).neq('lock_cadence', 'unlocked');
+  await admin.from('budget_funding_sources').update({ locked: true }).eq('plan_id', planId);
+  await writePlanThrough(admin, planId, academicYear);
+}
+
+export async function createBudgetPlanAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Created a draft budget plan.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const setup = await getBudgetSetupState();
+      const academicYear = String(formData.get('academic_year') || setup.nextAcademicYear).trim();
+
+      const admin = createAdminClient();
+      const existing = await getActiveBudgetPlan(academicYear);
+      if (existing) {
+        throw new Error(`A budget plan already exists for ${academicYear}.`);
+      }
+
+      const planId = crypto.randomUUID();
+      const { error } = await admin.from('budget_plans').insert({
+        id: planId,
+        academic_year: academicYear,
+        version: 1,
+        status: 'draft',
+        created_by: user.id
+      });
+      if (error) throw new Error(error.message);
+
+      await admin.from('budget_funding_sources').insert({
+        plan_id: planId,
+        label: 'Annual grant',
+        kind: 'annual_grant',
+        amount_cents: 0,
+        is_default_pool: true,
+        sort_order: 0
+      });
+
+      const { data: teams } = await admin.from('teams').select('id, name').eq('is_active', true).order('name');
+      const categoryRows: Array<Record<string, unknown>> = [];
+      (((teams || []) as Array<{ id: string; name: string }>) || []).forEach((team, teamIndex) => {
+        (['equipment', 'food', 'travel'] as const).forEach((category, categoryIndex) => {
+          categoryRows.push({
+            plan_id: planId,
+            kind: 'team',
+            team_id: team.id,
+            category,
+            label: `${team.name} — ${category}`,
+            amount_cents: 0,
+            lock_cadence: 'yearly',
+            sort_order: teamIndex * 10 + categoryIndex
+          });
+        });
+      });
+      if (categoryRows.length > 0) {
+        await admin.from('budget_expense_items').insert(categoryRows);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'budget.plan.created',
+        targetType: 'budget_plan',
+        targetId: planId,
+        summary: `Created ${academicYear} budget plan.`,
+        details: { academicYear }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function upsertFundingSourceAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Saved the funding source.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const planId = String(formData.get('plan_id') || '').trim();
+      const sourceId = String(formData.get('source_id') || '').trim();
+      const label = String(formData.get('label') || '').trim();
+      const kind = String(formData.get('kind') || 'other').trim();
+      const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+      const isDefaultPool = String(formData.get('is_default_pool') || '') === 'on';
+      const notes = String(formData.get('notes') || '').trim() || null;
+      if (!planId || !label) throw new Error('A label is required.');
+
+      const admin = createAdminClient();
+      const plan = await loadBudgetPlanRow(admin, planId);
+      await ensureEditableDraft(admin, planId, plan.status);
+
+      if (isDefaultPool) {
+        await admin.from('budget_funding_sources').update({ is_default_pool: false }).eq('plan_id', planId);
+      }
+      const validKind = ['annual_grant', 'grant_reserves', 'sponsorship', 'other'].includes(kind) ? kind : 'other';
+      const payload = {
+        plan_id: planId,
+        label,
+        kind: validKind,
+        amount_cents: amountCents,
+        is_default_pool: isDefaultPool,
+        notes
+      };
+      if (sourceId) {
+        await admin.from('budget_funding_sources').update(payload).eq('id', sourceId);
+      } else {
+        await admin.from('budget_funding_sources').insert(payload);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'budget.source.saved',
+        targetType: 'budget_plan',
+        targetId: planId,
+        summary: `Saved funding source "${label}".`,
+        details: { sourceId: sourceId || null, amountCents }
+      });
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function deleteFundingSourceAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Removed the funding source.',
+    action: async () => {
+      await requireAdmin();
+      const planId = String(formData.get('plan_id') || '').trim();
+      const sourceId = String(formData.get('source_id') || '').trim();
+      if (!planId || !sourceId) throw new Error('Missing source.');
+      const admin = createAdminClient();
+      const plan = await loadBudgetPlanRow(admin, planId);
+      await ensureEditableDraft(admin, planId, plan.status);
+      const { data: source } = await admin
+        .from('budget_funding_sources')
+        .select('is_default_pool')
+        .eq('id', sourceId)
+        .maybeSingle();
+      if (source?.is_default_pool) {
+        throw new Error('The annual grant (default pool) cannot be removed.');
+      }
+      await admin.from('budget_funding_sources').delete().eq('id', sourceId);
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function upsertExpenseItemAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Saved the line item.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const planId = String(formData.get('plan_id') || '').trim();
+      const expenseId = String(formData.get('expense_id') || '').trim();
+      const kind = String(formData.get('kind') || 'general').trim();
+      const teamId = String(formData.get('team_id') || '').trim();
+      const categoryRaw = String(formData.get('category') || '').trim();
+      const label = String(formData.get('label') || '').trim();
+      const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+      const lockCadence = String(formData.get('lock_cadence') || 'yearly').trim();
+      const notes = String(formData.get('notes') || '').trim() || null;
+      if (!planId || !label) throw new Error('A label is required.');
+
+      const admin = createAdminClient();
+      const plan = await loadBudgetPlanRow(admin, planId);
+
+      const validKind = ['team', 'event', 'operations', 'general'].includes(kind) ? kind : 'general';
+      const validCadence = ['yearly', 'quarterly', 'unlocked'].includes(lockCadence) ? lockCadence : 'yearly';
+      const category = validKind === 'team' && ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
+
+      if (plan.status === 'approved') {
+        // Only unlocked items (events) may be edited directly post-approval.
+        if (!expenseId) throw new Error('This plan is approved. Start a revision to add line items.');
+        const { data: existing } = await admin
+          .from('budget_expense_items')
+          .select('lock_cadence')
+          .eq('id', expenseId)
+          .maybeSingle();
+        if (existing?.lock_cadence !== 'unlocked') {
+          throw new Error('This line item is locked. Start a revision to change it.');
+        }
+      } else {
+        await ensureEditableDraft(admin, planId, plan.status);
+      }
+
+      const payload = {
+        plan_id: planId,
+        kind: validKind,
+        team_id: validKind === 'team' ? teamId || null : null,
+        category,
+        label,
+        amount_cents: amountCents,
+        lock_cadence: validCadence,
+        notes
+      };
+      if (expenseId) {
+        await admin.from('budget_expense_items').update(payload).eq('id', expenseId);
+      } else {
+        await admin.from('budget_expense_items').insert(payload);
+      }
+
+      if (plan.status === 'approved') {
+        await writePlanThrough(admin, planId, plan.academic_year);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'budget.expense.saved',
+        targetType: 'budget_plan',
+        targetId: planId,
+        summary: `Saved line item "${label}".`,
+        details: { expenseId: expenseId || null, amountCents, lockCadence: validCadence }
+      });
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function deleteExpenseItemAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Removed the line item.',
+    action: async () => {
+      await requireAdmin();
+      const planId = String(formData.get('plan_id') || '').trim();
+      const expenseId = String(formData.get('expense_id') || '').trim();
+      if (!planId || !expenseId) throw new Error('Missing line item.');
+      const admin = createAdminClient();
+      const plan = await loadBudgetPlanRow(admin, planId);
+      await ensureEditableDraft(admin, planId, plan.status);
+      await admin.from('budget_expense_items').delete().eq('id', expenseId);
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function upsertAllocationAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Saved the allocation.',
+    action: async () => {
+      await requireAdmin();
+      const planId = String(formData.get('plan_id') || '').trim();
+      const sourceId = String(formData.get('source_id') || '').trim();
+      const expenseId = String(formData.get('expense_id') || '').trim();
+      const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+      if (!planId || !sourceId || !expenseId) throw new Error('Missing allocation fields.');
+
+      const admin = createAdminClient();
+      const plan = await loadBudgetPlanRow(admin, planId);
+      await ensureEditableDraft(admin, planId, plan.status);
+
+      if (amountCents === 0) {
+        await admin.from('budget_allocations').delete().eq('source_id', sourceId).eq('expense_id', expenseId);
+        revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+        return;
+      }
+
+      // Validate against current rollup (excluding the row being replaced).
+      const { sources, expenses, allocations } = await getPlanBundle(planId);
+      const source = sources.find((s) => s.id === sourceId);
+      const expense = expenses.find((e) => e.id === expenseId);
+      if (!source || !expense) throw new Error('Unknown source or line item.');
+      const otherFromSource = allocations
+        .filter((a) => a.sourceId === sourceId && a.expenseId !== expenseId)
+        .reduce((sum, a) => sum + a.amountCents, 0);
+      const otherToExpense = allocations
+        .filter((a) => a.expenseId === expenseId && a.sourceId !== sourceId)
+        .reduce((sum, a) => sum + a.amountCents, 0);
+      if (amountCents + otherFromSource > source.amountCents) {
+        throw new Error(`That exceeds "${source.label}" — only ${formatCentsUsd(source.amountCents - otherFromSource)} remains.`);
+      }
+      if (amountCents + otherToExpense > expense.amountCents) {
+        throw new Error(`That exceeds the "${expense.label}" line item amount.`);
+      }
+
+      await admin
+        .from('budget_allocations')
+        .upsert({ plan_id: planId, source_id: sourceId, expense_id: expenseId, amount_cents: amountCents }, { onConflict: 'source_id,expense_id' });
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function submitBudgetPlanForApprovalAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Sent the plan to both presidents for approval.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const planId = String(formData.get('plan_id') || '').trim();
+      if (!planId) throw new Error('Missing plan.');
+      const admin = createAdminClient();
+      const plan = await loadBudgetPlanRow(admin, planId);
+      if (plan.status === 'approved') throw new Error('This plan is already approved.');
+
+      const presidents = await requireExactlyTwoPresidents(admin);
+      const rollup = await computePlanRollup(planId, plan.academic_year);
+      if (rollup.overAllocatedSources.length > 0) {
+        throw new Error('A funding source is over-allocated. Fix allocations before submitting.');
+      }
+      if (rollup.uncoveredCents > 0) {
+        throw new Error(`Funding falls short of planned expenses by ${formatCentsUsd(rollup.uncoveredCents)}.`);
+      }
+
+      const now = new Date().toISOString();
+      await admin
+        .from('budget_plans')
+        .update({ status: 'pending_approval', total_funding_cents: rollup.totalFundingCents, submitted_at: now, submitted_by: user.id, updated_at: now })
+        .eq('id', planId);
+      await admin.from('budget_approvals').delete().eq('target_type', 'plan').eq('target_id', planId);
+
+      await pushBudgetApprovalSlack({
+        targetType: 'plan',
+        targetId: planId,
+        academicYear: plan.academic_year,
+        title: `${plan.academic_year} budget plan needs your approval`,
+        message: `The ${plan.academic_year} budget plan (total ${formatCentsUsd(rollup.totalFundingCents)}) is ready for both presidents to review and sign in the portal.`,
+        presidents
+      });
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'budget.plan.submitted',
+        targetType: 'budget_plan',
+        targetId: planId,
+        summary: `Submitted ${plan.academic_year} budget plan for approval.`,
+        details: { totalFundingCents: rollup.totalFundingCents }
+      });
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+async function requireSigningPresident() {
+  const { user, profile } = await getViewerContext();
+  if (!(profile.role === 'president' || profile.is_president)) {
+    throw new Error('Only presidents can sign budget approvals.');
+  }
+  return { user, profile };
+}
+
+export async function signBudgetPlanAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Signed the budget plan.',
+    action: async () => {
+      const { user, profile } = await requireSigningPresident();
+      const planId = String(formData.get('plan_id') || '').trim();
+      const signature = String(formData.get('signature') || '').trim();
+      if (!planId) throw new Error('Missing plan.');
+      if (!signature.startsWith('data:image/')) throw new Error('Please add your signature before approving.');
+
+      const admin = createAdminClient();
+      const plan = await loadBudgetPlanRow(admin, planId);
+      if (plan.status !== 'pending_approval') throw new Error('This plan is not awaiting approval.');
+
+      await admin.from('budget_approvals').upsert(
+        {
+          target_type: 'plan',
+          target_id: planId,
+          president_id: user.id,
+          president_email: (profile.email || '').toLowerCase(),
+          decision: 'approved',
+          signature: signature.slice(0, 1_000_000),
+          source: 'portal',
+          decided_at: new Date().toISOString()
+        },
+        { onConflict: 'target_type,target_id,president_id' }
+      );
+
+      const presidents = await getActivePresidentProfiles(admin);
+      const presidentIds = new Set(presidents.map((p) => p.id));
+      const { data: approvals } = await admin
+        .from('budget_approvals')
+        .select('president_id, decision, signature')
+        .eq('target_type', 'plan')
+        .eq('target_id', planId);
+      const signedApprovers = (approvals || []).filter(
+        (a) => a.decision === 'approved' && a.signature && presidentIds.has(a.president_id)
+      );
+      if (presidents.length === 2 && signedApprovers.length >= 2) {
+        await finalizeBudgetPlan(admin, planId, plan.academic_year);
+        await recordAuditEvent({
+          actorId: user.id,
+          action: 'budget.plan.approved',
+          targetType: 'budget_plan',
+          targetId: planId,
+          summary: `${plan.academic_year} budget plan approved by both presidents.`,
+          details: { academicYear: plan.academic_year }
+        });
+      }
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function reviseBudgetPlanAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Started a new draft revision.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const planId = String(formData.get('plan_id') || '').trim();
+      if (!planId) throw new Error('Missing plan.');
+      const admin = createAdminClient();
+      const plan = await loadBudgetPlanRow(admin, planId);
+      if (plan.status !== 'approved') throw new Error('Only an approved plan can be revised.');
+
+      const newPlanId = crypto.randomUUID();
+      await admin.from('budget_plans').insert({
+        id: newPlanId,
+        academic_year: plan.academic_year,
+        version: plan.version + 1,
+        status: 'draft',
+        created_by: user.id
+      });
+
+      const { sources, expenses, allocations } = await getPlanBundle(planId);
+      const sourceIdMap = new Map<string, string>();
+      const expenseIdMap = new Map<string, string>();
+      for (const source of sources) {
+        const id = crypto.randomUUID();
+        sourceIdMap.set(source.id, id);
+        await admin.from('budget_funding_sources').insert({
+          id,
+          plan_id: newPlanId,
+          label: source.label,
+          kind: source.kind,
+          amount_cents: source.amountCents,
+          is_default_pool: source.isDefaultPool,
+          locked: false,
+          notes: source.notes,
+          sort_order: source.sortOrder
+        });
+      }
+      for (const expense of expenses) {
+        const id = crypto.randomUUID();
+        expenseIdMap.set(expense.id, id);
+        await admin.from('budget_expense_items').insert({
+          id,
+          plan_id: newPlanId,
+          kind: expense.kind,
+          team_id: expense.teamId,
+          category: expense.category,
+          label: expense.label,
+          amount_cents: expense.amountCents,
+          lock_cadence: expense.lockCadence,
+          locked: false,
+          notes: expense.notes,
+          sort_order: expense.sortOrder
+        });
+      }
+      for (const alloc of allocations) {
+        const sourceId = sourceIdMap.get(alloc.sourceId);
+        const expenseId = expenseIdMap.get(alloc.expenseId);
+        if (sourceId && expenseId) {
+          await admin.from('budget_allocations').insert({
+            plan_id: newPlanId,
+            source_id: sourceId,
+            expense_id: expenseId,
+            amount_cents: alloc.amountCents
+          });
+        }
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'budget.plan.revised',
+        targetType: 'budget_plan',
+        targetId: newPlanId,
+        summary: `Started revision v${plan.version + 1} of the ${plan.academic_year} budget plan.`,
+        details: { fromPlanId: planId }
+      });
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+// ── Quarterly re-declaration ──
+
+export async function openQuarterDeclarationAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Opened the quarterly declaration.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const quarterState = await getQuarterDeclarationState();
+      if (!quarterState) throw new Error('No quarterly declaration window is currently open.');
+      const planIdInput = String(formData.get('plan_id') || '').trim();
+
+      const admin = createAdminClient();
+      const plan = planIdInput
+        ? await loadBudgetPlanRow(admin, planIdInput)
+        : (await getActiveBudgetPlan(quarterState.academicYear));
+      if (!plan) throw new Error('No approved budget plan for the current year.');
+      if (plan.status !== 'approved') throw new Error('The current-year plan is not approved yet.');
+
+      const { data: existing } = await admin
+        .from('budget_quarter_declarations')
+        .select('id, version')
+        .eq('plan_id', plan.id)
+        .eq('quarter', quarterState.quarter)
+        .neq('status', 'superseded')
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existing) throw new Error(`A ${quarterState.quarter} declaration already exists.`);
+
+      const declarationId = crypto.randomUUID();
+      await admin.from('budget_quarter_declarations').insert({
+        id: declarationId,
+        plan_id: plan.id,
+        academic_year: quarterState.academicYear,
+        quarter: quarterState.quarter,
+        version: 1,
+        status: 'draft',
+        submitted_by: user.id
+      });
+
+      const { data: quarterlyItems } = await admin
+        .from('budget_expense_items')
+        .select('id, amount_cents')
+        .eq('plan_id', plan.id)
+        .eq('lock_cadence', 'quarterly');
+      const valueRows = ((quarterlyItems || []) as Array<{ id: string; amount_cents: number }>).map((item) => ({
+        declaration_id: declarationId,
+        expense_item_id: item.id,
+        amount_cents: item.amount_cents
+      }));
+      if (valueRows.length > 0) {
+        await admin.from('budget_quarterly_values').insert(valueRows);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'budget.quarter.opened',
+        targetType: 'budget_quarter_declaration',
+        targetId: declarationId,
+        summary: `Opened ${quarterState.quarter} budget declaration.`,
+        details: { quarter: quarterState.quarter, academicYear: quarterState.academicYear }
+      });
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function upsertQuarterlyValueAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Saved the quarterly amount.',
+    action: async () => {
+      await requireAdmin();
+      const declarationId = String(formData.get('declaration_id') || '').trim();
+      const expenseItemId = String(formData.get('expense_item_id') || '').trim();
+      const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+      if (!declarationId || !expenseItemId) throw new Error('Missing quarterly value fields.');
+      const admin = createAdminClient();
+      const { data: decl } = await admin.from('budget_quarter_declarations').select('status').eq('id', declarationId).maybeSingle();
+      if (!decl) throw new Error('Declaration not found.');
+      if (decl.status === 'approved') throw new Error('This quarter is already approved.');
+      if (decl.status === 'pending_approval') {
+        await admin.from('budget_quarter_declarations').update({ status: 'draft' }).eq('id', declarationId);
+        await admin.from('budget_approvals').delete().eq('target_type', 'quarter').eq('target_id', declarationId);
+      }
+      await admin
+        .from('budget_quarterly_values')
+        .upsert({ declaration_id: declarationId, expense_item_id: expenseItemId, amount_cents: amountCents }, { onConflict: 'declaration_id,expense_item_id' });
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function submitQuarterDeclarationForApprovalAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Sent the quarterly declaration for approval.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const declarationId = String(formData.get('declaration_id') || '').trim();
+      if (!declarationId) throw new Error('Missing declaration.');
+      const admin = createAdminClient();
+      const { data: decl } = await admin
+        .from('budget_quarter_declarations')
+        .select('id, academic_year, quarter, status')
+        .eq('id', declarationId)
+        .maybeSingle();
+      if (!decl) throw new Error('Declaration not found.');
+      if (decl.status === 'approved') throw new Error('This quarter is already approved.');
+      const presidents = await requireExactlyTwoPresidents(admin);
+
+      await admin
+        .from('budget_quarter_declarations')
+        .update({ status: 'pending_approval', submitted_at: new Date().toISOString(), submitted_by: user.id })
+        .eq('id', declarationId);
+      await admin.from('budget_approvals').delete().eq('target_type', 'quarter').eq('target_id', declarationId);
+
+      await pushBudgetApprovalSlack({
+        targetType: 'quarter',
+        targetId: declarationId,
+        academicYear: decl.academic_year,
+        quarter: decl.quarter,
+        title: `${decl.quarter} budget needs your approval`,
+        message: `The ${decl.quarter} quarterly budget amounts are ready for both presidents to review and sign in the portal.`,
+        presidents
+      });
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'budget.quarter.submitted',
+        targetType: 'budget_quarter_declaration',
+        targetId: declarationId,
+        summary: `Submitted ${decl.quarter} budget declaration for approval.`,
+        details: { quarter: decl.quarter }
+      });
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+    }
+  });
+}
+
+export async function signQuarterDeclarationAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/finances/plan',
+    successMessage: 'Signed the quarterly declaration.',
+    action: async () => {
+      const { user, profile } = await requireSigningPresident();
+      const declarationId = String(formData.get('declaration_id') || '').trim();
+      const signature = String(formData.get('signature') || '').trim();
+      if (!declarationId) throw new Error('Missing declaration.');
+      if (!signature.startsWith('data:image/')) throw new Error('Please add your signature before approving.');
+
+      const admin = createAdminClient();
+      const { data: decl } = await admin
+        .from('budget_quarter_declarations')
+        .select('id, plan_id, academic_year, quarter, status')
+        .eq('id', declarationId)
+        .maybeSingle();
+      if (!decl) throw new Error('Declaration not found.');
+      if (decl.status !== 'pending_approval') throw new Error('This declaration is not awaiting approval.');
+
+      await admin.from('budget_approvals').upsert(
+        {
+          target_type: 'quarter',
+          target_id: declarationId,
+          president_id: user.id,
+          president_email: (profile.email || '').toLowerCase(),
+          decision: 'approved',
+          signature: signature.slice(0, 1_000_000),
+          source: 'portal',
+          decided_at: new Date().toISOString()
+        },
+        { onConflict: 'target_type,target_id,president_id' }
+      );
+
+      const presidents = await getActivePresidentProfiles(admin);
+      const presidentIds = new Set(presidents.map((p) => p.id));
+      const { data: approvals } = await admin
+        .from('budget_approvals')
+        .select('president_id, decision, signature')
+        .eq('target_type', 'quarter')
+        .eq('target_id', declarationId);
+      const signed = (approvals || []).filter((a) => a.decision === 'approved' && a.signature && presidentIds.has(a.president_id));
+      if (presidents.length === 2 && signed.length >= 2) {
+        const now = new Date().toISOString();
+        await admin.from('budget_quarter_declarations').update({ status: 'approved', approved_at: now }).eq('id', declarationId);
+        await admin
+          .from('budget_quarter_declarations')
+          .update({ status: 'superseded' })
+          .eq('plan_id', decl.plan_id)
+          .eq('quarter', decl.quarter)
+          .neq('id', declarationId)
+          .neq('status', 'superseded');
+        await writePlanThrough(admin, decl.plan_id, decl.academic_year);
+        await recordAuditEvent({
+          actorId: user.id,
+          action: 'budget.quarter.approved',
+          targetType: 'budget_quarter_declaration',
+          targetId: declarationId,
+          summary: `${decl.quarter} budget declaration approved by both presidents.`,
+          details: { quarter: decl.quarter }
+        });
+      }
+      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
     }
   });
 }

@@ -22,7 +22,6 @@ import {
   updateReceiptNotificationSettingsAction,
   updateReportNotificationSettingsAction
 } from '@/app/dashboard/actions';
-import { AcademicYearInitializerForm } from '@/components/academic-year-initializer-form';
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { EoySettingsForm } from '@/components/eoy-settings-form';
@@ -700,18 +699,15 @@ export default async function SettingsPage() {
                       </div>
                     </div>
                     <p className="helper">
-                      Rolling over preserves historical purchases and past-year spending visibility, but it starts
-                      {` ${nextAcademicYear} `}with a fresh club budget at $0 and resets every active team budget to $0.
-                      Prior-year leftover funds are treated as closeout only and do not carry into the next cycle.
+                      Next year&apos;s budgets are now built and approved in the Budget Plan, which writes team and club
+                      budgets through on approval. The portal advances to {nextAcademicYear} automatically on the cycle
+                      start date — no manual reset is needed.
                     </p>
-                    {nextBudgetInitialized ? (
-                      <p className="empty-note">
-                        {nextAcademicYear} already has budget setup. Edit that year from Manage Finances instead of
-                        rolling over again.
-                      </p>
-                    ) : (
-                      <AcademicYearInitializerForm nextAcademicYear={nextAcademicYear} />
-                    )}
+                    <div className="button-row">
+                      <Link href="/dashboard/finances/plan" className="button">
+                        Open budget plan
+                      </Link>
+                    </div>
                   </div>
                 </div>
               ) : (
