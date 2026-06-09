@@ -113,6 +113,8 @@ function autoSave(event: { currentTarget: { form: HTMLFormElement | null } }) {
 }
 
 const CATEGORY_RANK: Record<string, number> = { equipment: 0, food: 1, travel: 2, other: 3 };
+const SHEET_HEAD_LABELS = ['Type', 'Line item', 'Team / kind', 'Category', 'Lock', 'Amount', 'Funded by', ''];
+const DEFAULT_COLS = [78, 240, 150, 116, 104, 116, 200, 56];
 
 function sourceSortKey(s: Source): string {
   const group = s.kind === 'annual_grant' ? '0' : '1';
@@ -173,6 +175,26 @@ export function BudgetPlanEditor(props: Props) {
 
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const hide = (id: string) => setRemoved((prev) => new Set(prev).add(id));
+  const [cols, setCols] = useState<number[]>(DEFAULT_COLS);
+  const startResize = (event: React.PointerEvent<HTMLSpanElement>, index: number) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startW = cols[index];
+    const onMove = (ev: PointerEvent) => {
+      const w = Math.max(48, startW + (ev.clientX - startX));
+      setCols((prev) => {
+        const nextCols = [...prev];
+        nextCols[index] = w;
+        return nextCols;
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
   const [order, setOrder] = useState<Map<string, number>>(new Map());
   const [, startTransition] = useTransition();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -418,16 +440,20 @@ export function BudgetPlanEditor(props: Props) {
       </div>
 
       <div className="hq-sheet-wrap">
-        <div className="hq-sheet" role="table">
+        <div className="hq-sheet" role="table" style={{ ['--sheet-cols' as string]: cols.map((c) => `${c}px`).join(' ') } as React.CSSProperties}>
           <div className="hq-sheet-head" role="row">
-            <span>Type</span>
-            <span>Line item</span>
-            <span>Team / kind</span>
-            <span>Category</span>
-            <span>Lock</span>
-            <span>Amount</span>
-            <span>Funded by</span>
-            <span aria-hidden="true" />
+            {SHEET_HEAD_LABELS.map((label, i) => (
+              <span key={i} className="hq-sheet-head-cell">
+                {label}
+                {i < SHEET_HEAD_LABELS.length - 1 ? (
+                  <span
+                    className="hq-sheet-resize"
+                    onPointerDown={(event) => startResize(event, i)}
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </span>
+            ))}
           </div>
 
           {sortedSources.map((s) => {

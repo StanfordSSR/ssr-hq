@@ -6880,3 +6880,23 @@ tr:last-child td {
 .hq-sheet-summary-action {
   margin-left: auto;
 }
+
+.hq-sheet-head-cell {
+  position: relative;
+}
+.hq-sheet-resize {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+.hq-sheet-resize:hover {
+  background: linear-gradient(to right, transparent, rgba(140, 21, 21, 0.25));
+}
+.hq-sheet-block {
+  margin-top: 7px;
+}
