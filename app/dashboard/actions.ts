@@ -4434,7 +4434,7 @@ export async function upsertExpenseItemAction(formData: FormData) {
   const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
   const lockCadenceRaw = String(formData.get('lock_cadence') || 'yearly').trim();
   const notes = String(formData.get('notes') || '').trim() || null;
-  if (!planId || !label) return;
+  if (!planId) return;
 
   const admin = createAdminClient();
   const plan = await loadBudgetPlanRow(admin, planId);
@@ -4442,6 +4442,18 @@ export async function upsertExpenseItemAction(formData: FormData) {
   const kind = ['team', 'event', 'operations', 'general'].includes(kindRaw) ? kindRaw : 'general';
   const lockCadence = ['yearly', 'quarterly', 'unlocked'].includes(lockCadenceRaw) ? lockCadenceRaw : 'yearly';
   const category = kind === 'team' && ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
+
+  // For team rows the label is derived from team + category so it can never
+  // contradict the team it's grouped under. Other kinds use the typed label.
+  let resolvedLabel = label;
+  if (kind === 'team') {
+    if (!teamId) return;
+    const { data: team } = await admin.from('teams').select('name').eq('id', teamId).maybeSingle();
+    const categoryLabel = { equipment: 'Equipment', food: 'Food', travel: 'Travel', other: 'Other' }[category || 'other'];
+    resolvedLabel = `${team?.name || 'Team'} — ${categoryLabel}`;
+  } else if (!resolvedLabel) {
+    return;
+  }
 
   if (plan.status === 'approved') {
     if (!expenseId) throw new Error('This plan is approved. Start a revision to add line items.');
@@ -4458,7 +4470,7 @@ export async function upsertExpenseItemAction(formData: FormData) {
     kind,
     team_id: kind === 'team' ? teamId || null : null,
     category,
-    label,
+    label: resolvedLabel,
     amount_cents: amountCents,
     lock_cadence: lockCadence,
     notes

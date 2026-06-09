@@ -231,8 +231,14 @@ export function BudgetPlanEditor(props: Props) {
 
   async function handleAdd(formData: FormData) {
     const rowKind = String(formData.get('__row_kind') || 'team');
-    const label = String(formData.get('label') || '').trim();
-    if (!label) return;
+    let label = String(formData.get('label') || '').trim();
+    if (rowKind === 'team') {
+      const tId = String(formData.get('team_id') || '');
+      const cat = String(formData.get('category') || 'other');
+      label = `${teams.find((t) => t.id === tId)?.name || 'Team'} — ${CATEGORY_LABELS[cat] || 'Other'}`;
+    } else if (!label) {
+      return;
+    }
     const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
     const tempId = `temp-${tempIdSeed()}`;
     if (rowKind === 'source') {
@@ -297,7 +303,7 @@ export function BudgetPlanEditor(props: Props) {
           {draftEditable && !temp ? <span className="hq-sheet-grip-dots" aria-hidden="true">⠿</span> : null}
           {typeLabel}
         </span>
-        {rowEditable ? (
+        {rowEditable && !isTeam ? (
           <input form={rowId} className="hq-sheet-input" name="label" defaultValue={e.label} aria-label="Name" onBlur={autoSave} />
         ) : (
           <span className="hq-sheet-cell">{e.label}</span>
@@ -523,7 +529,11 @@ function AddRow({ planId, teams, onAdd }: { planId: string; teams: Team[]; onAdd
         <option value="operations">Ops</option>
         <option value="source">Source</option>
       </select>
-      <input className="hq-sheet-input" name="label" placeholder="New line item…" required />
+      {isTeam ? (
+        <span className="hq-sheet-dim">Auto-named from team + category</span>
+      ) : (
+        <input className="hq-sheet-input" name="label" placeholder="New line item…" required />
+      )}
       {isSource ? (
         <select className="hq-sheet-input" name="kind" defaultValue="sponsorship" aria-label="Kind">
           {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
