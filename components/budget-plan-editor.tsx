@@ -15,6 +15,7 @@ import { SignaturePad } from '@/components/signature-pad';
 import {
   deleteExpenseItemAction,
   deleteFundingSourceAction,
+  applyFoodPerMemberAction,
   reorderBudgetItemsAction,
   resetTeamBudgetsAction,
   reviseBudgetPlanAction,
@@ -774,24 +775,46 @@ export function BudgetPlanEditor(props: Props) {
           <strong>{usd(uncoveredCents)}</strong> unfunded
         </span>
         {draftEditable ? (
-          <form
-            action={resetTeamBudgetsAction}
-            className="hq-sheet-summary-action"
-            onSubmit={(event) => {
-              if (
-                !window.confirm(
-                  'Reset team budgets? This removes every team’s category rows and recreates a clean Equipment / Food / Travel set for each team. Entered team amounts will be lost.'
-                )
-              ) {
-                event.preventDefault();
-              }
-            }}
-          >
-            <input type="hidden" name="plan_id" value={planId} />
-            <button className="button-secondary" type="submit">
-              Reset team rows
-            </button>
-          </form>
+          <div className="hq-sheet-summary-actions">
+            <form action={applyFoodPerMemberAction} className="hq-food-rate" title="Set every team's food budget from roster size">
+              <input type="hidden" name="plan_id" value={planId} />
+              <span className="hq-food-rate-label">Food $</span>
+              <input
+                className="hq-sheet-input hq-food-rate-input"
+                name="dollars"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                aria-label="Dollars per member"
+              />
+              <span className="hq-food-rate-label">/ member /</span>
+              <select className="hq-sheet-input" name="period" defaultValue="quarter" aria-label="Period">
+                <option value="quarter">quarter</option>
+                <option value="year">year</option>
+              </select>
+              <button className="button-secondary" type="submit">
+                Apply
+              </button>
+            </form>
+            <form
+              action={resetTeamBudgetsAction}
+              onSubmit={(event) => {
+                if (
+                  !window.confirm(
+                    'Reset team budgets? This removes every team’s category rows and recreates a clean set for each team. Entered team amounts will be lost.'
+                  )
+                ) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <input type="hidden" name="plan_id" value={planId} />
+              <button className="button-secondary" type="submit">
+                Reset team rows
+              </button>
+            </form>
+          </div>
         ) : null}
       </div>
 

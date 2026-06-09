@@ -4677,6 +4677,51 @@ export async function resetTeamBudgetsAction(formData: FormData) {
   revalidateBudgetPlan();
 }
 
+// Set every team's food sub-budget from a $/member rate and the team roster
+// size. Per-quarter -> quarterly lock; per-year -> yearly lock.
+export async function applyFoodPerMemberAction(formData: FormData) {
+  await requireAdmin();
+  const planId = String(formData.get('plan_id') || '').trim();
+  const dollars = Number(formData.get('dollars')) || 0;
+  const period = String(formData.get('period') || 'quarter');
+  if (!planId) return;
+  const perMemberCents = Math.max(0, Math.round(dollars * 100));
+  const lockCadence = period === 'year' ? 'yearly' : 'quarterly';
+
+  const admin = createAdminClient();
+  const plan = await loadBudgetPlanRow(admin, planId);
+  await ensureEditableDraft(admin, planId, plan.status);
+
+  const { data: foodRows } = await admin
+    .from('budget_expense_items')
+    .select('id, team_id')
+    .eq('plan_id', planId)
+    .eq('kind', 'team')
+    .eq('category', 'food');
+  const rows = ((foodRows || []) as Array<{ id: string; team_id: string | null }>).filter((r) => r.team_id);
+  if (rows.length === 0) {
+    revalidateBudgetPlan();
+    return;
+  }
+
+  const teamIds = Array.from(new Set(rows.map((r) => r.team_id as string)));
+  const { data: members } = await admin.from('team_roster_members').select('team_id').in('team_id', teamIds);
+  const countByTeam = new Map<string, number>();
+  for (const m of (members || []) as Array<{ team_id: string }>) {
+    countByTeam.set(m.team_id, (countByTeam.get(m.team_id) || 0) + 1);
+  }
+
+  await Promise.all(
+    rows.map((r) =>
+      admin
+        .from('budget_expense_items')
+        .update({ amount_cents: perMemberCents * (countByTeam.get(r.team_id as string) || 0), lock_cadence: lockCadence })
+        .eq('id', r.id)
+    )
+  );
+  revalidateBudgetPlan();
+}
+
 export async function submitBudgetPlanForApprovalAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/finances/plan',
