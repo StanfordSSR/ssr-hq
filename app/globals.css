@@ -7028,3 +7028,24 @@ tr:last-child td {
   font-size: 11px;
   white-space: nowrap;
 }
+
+.hq-group-toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.hq-group-toggle:hover {
+  color: var(--cardinal);
+}
+.hq-sheet-subrow {
+  background: var(--panel-soft);
+}
+.hq-sheet-type-sub {
+  color: var(--muted);
+  font-weight: 700;
+  padding-left: 18px;
+}

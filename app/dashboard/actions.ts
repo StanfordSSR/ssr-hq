@@ -4442,6 +4442,7 @@ export async function upsertExpenseItemAction(formData: FormData) {
   const expenseId = String(formData.get('expense_id') || '').trim();
   const kindRaw = String(formData.get('kind') || 'general').trim();
   const teamId = String(formData.get('team_id') || '').trim();
+  const parentId = String(formData.get('parent_id') || '').trim();
   const categoryRaw = String(formData.get('category') || '').trim();
   const label = String(formData.get('label') || '').trim();
   const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
@@ -4452,14 +4453,27 @@ export async function upsertExpenseItemAction(formData: FormData) {
   const admin = createAdminClient();
   const plan = await loadBudgetPlanRow(admin, planId);
 
+  const isSubItem = Boolean(parentId);
   const kind = ['team', 'event', 'operations', 'general'].includes(kindRaw) ? kindRaw : 'general';
   const lockCadence = ['yearly', 'quarterly', 'unlocked'].includes(lockCadenceRaw) ? lockCadenceRaw : 'yearly';
-  const category = kind === 'team' && ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
+  const category =
+    (kind === 'team' || isSubItem) && ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
+  const categoryLabels: Record<string, string> = { equipment: 'Equipment', food: 'Food', travel: 'Travel', other: 'Other' };
 
-  // For team rows the label is derived from team + category so it can never
-  // contradict the team it's grouped under. Other kinds use the typed label.
+  // Team rows and sub-items get derived labels; other kinds use the typed label.
   let resolvedLabel = label;
-  if (kind === 'team') {
+  if (isSubItem) {
+    if (!category) return;
+    const { data: siblings } = await admin
+      .from('budget_expense_items')
+      .select('id, category')
+      .eq('plan_id', planId)
+      .eq('parent_id', parentId);
+    if ((siblings || []).some((row) => row.id !== expenseId && row.category === category)) {
+      throw new Error(`This line item already has a ${category} sub-budget.`);
+    }
+    resolvedLabel = categoryLabels[category];
+  } else if (kind === 'team') {
     if (!teamId) return;
     // One row per (team, category) per plan.
     const { data: existingForTeam } = await admin
@@ -4473,8 +4487,7 @@ export async function upsertExpenseItemAction(formData: FormData) {
       throw new Error(`That team already has a ${category || 'category'} budget. Edit the existing one instead.`);
     }
     const { data: team } = await admin.from('teams').select('name').eq('id', teamId).maybeSingle();
-    const categoryLabel = { equipment: 'Equipment', food: 'Food', travel: 'Travel', other: 'Other' }[category || 'other'];
-    resolvedLabel = `${team?.name || 'Team'} — ${categoryLabel}`;
+    resolvedLabel = `${team?.name || 'Team'} — ${categoryLabels[category || 'other']}`;
   } else if (!resolvedLabel) {
     return;
   }
@@ -4492,7 +4505,8 @@ export async function upsertExpenseItemAction(formData: FormData) {
   const payload = {
     plan_id: planId,
     kind,
-    team_id: kind === 'team' ? teamId || null : null,
+    team_id: !isSubItem && kind === 'team' ? teamId || null : null,
+    parent_id: parentId || null,
     category,
     label: resolvedLabel,
     amount_cents: amountCents,

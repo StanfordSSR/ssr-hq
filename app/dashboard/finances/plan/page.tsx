@@ -192,6 +192,7 @@ async function renderPlan(
       id: expense.id,
       kind: expense.kind,
       teamId: expense.teamId,
+      parentId: expense.parentId,
       category: expense.category,
       label: expense.label,
       amountCents: expense.amountCents,

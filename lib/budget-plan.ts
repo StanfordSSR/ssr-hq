@@ -71,6 +71,7 @@ export type ExpenseItem = {
   id: string;
   kind: 'team' | 'event' | 'operations' | 'general';
   teamId: string | null;
+  parentId: string | null;
   category: ExpenseCategory | null;
   label: string;
   amountCents: number;
@@ -215,7 +216,7 @@ export async function getPlanBundle(planId: string) {
       .order('sort_order'),
     admin
       .from('budget_expense_items')
-      .select('id, kind, team_id, category, label, amount_cents, lock_cadence, locked, notes, sort_order')
+      .select('id, kind, team_id, parent_id, category, label, amount_cents, lock_cadence, locked, notes, sort_order')
       .eq('plan_id', planId)
       .order('sort_order'),
     admin.from('budget_allocations').select('id, source_id, expense_id, amount_cents').eq('plan_id', planId),
@@ -245,6 +246,7 @@ export async function getPlanBundle(planId: string) {
         id: row.id as string,
         kind: row.kind as ExpenseItem['kind'],
         teamId: (row.team_id as string) ?? null,
+        parentId: (row.parent_id as string) ?? null,
         category: (row.category as ExpenseCategory) ?? null,
         label: row.label as string,
         amountCents: row.amount_cents as number,
@@ -357,11 +359,46 @@ export async function computePlanRollup(planId: string, academicYear: string, no
   const remainderByGrant = new Map<string, number>();
   let totalExpenseCents = 0;
 
+  const effectiveOf = (expense: ExpenseItem) =>
+    expense.lockCadence === 'quarterly' && quarterlyEffective.has(expense.id)
+      ? quarterlyEffective.get(expense.id)!
+      : expense.amountCents;
+
+  const childrenByParent = new Map<string, ExpenseItem[]>();
   for (const expense of expenses) {
-    const effectiveCents =
-      expense.lockCadence === 'quarterly' && quarterlyEffective.has(expense.id)
-        ? quarterlyEffective.get(expense.id)!
-        : expense.amountCents;
+    if (expense.parentId) {
+      if (!childrenByParent.has(expense.parentId)) childrenByParent.set(expense.parentId, []);
+      childrenByParent.get(expense.parentId)!.push(expense);
+    }
+  }
+
+  for (const expense of expenses) {
+    const children = !expense.parentId ? childrenByParent.get(expense.id) : undefined;
+
+    // A container (event/ops split into sub-items) aggregates its children and
+    // is not counted on its own — the children carry the amounts and routing.
+    if (children && children.length > 0) {
+      let effectiveSum = 0;
+      let allocatedSum = 0;
+      let remainderSum = 0;
+      for (const child of children) {
+        const childEffective = effectiveOf(child);
+        const childAllocated = Math.min(childEffective, allocatedByExpense.get(child.id) || 0);
+        effectiveSum += childEffective;
+        allocatedSum += childAllocated;
+        remainderSum += Math.max(0, childEffective - childAllocated);
+      }
+      perExpense.set(expense.id, {
+        effectiveCents: effectiveSum,
+        allocatedCents: allocatedSum,
+        remainderFromGrantCents: remainderSum,
+        spentCents: 0,
+        remainingCents: effectiveSum
+      });
+      continue;
+    }
+
+    const effectiveCents = effectiveOf(expense);
     const allocatedCents = Math.min(effectiveCents, allocatedByExpense.get(expense.id) || 0);
     const remainderFromGrantCents = Math.max(0, effectiveCents - allocatedCents);
     const grantId = grantFor(expense.category);

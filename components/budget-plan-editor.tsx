@@ -44,6 +44,7 @@ type Expense = {
   id: string;
   kind: string;
   teamId: string | null;
+  parentId: string | null;
   category: string | null;
   label: string;
   amountCents: number;
@@ -124,7 +125,7 @@ function sourceSortKey(s: Source): string {
   return `${group}|${String(catRank).padStart(2, '0')}|${String(s.sortOrder).padStart(6, '0')}|${s.id}`;
 }
 
-type ExpenseBlock = { id: string; teamId: string | null; rows: Expense[]; order: number };
+type ExpenseBlock = { id: string; teamId: string | null; rows: Expense[]; children: Expense[]; order: number };
 type DragHandle = Record<string, unknown>;
 
 function SortableBlock({
@@ -223,6 +224,14 @@ export function BudgetPlanEditor(props: Props) {
     window.addEventListener('pointerup', onUp);
   };
   const [order, setOrder] = useState<Map<string, number>>(new Map());
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (id: string) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [, startTransition] = useTransition();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -259,10 +268,24 @@ export function BudgetPlanEditor(props: Props) {
     .filter((s) => !removed.has(s.id))
     .sort((a, b) => sourceSortKey(a).localeCompare(sourceSortKey(b)));
 
+  // Event/ops sub-items belong to their parent group, not the top level.
+  const childrenByParent = new Map<string, Expense[]>();
+  for (const e of optimisticExpenses) {
+    if (removed.has(e.id) || !e.parentId) continue;
+    if (!childrenByParent.has(e.parentId)) childrenByParent.set(e.parentId, []);
+    childrenByParent.get(e.parentId)!.push(e);
+  }
+  for (const kids of childrenByParent.values()) {
+    kids.sort(
+      (a, b) =>
+        (CATEGORY_RANK[a.category || 'other'] ?? 9) - (CATEGORY_RANK[b.category || 'other'] ?? 9) || (a.id < b.id ? -1 : 1)
+    );
+  }
+
   // One block per team (all its category rows move together), plus one per event/operations item.
   const blockMap = new Map<string, Expense[]>();
   for (const e of optimisticExpenses) {
-    if (removed.has(e.id)) continue;
+    if (removed.has(e.id) || e.parentId) continue;
     const key = e.teamId ? `team:${e.teamId}` : `exp:${e.id}`;
     if (!blockMap.has(key)) blockMap.set(key, []);
     blockMap.get(key)!.push(e);
@@ -276,7 +299,13 @@ export function BudgetPlanEditor(props: Props) {
         (a.id < b.id ? -1 : 1)
     );
     const baseOrder = Math.min(...rows.map((r) => r.sortOrder ?? 9999));
-    blocks.push({ id: key, teamId: rows[0].teamId, rows, order: order.has(key) ? order.get(key)! : baseOrder });
+    blocks.push({
+      id: key,
+      teamId: rows[0].teamId,
+      rows,
+      children: rows[0].teamId ? [] : childrenByParent.get(rows[0].id) || [],
+      order: order.has(key) ? order.get(key)! : baseOrder
+    });
   }
   blocks.sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1));
   const blockIds = blocks.map((b) => b.id);
@@ -339,6 +368,7 @@ export function BudgetPlanEditor(props: Props) {
         id: tempId,
         kind: rowKind,
         teamId: String(formData.get('team_id') || '') || null,
+        parentId: null,
         category: String(formData.get('category') || '') || null,
         label,
         amountCents,
@@ -462,6 +492,219 @@ export function BudgetPlanEditor(props: Props) {
           ) : null}
         </span>
       </div>
+    );
+  };
+
+  async function handleAddSub(formData: FormData) {
+    const parentId = String(formData.get('parent_id') || '');
+    const kind = String(formData.get('kind') || 'event');
+    const category = String(formData.get('category') || '');
+    if (!parentId || !category) return;
+    const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+    const tempId = `temp-${tempIdSeed()}`;
+    addOptimisticExpense({
+      id: tempId,
+      kind,
+      teamId: null,
+      parentId,
+      category,
+      label: CATEGORY_LABELS[category] || 'Other',
+      amountCents,
+      lockCadence: 'yearly',
+      sortOrder: 9999,
+      effectiveCents: amountCents,
+      allocatedCents: 0,
+      remainderFromGrantCents: amountCents,
+      spentCents: 0
+    });
+    setOpenGroups((prev) => new Set(prev).add(parentId));
+    await upsertExpenseItemAction(formData);
+  }
+
+  const renderSubRow = (parent: Expense, c: Expense) => {
+    const rowId = `exp-${c.id}`;
+    const temp = c.id.startsWith('temp-');
+    const rowEditable = draftEditable && !temp;
+    const catLabel = CATEGORY_LABELS[c.category || 'other'];
+    return (
+      <div className="hq-sheet-row hq-sheet-subrow" role="row" key={c.id}>
+        <form id={rowId} action={upsertExpenseItemAction} hidden />
+        <input form={rowId} type="hidden" name="plan_id" value={planId} />
+        <input form={rowId} type="hidden" name="expense_id" value={c.id} />
+        <input form={rowId} type="hidden" name="parent_id" value={parent.id} />
+        <input form={rowId} type="hidden" name="kind" value={parent.kind} />
+        <input form={rowId} type="hidden" name="category" value={c.category || 'other'} />
+        <span className="hq-sheet-type hq-sheet-type-sub" aria-hidden="true">↳</span>
+        <span className="hq-sheet-cell">{catLabel}</span>
+        <span className="hq-sheet-dim">—</span>
+        <span className="hq-sheet-cell">{catLabel}</span>
+        <span className="hq-sheet-dim">—</span>
+        {rowEditable ? (
+          <span className="hq-sheet-amount">
+            <span>$</span>
+            <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(c.amountCents)} aria-label="Amount" onBlur={autoSave} />
+          </span>
+        ) : (
+          <span className="hq-sheet-cell hq-sheet-num">{usd(c.effectiveCents)}</span>
+        )}
+        {temp ? (
+          <span className="hq-sheet-dim">—</span>
+        ) : (
+          <FundedByCell
+            expenseAmountCents={c.effectiveCents}
+            expenseCategory={c.category}
+            agLabel={`AG-${AG_ABBR[c.category || 'other']}`}
+            grantOver={grantOverByCategory.get(c.category || 'other') || false}
+            allocations={allocByExpense(c.id)}
+            sources={sources}
+            editable={draftEditable}
+            sourceLabelById={sourceLabelById}
+            onAllocate={(sourceId, amountCents) => commitAllocation(sourceId, c.id, amountCents)}
+          />
+        )}
+        <span className="hq-sheet-actions">
+          {rowEditable ? (
+            <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={confirmDelete(c.id)}>
+              ✕
+            </button>
+          ) : null}
+        </span>
+      </div>
+    );
+  };
+
+  const renderAddSubRow = (parent: Expense, children: Expense[]) => {
+    const used = new Set(children.map((c) => c.category));
+    const available = (['equipment', 'food', 'travel', 'other'] as const).filter((c) => !used.has(c));
+    if (available.length === 0) return null;
+    return (
+      <form key={`add-${parent.id}`} className="hq-sheet-row hq-sheet-subrow hq-sheet-add" action={handleAddSub}>
+        <input type="hidden" name="plan_id" value={planId} />
+        <input type="hidden" name="parent_id" value={parent.id} />
+        <input type="hidden" name="kind" value={parent.kind} />
+        <span className="hq-sheet-type hq-sheet-type-sub" aria-hidden="true">↳</span>
+        <span className="hq-sheet-dim">add category…</span>
+        <span className="hq-sheet-dim">—</span>
+        <select className="hq-sheet-input" name="category" defaultValue={available[0]} aria-label="Category">
+          {available.map((c) => (
+            <option key={c} value={c}>
+              {CATEGORY_LABELS[c]}
+            </option>
+          ))}
+        </select>
+        <span className="hq-sheet-dim">—</span>
+        <span className="hq-sheet-amount">
+          <span>$</span>
+          <input name="amount" type="number" min="0" step="0.01" placeholder="0" aria-label="Amount" />
+        </span>
+        <span className="hq-sheet-dim">—</span>
+        <span className="hq-sheet-actions">
+          <button className="hq-sheet-add-btn" type="submit" title="Add sub-item" aria-label="Add sub-item">
+            +
+          </button>
+        </span>
+      </form>
+    );
+  };
+
+  const renderEventGroup = (block: ExpenseBlock, handle: DragHandle) => {
+    const parent = block.rows[0];
+    const children = block.children;
+    const hasChildren = children.length > 0;
+    const open = openGroups.has(parent.id);
+    const temp = parent.id.startsWith('temp-');
+    const rowEditable = (draftEditable || (canEdit && status === 'approved' && parent.lockCadence === 'unlocked')) && !temp;
+    const rowId = `exp-${parent.id}`;
+    const typeLabel = parent.kind === 'operations' ? 'Ops' : parent.kind === 'general' ? 'General' : 'Event';
+    const dragProps = draftEditable && !temp ? handle : {};
+
+    const childTotal = (c: Expense) => allocByExpense(c.id).reduce((x, a) => x + a.amountCents, 0);
+    const aggEffective = children.reduce((s, c) => s + c.effectiveCents, 0);
+    const aggRemainder = children.reduce((s, c) => s + Math.max(0, c.effectiveCents - Math.min(c.effectiveCents, childTotal(c))), 0);
+
+    const combined = new Map<string, number>();
+    for (const c of children) for (const a of allocByExpense(c.id)) combined.set(a.sourceId, (combined.get(a.sourceId) || 0) + a.amountCents);
+    const combinedParts = Array.from(combined.entries()).map(([sid, amt]) => `${sourceLabelById(sid)} (${usd(amt)})`);
+    if (aggRemainder > 0) combinedParts.push(`AG (${usd(aggRemainder)})`);
+    const combinedSummary = combinedParts.length > 0 ? combinedParts.join(', ') : '—';
+
+    return (
+      <>
+        <div className="hq-sheet-row" role="row" key={parent.id}>
+          <form id={rowId} action={upsertExpenseItemAction} hidden />
+          <input form={rowId} type="hidden" name="plan_id" value={planId} />
+          <input form={rowId} type="hidden" name="expense_id" value={parent.id} />
+          <input form={rowId} type="hidden" name="kind" value={parent.kind} />
+          <input form={rowId} type="hidden" name="team_id" value="" />
+          <span
+            className={`hq-sheet-type hq-sheet-type-event${draftEditable && !temp ? ' hq-sheet-grip' : ''}`}
+            title={draftEditable && !temp ? 'Drag to reorder' : undefined}
+            {...dragProps}
+          >
+            {draftEditable && !temp ? <span className="hq-sheet-grip-dots" aria-hidden="true">⠿</span> : null}
+            {typeLabel}
+          </span>
+          <div className="hq-sheet-src-name">
+            <button type="button" className="hq-group-toggle" onClick={() => toggleGroup(parent.id)} aria-label={open ? 'Collapse' : 'Expand'}>
+              {open ? '▾' : '▸'}
+            </button>
+            {rowEditable ? (
+              <input form={rowId} className="hq-sheet-input" name="label" defaultValue={parent.label} aria-label="Name" onBlur={autoSave} />
+            ) : (
+              <span className="hq-sheet-cell">{parent.label}</span>
+            )}
+          </div>
+          <span className="hq-sheet-dim">—</span>
+          <span className="hq-sheet-dim">{hasChildren ? `${children.length} cat.` : 'split…'}</span>
+          {rowEditable ? (
+            <select form={rowId} className="hq-sheet-input" name="lock_cadence" defaultValue={parent.lockCadence} aria-label="Lock" onChange={autoSave}>
+              <option value="yearly">Yearly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="unlocked">Unlocked</option>
+            </select>
+          ) : (
+            <span className={`hq-budget-tag hq-budget-tag-${parent.lockCadence}`}>{parent.lockCadence}</span>
+          )}
+          {hasChildren ? (
+            <span className="hq-sheet-cell hq-sheet-num">{usd(aggEffective)}</span>
+          ) : rowEditable ? (
+            <span className="hq-sheet-amount">
+              <span>$</span>
+              <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(parent.amountCents)} aria-label="Amount" onBlur={autoSave} />
+            </span>
+          ) : (
+            <span className="hq-sheet-cell hq-sheet-num">{usd(parent.effectiveCents)}</span>
+          )}
+          {hasChildren ? (
+            <span className="hq-sheet-dim hq-funded-summary" title={combinedSummary}>
+              {combinedSummary}
+            </span>
+          ) : temp ? (
+            <span className="hq-sheet-dim">—</span>
+          ) : (
+            <FundedByCell
+              expenseAmountCents={parent.effectiveCents}
+              expenseCategory={parent.category}
+              agLabel={`AG-${AG_ABBR[parent.category || 'other']}`}
+              grantOver={grantOverByCategory.get(parent.category || 'other') || false}
+              allocations={allocByExpense(parent.id)}
+              sources={sources}
+              editable={draftEditable}
+              sourceLabelById={sourceLabelById}
+              onAllocate={(sourceId, amountCents) => commitAllocation(sourceId, parent.id, amountCents)}
+            />
+          )}
+          <span className="hq-sheet-actions">
+            {draftEditable && !temp ? (
+              <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={confirmDelete(parent.id)}>
+                ✕
+              </button>
+            ) : null}
+          </span>
+        </div>
+        {open ? children.map((c) => renderSubRow(parent, c)) : null}
+        {open && draftEditable && !temp ? renderAddSubRow(parent, children) : null}
+      </>
     );
   };
 
@@ -600,7 +843,11 @@ export function BudgetPlanEditor(props: Props) {
             <SortableContext items={blockIds} strategy={verticalListSortingStrategy}>
               {blocks.map((block) => (
                 <SortableBlock key={block.id} id={block.id} disabled={!draftEditable} isTeam={Boolean(block.teamId)}>
-                  {(handle) => block.rows.map((e) => renderExpenseRow(e, handle))}
+                  {(handle) =>
+                    block.teamId
+                      ? block.rows.map((e) => renderExpenseRow(e, handle))
+                      : renderEventGroup(block, handle)
+                  }
                 </SortableBlock>
               ))}
             </SortableContext>
