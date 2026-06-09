@@ -58,7 +58,8 @@ export type BudgetPlan = {
 export type FundingSource = {
   id: string;
   label: string;
-  kind: 'annual_grant' | 'grant_reserves' | 'sponsorship' | 'other';
+  kind: 'annual_grant' | 'reserve_grant' | 'grant' | 'sponsorship' | 'other';
+  category: ExpenseCategory | null;
   amountCents: number;
   isDefaultPool: boolean;
   locked: boolean;
@@ -209,7 +210,7 @@ export async function getPlanBundle(planId: string) {
   const [{ data: sources }, { data: expenses }, { data: allocations }, { data: approvals }] = await Promise.all([
     admin
       .from('budget_funding_sources')
-      .select('id, label, kind, amount_cents, is_default_pool, locked, notes, sort_order')
+      .select('id, label, kind, category, amount_cents, is_default_pool, locked, notes, sort_order')
       .eq('plan_id', planId)
       .order('sort_order'),
     admin
@@ -231,6 +232,7 @@ export async function getPlanBundle(planId: string) {
         id: row.id as string,
         label: row.label as string,
         kind: row.kind as FundingSource['kind'],
+        category: (row.category as ExpenseCategory) ?? null,
         amountCents: row.amount_cents as number,
         isDefaultPool: row.is_default_pool as boolean,
         locked: row.locked as boolean,

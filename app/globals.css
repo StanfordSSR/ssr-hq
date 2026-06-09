@@ -6823,3 +6823,9 @@ tr:last-child td {
   max-width: 130px;
   border-color: var(--line);
 }
+
+.hq-sheet-del,
+.hq-sheet-chip-x {
+  color: var(--cardinal);
+  font-weight: 700;
+}

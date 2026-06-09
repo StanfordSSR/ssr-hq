@@ -20,6 +20,8 @@ type Source = {
   id: string;
   label: string;
   kind: string;
+  category: string | null;
+  notes: string | null;
   amountCents: number;
   isDefaultPool: boolean;
   committedCents: number;
@@ -70,10 +72,18 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 const SOURCE_KIND_LABELS: Record<string, string> = {
   annual_grant: 'Annual grant',
-  grant_reserves: 'Grant reserves',
+  reserve_grant: 'Reserve grant',
+  grant: 'Grant',
   sponsorship: 'Sponsorship',
   other: 'Other'
 };
+const CATEGORY_OPTIONS: Array<[string, string]> = [
+  ['', '—'],
+  ['equipment', 'Equipment'],
+  ['food', 'Food'],
+  ['travel', 'Travel'],
+  ['other', 'Other']
+];
 
 function usd(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
@@ -81,6 +91,11 @@ function usd(cents: number) {
 
 function dollars(cents: number) {
   return (cents / 100).toFixed(2);
+}
+
+// Autosave: submit the input/select's associated form when the user leaves it.
+function autoSave(event: { currentTarget: { form: HTMLFormElement | null } }) {
+  event.currentTarget.form?.requestSubmit();
 }
 
 export function BudgetPlanEditor(props: Props) {
@@ -102,6 +117,9 @@ export function BudgetPlanEditor(props: Props) {
     totalExpenseCents,
     uncoveredCents
   } = props;
+
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
+  const hide = (id: string) => setRemoved((prev) => new Set(prev).add(id));
 
   const draftEditable = canEdit && (status === 'draft' || status === 'pending_approval');
   const teamName = (id: string | null) => teams.find((t) => t.id === id)?.name || '';
@@ -135,153 +153,157 @@ export function BudgetPlanEditor(props: Props) {
             <span aria-hidden="true" />
           </div>
 
-          {sources.map((s) => {
-            const rowId = `src-${s.id}`;
-            return (
-              <div className="hq-sheet-row" role="row" key={s.id}>
-                <form id={rowId} action={upsertFundingSourceAction} hidden />
-                <input form={rowId} type="hidden" name="plan_id" value={planId} />
-                <input form={rowId} type="hidden" name="source_id" value={s.id} />
-                <input form={rowId} type="hidden" name="is_default_pool" value={s.isDefaultPool ? 'on' : ''} />
-                <span className="hq-sheet-type hq-sheet-type-source">Source</span>
-                {draftEditable ? (
-                  <input form={rowId} className="hq-sheet-input" name="label" defaultValue={s.label} aria-label="Name" />
-                ) : (
-                  <span className="hq-sheet-cell">{s.label}</span>
-                )}
-                {draftEditable ? (
-                  <select form={rowId} className="hq-sheet-input" name="kind" defaultValue={s.kind} aria-label="Kind">
-                    {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="hq-sheet-cell">{SOURCE_KIND_LABELS[s.kind] || s.kind}</span>
-                )}
-                <span className="hq-sheet-dim">{s.isDefaultPool ? 'default pool' : '—'}</span>
-                <span className="hq-sheet-dim">—</span>
-                {draftEditable ? (
-                  <span className="hq-sheet-amount">
-                    <span>$</span>
-                    <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(s.amountCents)} aria-label="Amount" />
-                  </span>
-                ) : (
-                  <span className="hq-sheet-cell hq-sheet-num">{usd(s.amountCents)}</span>
-                )}
-                <span className="hq-sheet-dim">{usd(s.remainingCents)} free</span>
-                <span className="hq-sheet-actions">
+          {sources
+            .filter((s) => !removed.has(s.id))
+            .map((s) => {
+              const rowId = `src-${s.id}`;
+              return (
+                <div className="hq-sheet-row" role="row" key={s.id}>
+                  <form id={rowId} action={upsertFundingSourceAction} hidden />
+                  <input form={rowId} type="hidden" name="plan_id" value={planId} />
+                  <input form={rowId} type="hidden" name="source_id" value={s.id} />
+                  <input form={rowId} type="hidden" name="is_default_pool" value={s.isDefaultPool ? 'on' : ''} />
+                  <span className="hq-sheet-type hq-sheet-type-source">Source</span>
                   {draftEditable ? (
-                    <>
-                      <button form={rowId} className="hq-sheet-save" title="Save" aria-label="Save">
-                        ✓
-                      </button>
-                      {!s.isDefaultPool ? (
-                        <button form={rowId} formAction={deleteFundingSourceAction} className="hq-sheet-del" title="Remove" aria-label="Remove">
-                          ✕
-                        </button>
-                      ) : null}
-                    </>
-                  ) : null}
-                </span>
-              </div>
-            );
-          })}
-
-          {expenses.map((e) => {
-            const rowId = `exp-${e.id}`;
-            const isTeam = e.kind === 'team';
-            const rowEditable = draftEditable || (canEdit && status === 'approved' && e.lockCadence === 'unlocked');
-            const typeLabel = isTeam ? 'Team' : e.kind === 'operations' ? 'Ops' : e.kind === 'general' ? 'General' : 'Event';
-            return (
-              <div className="hq-sheet-row" role="row" key={e.id}>
-                <form id={rowId} action={upsertExpenseItemAction} hidden />
-                <input form={rowId} type="hidden" name="plan_id" value={planId} />
-                <input form={rowId} type="hidden" name="expense_id" value={e.id} />
-                <input form={rowId} type="hidden" name="kind" value={e.kind} />
-                <span className={`hq-sheet-type hq-sheet-type-${isTeam ? 'team' : 'event'}`}>{typeLabel}</span>
-                {rowEditable ? (
-                  <input form={rowId} className="hq-sheet-input" name="label" defaultValue={e.label} aria-label="Name" />
-                ) : (
-                  <span className="hq-sheet-cell">{e.label}</span>
-                )}
-                {isTeam ? (
-                  rowEditable ? (
-                    <select form={rowId} className="hq-sheet-input" name="team_id" defaultValue={e.teamId || ''} aria-label="Team">
-                      {teams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
+                    <input form={rowId} className="hq-sheet-input" name="label" defaultValue={s.label} aria-label="Name" onBlur={autoSave} />
                   ) : (
-                    <span className="hq-sheet-cell">{teamName(e.teamId)}</span>
-                  )
-                ) : (
-                  <>
-                    <input form={rowId} type="hidden" name="team_id" value="" />
-                    <span className="hq-sheet-dim">—</span>
-                  </>
-                )}
-                {isTeam ? (
-                  rowEditable ? (
-                    <select form={rowId} className="hq-sheet-input" name="category" defaultValue={e.category || 'other'} aria-label="Category">
-                      {Object.entries(CATEGORY_LABELS).map(([v, l]) => (
+                    <span className="hq-sheet-cell">{s.label}</span>
+                  )}
+                  {draftEditable ? (
+                    <select form={rowId} className="hq-sheet-input" name="kind" defaultValue={s.kind} aria-label="Kind" onChange={autoSave}>
+                      {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
                         <option key={v} value={v}>
                           {l}
                         </option>
                       ))}
                     </select>
                   ) : (
-                    <span className="hq-sheet-cell">{CATEGORY_LABELS[e.category || 'other']}</span>
-                  )
-                ) : (
-                  <span className="hq-sheet-dim">—</span>
-                )}
-                {rowEditable ? (
-                  <select form={rowId} className="hq-sheet-input" name="lock_cadence" defaultValue={e.lockCadence} aria-label="Lock">
-                    <option value="yearly">Yearly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="unlocked">Unlocked</option>
-                  </select>
-                ) : (
-                  <span className={`hq-budget-tag hq-budget-tag-${e.lockCadence}`}>{e.lockCadence}</span>
-                )}
-                {rowEditable ? (
-                  <span className="hq-sheet-amount">
-                    <span>$</span>
-                    <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(e.amountCents)} aria-label="Amount" />
-                  </span>
-                ) : (
-                  <span className="hq-sheet-cell hq-sheet-num">{usd(e.effectiveCents)}</span>
-                )}
-                <FundedByCell
-                  planId={planId}
-                  expenseId={e.id}
-                  allocations={allocByExpense(e.id)}
-                  sources={sources}
-                  remainderCents={e.remainderFromGrantCents}
-                  editable={draftEditable}
-                  sourceLabelById={sourceLabelById}
-                />
-                <span className="hq-sheet-actions">
-                  {rowEditable ? (
-                    <>
-                      <button form={rowId} className="hq-sheet-save" title="Save" aria-label="Save">
-                        ✓
+                    <span className="hq-sheet-cell">{SOURCE_KIND_LABELS[s.kind] || s.kind}</span>
+                  )}
+                  {draftEditable ? (
+                    <select form={rowId} className="hq-sheet-input" name="category" defaultValue={s.category || ''} aria-label="Category" onChange={autoSave}>
+                      {CATEGORY_OPTIONS.map(([v, l]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="hq-sheet-cell">{s.category ? CATEGORY_LABELS[s.category] : '—'}</span>
+                  )}
+                  <span className="hq-sheet-dim">{s.isDefaultPool ? 'default' : '—'}</span>
+                  {draftEditable ? (
+                    <span className="hq-sheet-amount">
+                      <span>$</span>
+                      <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(s.amountCents)} aria-label="Amount" onBlur={autoSave} />
+                    </span>
+                  ) : (
+                    <span className="hq-sheet-cell hq-sheet-num">{usd(s.amountCents)}</span>
+                  )}
+                  {draftEditable ? (
+                    <input form={rowId} className="hq-sheet-input" name="notes" defaultValue={s.notes || ''} placeholder="From (e.g. ASSU)" aria-label="Funded by" onBlur={autoSave} />
+                  ) : (
+                    <span className="hq-sheet-dim">{s.notes || '—'}</span>
+                  )}
+                  <span className="hq-sheet-actions">
+                    {draftEditable && !s.isDefaultPool ? (
+                      <button form={rowId} formAction={deleteFundingSourceAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={() => hide(s.id)}>
+                        ✕
                       </button>
-                      {draftEditable ? (
-                        <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove">
-                          ✕
-                        </button>
-                      ) : null}
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
+
+          {expenses
+            .filter((e) => !removed.has(e.id))
+            .map((e) => {
+              const rowId = `exp-${e.id}`;
+              const isTeam = e.kind === 'team';
+              const rowEditable = draftEditable || (canEdit && status === 'approved' && e.lockCadence === 'unlocked');
+              const typeLabel = isTeam ? 'Team' : e.kind === 'operations' ? 'Ops' : e.kind === 'general' ? 'General' : 'Event';
+              return (
+                <div className="hq-sheet-row" role="row" key={e.id}>
+                  <form id={rowId} action={upsertExpenseItemAction} hidden />
+                  <input form={rowId} type="hidden" name="plan_id" value={planId} />
+                  <input form={rowId} type="hidden" name="expense_id" value={e.id} />
+                  <input form={rowId} type="hidden" name="kind" value={e.kind} />
+                  <span className={`hq-sheet-type hq-sheet-type-${isTeam ? 'team' : 'event'}`}>{typeLabel}</span>
+                  {rowEditable ? (
+                    <input form={rowId} className="hq-sheet-input" name="label" defaultValue={e.label} aria-label="Name" onBlur={autoSave} />
+                  ) : (
+                    <span className="hq-sheet-cell">{e.label}</span>
+                  )}
+                  {isTeam ? (
+                    rowEditable ? (
+                      <select form={rowId} className="hq-sheet-input" name="team_id" defaultValue={e.teamId || ''} aria-label="Team" onChange={autoSave}>
+                        {teams.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="hq-sheet-cell">{teamName(e.teamId)}</span>
+                    )
+                  ) : (
+                    <>
+                      <input form={rowId} type="hidden" name="team_id" value="" />
+                      <span className="hq-sheet-dim">—</span>
                     </>
-                  ) : null}
-                </span>
-              </div>
-            );
-          })}
+                  )}
+                  {isTeam ? (
+                    rowEditable ? (
+                      <select form={rowId} className="hq-sheet-input" name="category" defaultValue={e.category || 'other'} aria-label="Category" onChange={autoSave}>
+                        {Object.entries(CATEGORY_LABELS).map(([v, l]) => (
+                          <option key={v} value={v}>
+                            {l}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="hq-sheet-cell">{CATEGORY_LABELS[e.category || 'other']}</span>
+                    )
+                  ) : (
+                    <span className="hq-sheet-dim">—</span>
+                  )}
+                  {rowEditable ? (
+                    <select form={rowId} className="hq-sheet-input" name="lock_cadence" defaultValue={e.lockCadence} aria-label="Lock" onChange={autoSave}>
+                      <option value="yearly">Yearly</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="unlocked">Unlocked</option>
+                    </select>
+                  ) : (
+                    <span className={`hq-budget-tag hq-budget-tag-${e.lockCadence}`}>{e.lockCadence}</span>
+                  )}
+                  {rowEditable ? (
+                    <span className="hq-sheet-amount">
+                      <span>$</span>
+                      <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(e.amountCents)} aria-label="Amount" onBlur={autoSave} />
+                    </span>
+                  ) : (
+                    <span className="hq-sheet-cell hq-sheet-num">{usd(e.effectiveCents)}</span>
+                  )}
+                  <FundedByCell
+                    planId={planId}
+                    expenseId={e.id}
+                    allocations={allocByExpense(e.id)}
+                    sources={sources}
+                    remainderCents={e.remainderFromGrantCents}
+                    editable={draftEditable}
+                    sourceLabelById={sourceLabelById}
+                  />
+                  <span className="hq-sheet-actions">
+                    {draftEditable ? (
+                      <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={() => hide(e.id)}>
+                        ✕
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
 
           {draftEditable ? <AddRow planId={planId} teams={teams} /> : null}
         </div>
@@ -345,7 +367,15 @@ function AddRow({ planId, teams }: { planId: string; teams: Team[] }) {
       ) : (
         <span className="hq-sheet-dim">—</span>
       )}
-      {isTeam ? (
+      {isSource ? (
+        <select className="hq-sheet-input" name="category" defaultValue="" aria-label="Category">
+          {CATEGORY_OPTIONS.map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      ) : isTeam ? (
         <select className="hq-sheet-input" name="category" defaultValue="equipment" aria-label="Category">
           {Object.entries(CATEGORY_LABELS).map(([v, l]) => (
             <option key={v} value={v}>
@@ -369,7 +399,11 @@ function AddRow({ planId, teams }: { planId: string; teams: Team[] }) {
         <span>$</span>
         <input name="amount" type="number" min="0" step="0.01" placeholder="0" aria-label="Amount" />
       </span>
-      <span className="hq-sheet-dim">—</span>
+      {isSource ? (
+        <input className="hq-sheet-input" name="notes" placeholder="From (e.g. ASSU)" aria-label="Funded by" />
+      ) : (
+        <span className="hq-sheet-dim">—</span>
+      )}
       <span className="hq-sheet-actions">
         <button className="hq-sheet-add-btn" type="submit" title="Add line item" aria-label="Add line item">
           +

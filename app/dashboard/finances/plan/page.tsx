@@ -177,6 +177,8 @@ async function renderPlan(
       id: source.id,
       label: source.label,
       kind: source.kind,
+      category: source.category,
+      notes: source.notes,
       amountCents: source.amountCents,
       isDefaultPool: source.isDefaultPool,
       committedCents: r?.committedCents || 0,

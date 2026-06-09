@@ -4351,218 +4351,180 @@ export async function createBudgetPlanAction(formData: FormData) {
   });
 }
 
+function revalidateBudgetPlan() {
+  revalidatePath('/dashboard/finances/plan');
+}
+
 export async function upsertFundingSourceAction(formData: FormData) {
-  await runRedirectingAction({
-    fallbackPath: '/dashboard/finances/plan',
-    successMessage: 'Saved the funding source.',
-    action: async () => {
-      const { user } = await requireAdmin();
-      const planId = String(formData.get('plan_id') || '').trim();
-      const sourceId = String(formData.get('source_id') || '').trim();
-      const label = String(formData.get('label') || '').trim();
-      const kind = String(formData.get('kind') || 'other').trim();
-      const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
-      const isDefaultPool = String(formData.get('is_default_pool') || '') === 'on';
-      const notes = String(formData.get('notes') || '').trim() || null;
-      if (!planId || !label) throw new Error('A label is required.');
+  await requireAdmin();
+  const planId = String(formData.get('plan_id') || '').trim();
+  const sourceId = String(formData.get('source_id') || '').trim();
+  const label = String(formData.get('label') || '').trim();
+  const kindRaw = String(formData.get('kind') || 'other').trim();
+  const categoryRaw = String(formData.get('category') || '').trim();
+  const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+  const isDefaultPool = String(formData.get('is_default_pool') || '') === 'on';
+  const notes = String(formData.get('notes') || '').trim() || null;
+  if (!planId || !label) return;
 
-      const admin = createAdminClient();
-      const plan = await loadBudgetPlanRow(admin, planId);
-      await ensureEditableDraft(admin, planId, plan.status);
+  const admin = createAdminClient();
+  const plan = await loadBudgetPlanRow(admin, planId);
+  await ensureEditableDraft(admin, planId, plan.status);
 
-      if (isDefaultPool) {
-        await admin.from('budget_funding_sources').update({ is_default_pool: false }).eq('plan_id', planId);
-      }
-      const validKind = ['annual_grant', 'grant_reserves', 'sponsorship', 'other'].includes(kind) ? kind : 'other';
-      const payload = {
-        plan_id: planId,
-        label,
-        kind: validKind,
-        amount_cents: amountCents,
-        is_default_pool: isDefaultPool,
-        notes
-      };
-      if (sourceId) {
-        await admin.from('budget_funding_sources').update(payload).eq('id', sourceId);
-      } else {
-        await admin.from('budget_funding_sources').insert(payload);
-      }
+  const kind = ['annual_grant', 'reserve_grant', 'grant', 'sponsorship', 'other'].includes(kindRaw) ? kindRaw : 'other';
+  const category = ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
 
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'budget.source.saved',
-        targetType: 'budget_plan',
-        targetId: planId,
-        summary: `Saved funding source "${label}".`,
-        details: { sourceId: sourceId || null, amountCents }
-      });
-      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+  if (kind === 'annual_grant') {
+    const { data: existing } = await admin
+      .from('budget_funding_sources')
+      .select('id, category')
+      .eq('plan_id', planId)
+      .eq('kind', 'annual_grant');
+    const conflict = (existing || []).some((row) => row.id !== sourceId && (row.category || '') === (category || ''));
+    if (conflict) {
+      throw new Error(`Only one annual grant is allowed per category${category ? ` (${category})` : ''}.`);
     }
-  });
+  }
+
+  if (isDefaultPool) {
+    await admin
+      .from('budget_funding_sources')
+      .update({ is_default_pool: false })
+      .eq('plan_id', planId)
+      .neq('id', sourceId || '00000000-0000-0000-0000-000000000000');
+  }
+
+  const payload = { plan_id: planId, label, kind, category, amount_cents: amountCents, is_default_pool: isDefaultPool, notes };
+  if (sourceId) {
+    await admin.from('budget_funding_sources').update(payload).eq('id', sourceId);
+  } else {
+    await admin.from('budget_funding_sources').insert(payload);
+  }
+  revalidateBudgetPlan();
 }
 
 export async function deleteFundingSourceAction(formData: FormData) {
-  await runRedirectingAction({
-    fallbackPath: '/dashboard/finances/plan',
-    successMessage: 'Removed the funding source.',
-    action: async () => {
-      await requireAdmin();
-      const planId = String(formData.get('plan_id') || '').trim();
-      const sourceId = String(formData.get('source_id') || '').trim();
-      if (!planId || !sourceId) throw new Error('Missing source.');
-      const admin = createAdminClient();
-      const plan = await loadBudgetPlanRow(admin, planId);
-      await ensureEditableDraft(admin, planId, plan.status);
-      const { data: source } = await admin
-        .from('budget_funding_sources')
-        .select('is_default_pool')
-        .eq('id', sourceId)
-        .maybeSingle();
-      if (source?.is_default_pool) {
-        throw new Error('The annual grant (default pool) cannot be removed.');
-      }
-      await admin.from('budget_funding_sources').delete().eq('id', sourceId);
-      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
-    }
-  });
+  await requireAdmin();
+  const planId = String(formData.get('plan_id') || '').trim();
+  const sourceId = String(formData.get('source_id') || '').trim();
+  if (!planId || !sourceId) return;
+  const admin = createAdminClient();
+  const plan = await loadBudgetPlanRow(admin, planId);
+  await ensureEditableDraft(admin, planId, plan.status);
+  const { data: source } = await admin
+    .from('budget_funding_sources')
+    .select('is_default_pool')
+    .eq('id', sourceId)
+    .maybeSingle();
+  if (source?.is_default_pool) {
+    throw new Error('The annual grant (default pool) cannot be removed.');
+  }
+  await admin.from('budget_funding_sources').delete().eq('id', sourceId);
+  revalidateBudgetPlan();
 }
 
 export async function upsertExpenseItemAction(formData: FormData) {
-  await runRedirectingAction({
-    fallbackPath: '/dashboard/finances/plan',
-    successMessage: 'Saved the line item.',
-    action: async () => {
-      const { user } = await requireAdmin();
-      const planId = String(formData.get('plan_id') || '').trim();
-      const expenseId = String(formData.get('expense_id') || '').trim();
-      const kind = String(formData.get('kind') || 'general').trim();
-      const teamId = String(formData.get('team_id') || '').trim();
-      const categoryRaw = String(formData.get('category') || '').trim();
-      const label = String(formData.get('label') || '').trim();
-      const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
-      const lockCadence = String(formData.get('lock_cadence') || 'yearly').trim();
-      const notes = String(formData.get('notes') || '').trim() || null;
-      if (!planId || !label) throw new Error('A label is required.');
+  await requireAdmin();
+  const planId = String(formData.get('plan_id') || '').trim();
+  const expenseId = String(formData.get('expense_id') || '').trim();
+  const kindRaw = String(formData.get('kind') || 'general').trim();
+  const teamId = String(formData.get('team_id') || '').trim();
+  const categoryRaw = String(formData.get('category') || '').trim();
+  const label = String(formData.get('label') || '').trim();
+  const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+  const lockCadenceRaw = String(formData.get('lock_cadence') || 'yearly').trim();
+  const notes = String(formData.get('notes') || '').trim() || null;
+  if (!planId || !label) return;
 
-      const admin = createAdminClient();
-      const plan = await loadBudgetPlanRow(admin, planId);
+  const admin = createAdminClient();
+  const plan = await loadBudgetPlanRow(admin, planId);
 
-      const validKind = ['team', 'event', 'operations', 'general'].includes(kind) ? kind : 'general';
-      const validCadence = ['yearly', 'quarterly', 'unlocked'].includes(lockCadence) ? lockCadence : 'yearly';
-      const category = validKind === 'team' && ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
+  const kind = ['team', 'event', 'operations', 'general'].includes(kindRaw) ? kindRaw : 'general';
+  const lockCadence = ['yearly', 'quarterly', 'unlocked'].includes(lockCadenceRaw) ? lockCadenceRaw : 'yearly';
+  const category = kind === 'team' && ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
 
-      if (plan.status === 'approved') {
-        // Only unlocked items (events) may be edited directly post-approval.
-        if (!expenseId) throw new Error('This plan is approved. Start a revision to add line items.');
-        const { data: existing } = await admin
-          .from('budget_expense_items')
-          .select('lock_cadence')
-          .eq('id', expenseId)
-          .maybeSingle();
-        if (existing?.lock_cadence !== 'unlocked') {
-          throw new Error('This line item is locked. Start a revision to change it.');
-        }
-      } else {
-        await ensureEditableDraft(admin, planId, plan.status);
-      }
-
-      const payload = {
-        plan_id: planId,
-        kind: validKind,
-        team_id: validKind === 'team' ? teamId || null : null,
-        category,
-        label,
-        amount_cents: amountCents,
-        lock_cadence: validCadence,
-        notes
-      };
-      if (expenseId) {
-        await admin.from('budget_expense_items').update(payload).eq('id', expenseId);
-      } else {
-        await admin.from('budget_expense_items').insert(payload);
-      }
-
-      if (plan.status === 'approved') {
-        await writePlanThrough(admin, planId, plan.academic_year);
-      }
-
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'budget.expense.saved',
-        targetType: 'budget_plan',
-        targetId: planId,
-        summary: `Saved line item "${label}".`,
-        details: { expenseId: expenseId || null, amountCents, lockCadence: validCadence }
-      });
-      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
+  if (plan.status === 'approved') {
+    if (!expenseId) throw new Error('This plan is approved. Start a revision to add line items.');
+    const { data: existing } = await admin.from('budget_expense_items').select('lock_cadence').eq('id', expenseId).maybeSingle();
+    if (existing?.lock_cadence !== 'unlocked') {
+      throw new Error('This line item is locked. Start a revision to change it.');
     }
-  });
+  } else {
+    await ensureEditableDraft(admin, planId, plan.status);
+  }
+
+  const payload = {
+    plan_id: planId,
+    kind,
+    team_id: kind === 'team' ? teamId || null : null,
+    category,
+    label,
+    amount_cents: amountCents,
+    lock_cadence: lockCadence,
+    notes
+  };
+  if (expenseId) {
+    await admin.from('budget_expense_items').update(payload).eq('id', expenseId);
+  } else {
+    await admin.from('budget_expense_items').insert(payload);
+  }
+  if (plan.status === 'approved') {
+    await writePlanThrough(admin, planId, plan.academic_year);
+  }
+  revalidateBudgetPlan();
 }
 
 export async function deleteExpenseItemAction(formData: FormData) {
-  await runRedirectingAction({
-    fallbackPath: '/dashboard/finances/plan',
-    successMessage: 'Removed the line item.',
-    action: async () => {
-      await requireAdmin();
-      const planId = String(formData.get('plan_id') || '').trim();
-      const expenseId = String(formData.get('expense_id') || '').trim();
-      if (!planId || !expenseId) throw new Error('Missing line item.');
-      const admin = createAdminClient();
-      const plan = await loadBudgetPlanRow(admin, planId);
-      await ensureEditableDraft(admin, planId, plan.status);
-      await admin.from('budget_expense_items').delete().eq('id', expenseId);
-      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
-    }
-  });
+  await requireAdmin();
+  const planId = String(formData.get('plan_id') || '').trim();
+  const expenseId = String(formData.get('expense_id') || '').trim();
+  if (!planId || !expenseId) return;
+  const admin = createAdminClient();
+  const plan = await loadBudgetPlanRow(admin, planId);
+  await ensureEditableDraft(admin, planId, plan.status);
+  await admin.from('budget_expense_items').delete().eq('id', expenseId);
+  revalidateBudgetPlan();
 }
 
 export async function upsertAllocationAction(formData: FormData) {
-  await runRedirectingAction({
-    fallbackPath: '/dashboard/finances/plan',
-    successMessage: 'Saved the allocation.',
-    action: async () => {
-      await requireAdmin();
-      const planId = String(formData.get('plan_id') || '').trim();
-      const sourceId = String(formData.get('source_id') || '').trim();
-      const expenseId = String(formData.get('expense_id') || '').trim();
-      const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
-      if (!planId || !sourceId || !expenseId) throw new Error('Missing allocation fields.');
+  await requireAdmin();
+  const planId = String(formData.get('plan_id') || '').trim();
+  const sourceId = String(formData.get('source_id') || '').trim();
+  const expenseId = String(formData.get('expense_id') || '').trim();
+  const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
+  if (!planId || !sourceId || !expenseId) return;
 
-      const admin = createAdminClient();
-      const plan = await loadBudgetPlanRow(admin, planId);
-      await ensureEditableDraft(admin, planId, plan.status);
+  const admin = createAdminClient();
+  const plan = await loadBudgetPlanRow(admin, planId);
+  await ensureEditableDraft(admin, planId, plan.status);
 
-      if (amountCents === 0) {
-        await admin.from('budget_allocations').delete().eq('source_id', sourceId).eq('expense_id', expenseId);
-        revalidatePaths(REVALIDATE_PATHS.budgetPlan);
-        return;
-      }
+  if (amountCents === 0) {
+    await admin.from('budget_allocations').delete().eq('source_id', sourceId).eq('expense_id', expenseId);
+    revalidateBudgetPlan();
+    return;
+  }
 
-      // Validate against current rollup (excluding the row being replaced).
-      const { sources, expenses, allocations } = await getPlanBundle(planId);
-      const source = sources.find((s) => s.id === sourceId);
-      const expense = expenses.find((e) => e.id === expenseId);
-      if (!source || !expense) throw new Error('Unknown source or line item.');
-      const otherFromSource = allocations
-        .filter((a) => a.sourceId === sourceId && a.expenseId !== expenseId)
-        .reduce((sum, a) => sum + a.amountCents, 0);
-      const otherToExpense = allocations
-        .filter((a) => a.expenseId === expenseId && a.sourceId !== sourceId)
-        .reduce((sum, a) => sum + a.amountCents, 0);
-      if (amountCents + otherFromSource > source.amountCents) {
-        throw new Error(`That exceeds "${source.label}" — only ${formatCentsUsd(source.amountCents - otherFromSource)} remains.`);
-      }
-      if (amountCents + otherToExpense > expense.amountCents) {
-        throw new Error(`That exceeds the "${expense.label}" line item amount.`);
-      }
+  const { sources, expenses, allocations } = await getPlanBundle(planId);
+  const source = sources.find((s) => s.id === sourceId);
+  const expense = expenses.find((e) => e.id === expenseId);
+  if (!source || !expense) throw new Error('Unknown source or line item.');
+  const otherFromSource = allocations
+    .filter((a) => a.sourceId === sourceId && a.expenseId !== expenseId)
+    .reduce((sum, a) => sum + a.amountCents, 0);
+  const otherToExpense = allocations
+    .filter((a) => a.expenseId === expenseId && a.sourceId !== sourceId)
+    .reduce((sum, a) => sum + a.amountCents, 0);
+  if (amountCents + otherFromSource > source.amountCents) {
+    throw new Error(`That exceeds "${source.label}" — only ${formatCentsUsd(source.amountCents - otherFromSource)} remains.`);
+  }
+  if (amountCents + otherToExpense > expense.amountCents) {
+    throw new Error(`That exceeds the "${expense.label}" line item amount.`);
+  }
 
-      await admin
-        .from('budget_allocations')
-        .upsert({ plan_id: planId, source_id: sourceId, expense_id: expenseId, amount_cents: amountCents }, { onConflict: 'source_id,expense_id' });
-      revalidatePaths(REVALIDATE_PATHS.budgetPlan);
-    }
-  });
+  await admin
+    .from('budget_allocations')
+    .upsert({ plan_id: planId, source_id: sourceId, expense_id: expenseId, amount_cents: amountCents }, { onConflict: 'source_id,expense_id' });
+  revalidateBudgetPlan();
 }
 
 export async function submitBudgetPlanForApprovalAction(formData: FormData) {
