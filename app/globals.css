@@ -7009,3 +7009,22 @@ tr:last-child td {
 .hq-sheet-row-over-amt .hq-sheet-num {
   color: var(--cardinal);
 }
+
+.hq-sheet-src-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px;
+}
+.hq-sheet-src-name .hq-sheet-input,
+.hq-sheet-src-name .hq-sheet-cell {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0;
+}
+.hq-sheet-util {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}

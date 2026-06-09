@@ -531,11 +531,16 @@ export function BudgetPlanEditor(props: Props) {
                 <input form={rowId} type="hidden" name="source_id" value={s.id} />
                 <input form={rowId} type="hidden" name="is_default_pool" value={s.isDefaultPool ? 'on' : ''} />
                 <span className="hq-sheet-type hq-sheet-type-source">Source</span>
-                {draftEditable && !temp ? (
-                  <input form={rowId} className="hq-sheet-input" name="label" defaultValue={s.label} aria-label="Name" onBlur={autoSave} />
-                ) : (
-                  <span className="hq-sheet-cell">{s.label}</span>
-                )}
+                <div className="hq-sheet-src-name">
+                  {draftEditable && !temp ? (
+                    <input form={rowId} className="hq-sheet-input" name="label" defaultValue={s.label} aria-label="Name" onBlur={autoSave} />
+                  ) : (
+                    <span className="hq-sheet-cell">{s.label}</span>
+                  )}
+                  <span className={`hq-sheet-util${overCommitted ? ' hq-funded-over' : ''}`}>
+                    ({s.amountCents > 0 ? Math.round((s.committedCents / s.amountCents) * 100) : 0}% utilized)
+                  </span>
+                </div>
                 {draftEditable && !temp ? (
                   <select form={rowId} className="hq-sheet-input" name="kind" defaultValue={s.kind} aria-label="Kind" onChange={autoSave}>
                     {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
