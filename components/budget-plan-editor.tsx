@@ -826,6 +826,12 @@ export function BudgetPlanEditor(props: Props) {
                 <input form={rowId} type="hidden" name="plan_id" value={planId} />
                 <input form={rowId} type="hidden" name="source_id" value={s.id} />
                 <input form={rowId} type="hidden" name="is_default_pool" value={s.isDefaultPool ? 'on' : ''} />
+                {s.kind === 'annual_grant' ? (
+                  <>
+                    <input form={rowId} type="hidden" name="kind" value={s.kind} />
+                    <input form={rowId} type="hidden" name="category" value={s.category || ''} />
+                  </>
+                ) : null}
                 <span className="hq-sheet-type hq-sheet-type-source">Source</span>
                 <div className="hq-sheet-src-name">
                   {draftEditable && !temp ? (
@@ -837,7 +843,7 @@ export function BudgetPlanEditor(props: Props) {
                     ({s.amountCents > 0 ? Math.round((s.committedCents / s.amountCents) * 100) : 0}% utilized)
                   </span>
                 </div>
-                {draftEditable && !temp ? (
+                {draftEditable && !temp && s.kind !== 'annual_grant' ? (
                   <select form={rowId} className="hq-sheet-input" name="kind" defaultValue={s.kind} aria-label="Kind" onChange={autoSave}>
                     {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
                       <option key={v} value={v}>
@@ -848,7 +854,7 @@ export function BudgetPlanEditor(props: Props) {
                 ) : (
                   <span className="hq-sheet-cell">{SOURCE_KIND_LABELS[s.kind] || s.kind}</span>
                 )}
-                {draftEditable && !temp ? (
+                {draftEditable && !temp && s.kind !== 'annual_grant' ? (
                   <select form={rowId} className="hq-sheet-input" name="category" defaultValue={s.category || ''} aria-label="Category" onChange={autoSave}>
                     {CATEGORY_OPTIONS.map(([v, l]) => (
                       <option key={v} value={v}>
