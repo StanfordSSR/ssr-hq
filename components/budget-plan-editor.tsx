@@ -113,7 +113,7 @@ function autoSave(event: { currentTarget: { form: HTMLFormElement | null } }) {
 }
 
 const CATEGORY_RANK: Record<string, number> = { equipment: 0, food: 1, travel: 2, other: 3 };
-const SHEET_HEAD_LABELS = ['Type', 'Line item', 'Team / kind', 'Category', 'Lock', 'Amount', 'Funded by', ''];
+const SHEET_HEAD_LABELS = ['Type', 'Line item', 'Team / kind', 'Category', 'Lock', 'Amount', 'Funded by / notes', ''];
 const DEFAULT_COLS = [78, 230, 146, 110, 100, 116, 250, 56];
 
 function sourceSortKey(s: Source): string {
@@ -201,11 +201,16 @@ export function BudgetPlanEditor(props: Props) {
     event.preventDefault();
     const startX = event.clientX;
     const startW = cols[index];
+    const nextW = cols[index + 1] ?? 0;
+    const pairTotal = startW + nextW;
     const onMove = (ev: PointerEvent) => {
-      const w = Math.max(48, startW + (ev.clientX - startX));
+      // Resizing borrows width from the neighbouring column so the table's
+      // total width stays constant and never overflows.
+      const w = Math.max(48, Math.min(pairTotal - 48, startW + (ev.clientX - startX)));
       setCols((prev) => {
         const nextCols = [...prev];
         nextCols[index] = w;
+        nextCols[index + 1] = pairTotal - w;
         return nextCols;
       });
     };
@@ -547,7 +552,7 @@ export function BudgetPlanEditor(props: Props) {
                   <span className="hq-sheet-cell hq-sheet-num">{usd(s.amountCents)}</span>
                 )}
                 {draftEditable && !temp ? (
-                  <input form={rowId} className="hq-sheet-input" name="notes" defaultValue={s.notes || ''} placeholder="From (e.g. ASSU)" aria-label="Funded by" onBlur={autoSave} />
+                  <input form={rowId} className="hq-sheet-input" name="notes" defaultValue={s.notes || ''} placeholder="Notes (e.g. from ASSU)" aria-label="Notes" onBlur={autoSave} />
                 ) : (
                   <span className="hq-sheet-dim">{s.notes || '—'}</span>
                 )}
@@ -702,7 +707,7 @@ function AddRow({
         <input name="amount" type="number" min="0" step="0.01" placeholder="0" aria-label="Amount" />
       </span>
       {isSource ? (
-        <input className="hq-sheet-input" name="notes" placeholder="From (e.g. ASSU)" aria-label="Funded by" />
+        <input className="hq-sheet-input" name="notes" placeholder="Notes (e.g. from ASSU)" aria-label="Notes" />
       ) : (
         <span className="hq-sheet-dim">—</span>
       )}
@@ -747,7 +752,7 @@ function FundedByCell({
 
   // Itemized summary: each source with its amount, then the annual grant remainder.
   const parts: string[] = allocations.map((a) => `${sourceLabelById(a.sourceId)} (${usd(a.amountCents)})`);
-  if (remainderCents > 0) parts.push(`Annual grant (${usd(remainderCents)})`);
+  if (remainderCents > 0) parts.push(`AG (${usd(remainderCents)})`);
   const summary = parts.length > 0 ? parts.join(', ') : '—';
 
   if (!editable) {
@@ -778,7 +783,7 @@ function FundedByCell({
           ) : null}
           {remainderCents > 0 ? (
             <div className="hq-funded-row hq-funded-grant">
-              <span className="hq-funded-name">Annual grant</span>
+              <span className="hq-funded-name">AG (Annual grant)</span>
               <span className="hq-funded-amt">{usd(remainderCents)}</span>
             </div>
           ) : null}
