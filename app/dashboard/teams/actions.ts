@@ -209,6 +209,7 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
       const teamId = String(formData.get('team_id') || '').trim();
       const description = String(formData.get('description') || '').trim();
       const logoUrl = String(formData.get('logo_url') || '').trim();
+      const name = String(formData.get('name') || '').trim();
 
       if (!teamId) {
         throw new Error('Missing team id.');
@@ -233,13 +234,19 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
         throw new Error('You are not allowed to edit this team.');
       }
 
-      const { error } = await admin
-        .from('teams')
-        .update({
-          description: description || null,
-          logo_url: logoUrl || null
-        })
-        .eq('id', teamId);
+      const updatePayload: { description: string | null; logo_url: string | null; name?: string } = {
+        description: description || null,
+        logo_url: logoUrl || null
+      };
+      // Only admins can rename a team.
+      if (isAdmin && name) {
+        if (name.length > 80) {
+          throw new Error('Team name must be 80 characters or fewer.');
+        }
+        updatePayload.name = name;
+      }
+
+      const { error } = await admin.from('teams').update(updatePayload).eq('id', teamId);
 
       if (error) {
         throw new Error(error.message);
@@ -250,8 +257,9 @@ export async function updateLeadTeamDescriptionAction(formData: FormData) {
         action: 'team.updated',
         targetType: 'team',
         targetId: teamId,
-        summary: 'Updated team description or logo.',
+        summary: updatePayload.name ? `Renamed team to "${updatePayload.name}".` : 'Updated team description or logo.',
         details: {
+          name: updatePayload.name || null,
           description,
           logoUrl: logoUrl || null
         }

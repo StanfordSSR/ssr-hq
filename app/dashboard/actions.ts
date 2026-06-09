@@ -3683,7 +3683,7 @@ export async function removePresidentRoleAction(formData: FormData) {
       const admin = createAdminClient();
       const { data: profile } = await admin
         .from('profiles')
-        .select('id, full_name, role, is_president')
+        .select('id, full_name, role, is_president, is_admin, is_financial_officer')
         .eq('id', profileId)
         .maybeSingle();
 
@@ -3691,9 +3691,18 @@ export async function removePresidentRoleAction(formData: FormData) {
         throw new Error('President not found.');
       }
 
+      // Clearing the flag isn't enough when president is their PRIMARY role —
+      // demote the role column to their next-highest remaining role.
+      const fallbackRole = profile.is_admin
+        ? 'admin'
+        : profile.is_financial_officer
+          ? 'financial_officer'
+          : 'team_lead';
+      const nextRole = profile.role === 'president' ? fallbackRole : profile.role;
+
       const { error } = await admin
         .from('profiles')
-        .update({ is_president: false })
+        .update({ is_president: false, role: nextRole })
         .eq('id', profileId);
 
       if (error) {

@@ -227,6 +227,19 @@ export default async function ManageTeamsPage() {
                       <form action={updateLeadTeamDescriptionAction} className="form-stack">
                         <input type="hidden" name="team_id" value={team.id} />
                         <div className="field">
+                          <label className="label" htmlFor={`team-name-${team.id}`}>
+                            Team name
+                          </label>
+                          <input
+                            className="input"
+                            id={`team-name-${team.id}`}
+                            name="name"
+                            defaultValue={team.name}
+                            maxLength={80}
+                            required
+                          />
+                        </div>
+                        <div className="field">
                           <label className="label" htmlFor={`team-logo-${team.id}`}>
                             Logo URL
                           </label>
