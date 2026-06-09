@@ -7,33 +7,47 @@ import { DashboardStatusBanner } from '@/components/dashboard-status-banner';
 import { getRoleLabel, getViewerContext } from '@/lib/auth';
 import { getLeadTaskIndicatorState } from '@/lib/lead-state';
 
-const adminNav = [
+type NavItem = {
+  href?: string;
+  label: string;
+  emphasis?: 'primary';
+  notificationKey?: 'tasks';
+  children?: Array<{ href: string; label: string }>;
+};
+
+const reportsNav: NavItem = {
+  label: 'Reports',
+  children: [
+    { href: '/dashboard/reports', label: 'Team Reports' },
+    { href: '/dashboard/reports/eoy', label: 'Year-End Reports' }
+  ]
+};
+
+const adminNav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/teams', label: 'Teams' },
   { href: '/dashboard/members', label: 'Users' },
   { href: '/dashboard/finances', label: 'Manage Finances' },
   { href: '/dashboard/finances/plan', label: 'Budget Plan' },
-  { href: '/dashboard/reports', label: 'Team Reports' },
-  { href: '/dashboard/reports/eoy', label: 'Year-End Reports' },
+  reportsNav,
   { href: '/dashboard/tasks', label: 'Assign Tasks' },
   { href: '/dashboard/settings', label: 'Club Settings' }
 ];
 
-const presidentNav = [
+const presidentNav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/teams', label: 'Teams' },
   { href: '/dashboard/members', label: 'Users' },
   { href: '/dashboard/finances', label: 'Finances' },
   { href: '/dashboard/finances/plan', label: 'Budget Plan' },
-  { href: '/dashboard/reports', label: 'Team Reports' },
-  { href: '/dashboard/reports/eoy', label: 'Year-End Reports' },
+  reportsNav,
   { href: '/dashboard/tasks', label: 'Tasks' },
   { href: '/dashboard/purchases', label: 'Purchases' },
   { href: '/dashboard/expenses', label: 'Expense Log' },
   { href: '/dashboard/settings', label: 'Club Settings' }
 ];
 
-const financialOfficerNav = [
+const financialOfficerNav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/finances', label: 'Finances' },
   { href: '/dashboard/purchases', label: 'Purchases' },
@@ -41,12 +55,12 @@ const financialOfficerNav = [
   { href: '/dashboard/receipts', label: 'Receipts' }
 ];
 
-const leadNav = [
+const leadNav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
-  { href: '/dashboard/purchases', label: 'Log Purchase', emphasis: 'primary' as const },
+  { href: '/dashboard/purchases', label: 'Log Purchase', emphasis: 'primary' },
   { href: '/dashboard/members', label: 'Manage Members' },
   { href: '/dashboard/expenses', label: 'Expense Log' },
-  { href: '/dashboard/tasks', label: 'Tasks', notificationKey: 'tasks' as const }
+  { href: '/dashboard/tasks', label: 'Tasks', notificationKey: 'tasks' }
 ];
 
 export default async function DashboardLayout({
@@ -94,18 +108,36 @@ export default async function DashboardLayout({
             </Link>
 
             <nav className="hq-nav" aria-label="HQ navigation">
-              {nav.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`hq-nav-link${'emphasis' in item && item.emphasis === 'primary' ? ' hq-nav-link-primary' : ''}`}
-                >
-                  {item.label}
-                  {'notificationKey' in item && item.notificationKey === 'tasks' && hasPendingLeadTasks ? (
-                    <span className="hq-nav-dot" aria-hidden="true" />
-                  ) : null}
-                </Link>
-              ))}
+              {nav.map((item) =>
+                item.children ? (
+                  <div key={item.label} className="hq-nav-group">
+                    <span className="hq-nav-link hq-nav-trigger">
+                      {item.label}
+                      <span className="hq-nav-caret" aria-hidden="true">
+                        ▾
+                      </span>
+                    </span>
+                    <div className="hq-nav-submenu">
+                      {item.children.map((child) => (
+                        <Link key={child.href} href={child.href} className="hq-nav-submenu-link">
+                          {child.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <Link
+                    key={item.href}
+                    href={item.href!}
+                    className={`hq-nav-link${item.emphasis === 'primary' ? ' hq-nav-link-primary' : ''}`}
+                  >
+                    {item.label}
+                    {item.notificationKey === 'tasks' && hasPendingLeadTasks ? (
+                      <span className="hq-nav-dot" aria-hidden="true" />
+                    ) : null}
+                  </Link>
+                )
+              )}
             </nav>
           </div>
 

@@ -7064,3 +7064,50 @@ tr:last-child td {
 .hq-funded-summary {
   padding: 5px 6px;
 }
+
+.hq-nav-group {
+  position: relative;
+  display: inline-flex;
+}
+.hq-nav-trigger {
+  cursor: default;
+  user-select: none;
+  gap: 4px;
+}
+.hq-nav-group:hover .hq-nav-trigger {
+  color: var(--text);
+}
+.hq-nav-caret {
+  font-size: 9px;
+}
+.hq-nav-submenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  padding: 6px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 50;
+}
+.hq-nav-group:hover .hq-nav-submenu,
+.hq-nav-group:focus-within .hq-nav-submenu {
+  display: flex;
+}
+.hq-nav-submenu-link {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.hq-nav-submenu-link:hover {
+  background: var(--panel-soft);
+  color: var(--cardinal);
+}
