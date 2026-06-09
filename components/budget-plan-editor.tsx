@@ -1,6 +1,16 @@
 'use client';
 
-import { useOptimistic, useRef, useState, useTransition } from 'react';
+import { useOptimistic, useState, useTransition } from 'react';
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent
+} from '@dnd-kit/core';
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { SignaturePad } from '@/components/signature-pad';
 import {
   deleteExpenseItemAction,
@@ -110,7 +120,35 @@ function sourceSortKey(s: Source): string {
   return `${group}|${String(catRank).padStart(2, '0')}|${String(s.sortOrder).padStart(6, '0')}|${s.id}`;
 }
 
-type ExpenseUnit = { key: string; teamId: string | null; rows: Expense[]; order: number };
+type ExpenseBlock = { id: string; teamId: string | null; rows: Expense[]; order: number };
+type DragHandle = Record<string, unknown>;
+
+function SortableBlock({
+  id,
+  disabled,
+  isTeam,
+  children
+}: {
+  id: string;
+  disabled: boolean;
+  isTeam: boolean;
+  children: (handle: DragHandle) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.65 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 5 : undefined
+  };
+  const handle: DragHandle = disabled ? {} : { ...attributes, ...listeners };
+  return (
+    <div ref={setNodeRef} style={style} className={`hq-sheet-block${isTeam ? ' hq-sheet-block-team' : ''}${isDragging ? ' hq-sheet-block-dragging' : ''}`}>
+      {children(handle)}
+    </div>
+  );
+}
 
 export function BudgetPlanEditor(props: Props) {
   const {
@@ -135,10 +173,8 @@ export function BudgetPlanEditor(props: Props) {
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const hide = (id: string) => setRemoved((prev) => new Set(prev).add(id));
   const [order, setOrder] = useState<Map<string, number>>(new Map());
-  const [draggingKey, setDraggingKey] = useState<string | null>(null);
-  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
-  const dragKeyRef = useRef<string | null>(null);
   const [, startTransition] = useTransition();
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const [optimisticSources, addOptimisticSource] = useOptimistic(sources, (state, item: Source) => [...state, item]);
   const [optimisticExpenses, addOptimisticExpense] = useOptimistic(expenses, (state, item: Expense) => [...state, item]);
@@ -152,17 +188,16 @@ export function BudgetPlanEditor(props: Props) {
     .filter((s) => !removed.has(s.id))
     .sort((a, b) => sourceSortKey(a).localeCompare(sourceSortKey(b)));
 
-  // Group expenses into draggable units: one unit per team (all its category rows
-  // move together), plus a single-row unit for each event/operations item.
-  const unitMap = new Map<string, Expense[]>();
+  // One block per team (all its category rows move together), plus one per event/operations item.
+  const blockMap = new Map<string, Expense[]>();
   for (const e of optimisticExpenses) {
     if (removed.has(e.id)) continue;
     const key = e.teamId ? `team:${e.teamId}` : `exp:${e.id}`;
-    if (!unitMap.has(key)) unitMap.set(key, []);
-    unitMap.get(key)!.push(e);
+    if (!blockMap.has(key)) blockMap.set(key, []);
+    blockMap.get(key)!.push(e);
   }
-  const expenseUnits: ExpenseUnit[] = [];
-  for (const [key, rows] of unitMap) {
+  const blocks: ExpenseBlock[] = [];
+  for (const [key, rows] of blockMap) {
     rows.sort(
       (a, b) =>
         (CATEGORY_RANK[a.category || 'other'] ?? 9) - (CATEGORY_RANK[b.category || 'other'] ?? 9) ||
@@ -170,32 +205,24 @@ export function BudgetPlanEditor(props: Props) {
         (a.id < b.id ? -1 : 1)
     );
     const baseOrder = Math.min(...rows.map((r) => r.sortOrder ?? 9999));
-    expenseUnits.push({ key, teamId: rows[0].teamId, rows, order: order.has(key) ? order.get(key)! : baseOrder });
+    blocks.push({ id: key, teamId: rows[0].teamId, rows, order: order.has(key) ? order.get(key)! : baseOrder });
   }
-  expenseUnits.sort((a, b) => a.order - b.order || (a.key < b.key ? -1 : 1));
+  blocks.sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1));
+  const blockIds = blocks.map((b) => b.id);
 
-  const onDragStart = (key: string) => {
-    dragKeyRef.current = key;
-    setDraggingKey(key);
-  };
-  const onDropUnit = (targetKey: string) => {
-    const dragged = dragKeyRef.current;
-    setDragOverKey(null);
-    setDraggingKey(null);
-    dragKeyRef.current = null;
-    if (!dragged || dragged === targetKey) return;
-    const keys = expenseUnits.map((u) => u.key);
-    const from = keys.indexOf(dragged);
-    if (from < 0) return;
-    keys.splice(from, 1);
-    const to = keys.indexOf(targetKey);
-    keys.splice(to < 0 ? keys.length : to, 0, dragged);
-    const next = new Map<string, number>();
-    keys.forEach((k, i) => next.set(k, i));
-    setOrder(next);
-    const unitByKey = new Map(expenseUnits.map((u) => [u.key, u]));
-    const flatIds = keys
-      .flatMap((k) => (unitByKey.get(k)?.rows || []).map((r) => r.id))
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = blockIds.indexOf(String(active.id));
+    const newIndex = blockIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const nextIds = arrayMove(blockIds, oldIndex, newIndex);
+    const nextOrder = new Map<string, number>();
+    nextIds.forEach((k, i) => nextOrder.set(k, i));
+    setOrder(nextOrder);
+    const blockById = new Map(blocks.map((b) => [b.id, b]));
+    const flatIds = nextIds
+      .flatMap((k) => (blockById.get(k)?.rows || []).map((r) => r.id))
       .filter((id) => !id.startsWith('temp-'));
     startTransition(async () => {
       await reorderBudgetItemsAction(planId, 'budget_expense_items', flatIds);
@@ -249,32 +276,25 @@ export function BudgetPlanEditor(props: Props) {
     hide(id);
   };
 
-  const renderExpenseRow = (e: Expense, unitKey: string) => {
+  const renderExpenseRow = (e: Expense, handle: DragHandle) => {
     const rowId = `exp-${e.id}`;
     const temp = e.id.startsWith('temp-');
     const isTeam = e.kind === 'team';
     const rowEditable = (draftEditable || (canEdit && status === 'approved' && e.lockCadence === 'unlocked')) && !temp;
     const typeLabel = isTeam ? 'Team' : e.kind === 'operations' ? 'Ops' : e.kind === 'general' ? 'General' : 'Event';
-    const cls = `hq-sheet-row${temp ? ' hq-sheet-row-pending' : ''}${draggingKey === unitKey ? ' hq-sheet-row-dragging' : ''}${dragOverKey === unitKey ? ' hq-sheet-row-over' : ''}`;
+    const dragProps = draftEditable && !temp ? handle : {};
     return (
-      <div
-        className={cls}
-        role="row"
-        key={e.id}
-        onDragOver={draftEditable ? (event) => { event.preventDefault(); setDragOverKey(unitKey); } : undefined}
-        onDrop={draftEditable ? () => onDropUnit(unitKey) : undefined}
-      >
+      <div className={`hq-sheet-row${temp ? ' hq-sheet-row-pending' : ''}`} role="row" key={e.id}>
         <form id={rowId} action={upsertExpenseItemAction} hidden />
         <input form={rowId} type="hidden" name="plan_id" value={planId} />
         <input form={rowId} type="hidden" name="expense_id" value={e.id} />
         <input form={rowId} type="hidden" name="kind" value={e.kind} />
         <span
           className={`hq-sheet-type hq-sheet-type-${isTeam ? 'team' : 'event'}${draftEditable && !temp ? ' hq-sheet-grip' : ''}`}
-          draggable={draftEditable && !temp}
-          onDragStart={draftEditable && !temp ? () => onDragStart(unitKey) : undefined}
-          onDragEnd={() => { setDraggingKey(null); setDragOverKey(null); }}
           title={draftEditable && !temp ? 'Drag to reorder' : undefined}
+          {...dragProps}
         >
+          {draftEditable && !temp ? <span className="hq-sheet-grip-dots" aria-hidden="true">⠿</span> : null}
           {typeLabel}
         </span>
         {rowEditable ? (
@@ -445,7 +465,15 @@ export function BudgetPlanEditor(props: Props) {
             );
           })}
 
-          {expenseUnits.flatMap((unit) => unit.rows.map((e) => renderExpenseRow(e, unit.key)))}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={blockIds} strategy={verticalListSortingStrategy}>
+              {blocks.map((block) => (
+                <SortableBlock key={block.id} id={block.id} disabled={!draftEditable} isTeam={Boolean(block.teamId)}>
+                  {(handle) => block.rows.map((e) => renderExpenseRow(e, handle))}
+                </SortableBlock>
+              ))}
+            </SortableContext>
+          </DndContext>
 
           {draftEditable ? <AddRow planId={planId} teams={teams} onAdd={handleAdd} /> : null}
         </div>
