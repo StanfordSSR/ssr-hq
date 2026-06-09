@@ -4556,6 +4556,48 @@ export async function reorderBudgetItemsAction(
   revalidateBudgetPlan();
 }
 
+// Wipe a plan's team category rows and recreate a clean Equipment/Food/Travel
+// set for every active team.
+export async function resetTeamBudgetsAction(formData: FormData) {
+  await requireAdmin();
+  const planId = String(formData.get('plan_id') || '').trim();
+  if (!planId) return;
+  const admin = createAdminClient();
+  const plan = await loadBudgetPlanRow(admin, planId);
+  if (plan.status === 'approved') {
+    throw new Error('Start a revision to reset team budgets on an approved plan.');
+  }
+  await ensureEditableDraft(admin, planId, plan.status);
+
+  await admin.from('budget_expense_items').delete().eq('plan_id', planId).eq('kind', 'team');
+
+  const { data: teams } = await admin.from('teams').select('id, name').eq('is_active', true).order('name');
+  const categories: Array<[string, string]> = [
+    ['equipment', 'Equipment'],
+    ['food', 'Food'],
+    ['travel', 'Travel']
+  ];
+  const rows: Array<Record<string, unknown>> = [];
+  ((teams || []) as Array<{ id: string; name: string }>).forEach((team, teamIndex) => {
+    categories.forEach(([category, categoryLabel], categoryIndex) => {
+      rows.push({
+        plan_id: planId,
+        kind: 'team',
+        team_id: team.id,
+        category,
+        label: `${team.name} — ${categoryLabel}`,
+        amount_cents: 0,
+        lock_cadence: 'yearly',
+        sort_order: teamIndex * 10 + categoryIndex
+      });
+    });
+  });
+  if (rows.length > 0) {
+    await admin.from('budget_expense_items').insert(rows);
+  }
+  revalidateBudgetPlan();
+}
+
 export async function submitBudgetPlanForApprovalAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/finances/plan',

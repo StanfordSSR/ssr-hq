@@ -6873,3 +6873,10 @@ tr:last-child td {
 .hq-sheet-grip:active {
   cursor: grabbing;
 }
+
+.hq-sheet-summary {
+  align-items: center;
+}
+.hq-sheet-summary-action {
+  margin-left: auto;
+}

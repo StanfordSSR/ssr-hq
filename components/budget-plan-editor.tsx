@@ -16,6 +16,7 @@ import {
   deleteExpenseItemAction,
   deleteFundingSourceAction,
   reorderBudgetItemsAction,
+  resetTeamBudgetsAction,
   reviseBudgetPlanAction,
   signBudgetPlanAction,
   signQuarterDeclarationAction,
@@ -394,6 +395,26 @@ export function BudgetPlanEditor(props: Props) {
         <span className={uncoveredCents > 0 ? 'hq-sheet-warn' : ''}>
           <strong>{usd(uncoveredCents)}</strong> unfunded
         </span>
+        {draftEditable ? (
+          <form
+            action={resetTeamBudgetsAction}
+            className="hq-sheet-summary-action"
+            onSubmit={(event) => {
+              if (
+                !window.confirm(
+                  'Reset team budgets? This removes every team’s category rows and recreates a clean Equipment / Food / Travel set for each team. Entered team amounts will be lost.'
+                )
+              ) {
+                event.preventDefault();
+              }
+            }}
+          >
+            <input type="hidden" name="plan_id" value={planId} />
+            <button className="button-secondary" type="submit">
+              Reset team rows
+            </button>
+          </form>
+        ) : null}
       </div>
 
       <div className="hq-sheet-wrap">
