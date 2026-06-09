@@ -4870,6 +4870,28 @@ export async function resetSignatureEnrollmentAction(formData: FormData) {
   });
 }
 
+// Non-blocking self-test of a signature against the user's enrolled profile.
+export async function testSignatureAction(
+  _prev: { ok: boolean; message: string },
+  formData: FormData
+): Promise<{ ok: boolean; message: string }> {
+  const { user } = await getViewerContext();
+  const admin = createAdminClient();
+  const { data } = await admin.from('signature_profiles').select('profile').eq('user_id', user.id).maybeSingle();
+  if (!data) {
+    return { ok: false, message: 'No signature is enrolled yet — enroll one above first.' };
+  }
+  const features = extractSignatureFeatures(parseStrokes(formData.get('strokes')));
+  if (!features) {
+    return { ok: false, message: 'That signature was too brief to check — try signing again.' };
+  }
+  const result = verifySignature(data.profile as SignatureProfile, features);
+  const detail = `score ${result.score.toFixed(2)}, allowed ≤ ${result.threshold.toFixed(2)}`;
+  return result.ok
+    ? { ok: true, message: `Match ✓ — this looks like your signature (${detail}).` }
+    : { ok: false, message: `No match ✗ — this doesn't look like your enrolled signature (${detail}).` };
+}
+
 // Verify the strokes submitted with a signature against the signer's enrolled
 // profile. Throws (blocking the signature) on mismatch or missing enrollment.
 async function verifyEnrolledSignature(admin: AdminClient, userId: string, formData: FormData) {

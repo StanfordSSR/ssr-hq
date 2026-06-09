@@ -7152,3 +7152,16 @@ tr:last-child td {
 .hq-food-rate select {
   border: 1px solid var(--line);
 }
+
+.hq-sig-test {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.hq-sig-match {
+  color: #2f7d4f;
+  font-weight: 600;
+}
+.hq-sig-nomatch {
+  color: var(--cardinal);
+  font-weight: 600;
+}

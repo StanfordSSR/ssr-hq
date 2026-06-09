@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useActionState, useState } from 'react';
 import { SignaturePad } from '@/components/signature-pad';
-import { enrollSignatureAction, resetSignatureEnrollmentAction } from '@/app/dashboard/actions';
+import {
+  enrollSignatureAction,
+  resetSignatureEnrollmentAction,
+  testSignatureAction
+} from '@/app/dashboard/actions';
 import { MIN_ENROLL_SAMPLES, type SignatureStroke } from '@/lib/signature-verify';
 
 export function SignatureEnrollment({ enrolled, sampleCount }: { enrolled: boolean; sampleCount: number }) {
   const [samples, setSamples] = useState<SignatureStroke[][]>([]);
+  const [testStrokes, setTestStrokes] = useState<SignatureStroke[]>([]);
+  const [testResult, runTest] = useActionState(testSignatureAction, { ok: false, message: '' });
   const enough = samples.length >= MIN_ENROLL_SAMPLES;
 
   return (
@@ -18,8 +24,7 @@ export function SignatureEnrollment({ enrolled, sampleCount }: { enrolled: boole
         </p>
       ) : (
         <p className="helper">
-          Capture at least {MIN_ENROLL_SAMPLES} signatures so the portal can verify it&apos;s really you when you sign
-          approvals. Sign each one the natural way you normally would.
+          {`Capture at least ${MIN_ENROLL_SAMPLES} signatures so the portal can verify it's really you when you sign approvals. Sign each one the natural way you normally would.`}
         </p>
       )}
 
@@ -62,6 +67,31 @@ export function SignatureEnrollment({ enrolled, sampleCount }: { enrolled: boole
           </form>
         ) : null}
       </div>
+
+      {enrolled ? (
+        <div className="hq-sig-test form-stack">
+          <h4 className="hq-team-label">Test your signature</h4>
+          <p className="helper">Sign below and check whether it matches your enrolled signature.</p>
+          <SignaturePad
+            value=""
+            onChange={() => {}}
+            onStrokesChange={setTestStrokes}
+            actionLabel="Sign to test"
+            title="Test your signature"
+            description="Sign the way you normally would, then check the match."
+            altText="Test signature"
+          />
+          <form action={runTest} className="button-row">
+            <input type="hidden" name="strokes" value={JSON.stringify(testStrokes)} />
+            <button className="button-secondary" type="submit" disabled={testStrokes.length === 0}>
+              Check match
+            </button>
+          </form>
+          {testResult.message ? (
+            <p className={testResult.ok ? 'helper hq-sig-match' : 'helper hq-sig-nomatch'}>{testResult.message}</p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
