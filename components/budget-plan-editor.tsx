@@ -236,7 +236,22 @@ export function BudgetPlanEditor(props: Props) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const [optimisticSources, addOptimisticSource] = useOptimistic(sources, (state, item: Source) => [...state, item]);
-  const [optimisticExpenses, addOptimisticExpense] = useOptimistic(expenses, (state, item: Expense) => [...state, item]);
+  const [optimisticExpenses, mutateExpenses] = useOptimistic(
+    expenses,
+    (state, action: { kind: 'add'; item: Expense } | { kind: 'setAmount'; id: string; amountCents: number }) => {
+      if (action.kind === 'add') return [...state, action.item];
+      return state.map((e) =>
+        e.id === action.id ? { ...e, amountCents: action.amountCents, effectiveCents: action.amountCents } : e
+      );
+    }
+  );
+  const commitExpense = async (formData: FormData) => {
+    const id = String(formData.get('expense_id') || '');
+    if (id && formData.has('amount')) {
+      mutateExpenses({ kind: 'setAmount', id, amountCents: Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100)) });
+    }
+    await upsertExpenseItemAction(formData);
+  };
   const [optimisticAllocations, applyAllocation] = useOptimistic(
     allocations,
     (state, action: { kind: 'set' | 'remove'; sourceId: string; expenseId: string; amountCents: number }) => {
@@ -264,7 +279,32 @@ export function BudgetPlanEditor(props: Props) {
     await upsertAllocationAction(fd);
   };
 
-  const sortedSources = [...optimisticSources]
+  // Live source utilization computed from the optimistic expenses/allocations so
+  // edits reflect instantly (committed = explicit allocations + category-grant remainders).
+  const allocatedByExpense = new Map<string, number>();
+  const committedBySource = new Map<string, number>();
+  for (const a of optimisticAllocations) {
+    allocatedByExpense.set(a.expenseId, (allocatedByExpense.get(a.expenseId) || 0) + a.amountCents);
+    committedBySource.set(a.sourceId, (committedBySource.get(a.sourceId) || 0) + a.amountCents);
+  }
+  const grantByCat = new Map<string, string>();
+  for (const s of optimisticSources) if (s.kind === 'annual_grant') grantByCat.set(s.category || 'other', s.id);
+  const grantForCat = (c: string | null) => grantByCat.get(c || 'other') || grantByCat.get('other');
+  const parentsWithKids = new Set(optimisticExpenses.filter((e) => e.parentId).map((e) => e.parentId!));
+  for (const e of optimisticExpenses) {
+    if (removed.has(e.id)) continue;
+    if (!e.parentId && parentsWithKids.has(e.id)) continue; // container — children carry it
+    const allocated = Math.min(e.effectiveCents, allocatedByExpense.get(e.id) || 0);
+    const remainder = Math.max(0, e.effectiveCents - allocated);
+    const gid = grantForCat(e.category);
+    if (gid && remainder > 0) committedBySource.set(gid, (committedBySource.get(gid) || 0) + remainder);
+  }
+  const liveSources = optimisticSources.map((s) => {
+    const committed = committedBySource.get(s.id) || 0;
+    return { ...s, committedCents: committed, remainingCents: s.amountCents - committed };
+  });
+
+  const sortedSources = [...liveSources]
     .filter((s) => !removed.has(s.id))
     .sort((a, b) => sourceSortKey(a).localeCompare(sourceSortKey(b)));
 
@@ -314,7 +354,7 @@ export function BudgetPlanEditor(props: Props) {
   );
   // An annual grant category is "over" when its remaining balance is negative.
   const grantOverByCategory = new Map<string, boolean>();
-  for (const s of optimisticSources) {
+  for (const s of liveSources) {
     if (s.kind === 'annual_grant') grantOverByCategory.set(s.category || 'other', s.remainingCents < 0);
   }
 
@@ -364,7 +404,7 @@ export function BudgetPlanEditor(props: Props) {
       });
       await upsertFundingSourceAction(formData);
     } else {
-      addOptimisticExpense({
+      mutateExpenses({ kind: 'add', item: {
         id: tempId,
         kind: rowKind,
         teamId: String(formData.get('team_id') || '') || null,
@@ -378,7 +418,7 @@ export function BudgetPlanEditor(props: Props) {
         allocatedCents: 0,
         remainderFromGrantCents: amountCents,
         spentCents: 0
-      });
+      } });
       await upsertExpenseItemAction(formData);
     }
   }
@@ -400,7 +440,7 @@ export function BudgetPlanEditor(props: Props) {
     const dragProps = draftEditable && !temp ? handle : {};
     return (
       <div className={`hq-sheet-row${temp ? ' hq-sheet-row-pending' : ''}`} role="row" key={e.id}>
-        <form id={rowId} action={upsertExpenseItemAction} hidden />
+        <form id={rowId} action={commitExpense} hidden />
         <input form={rowId} type="hidden" name="plan_id" value={planId} />
         <input form={rowId} type="hidden" name="expense_id" value={e.id} />
         <input form={rowId} type="hidden" name="kind" value={e.kind} />
@@ -478,7 +518,7 @@ export function BudgetPlanEditor(props: Props) {
             agLabel={`AG-${AG_ABBR[e.category || 'other']}`}
             grantOver={grantOverByCategory.get(e.category || 'other') || false}
             allocations={allocByExpense(e.id)}
-            sources={sources}
+            sources={liveSources}
             editable={draftEditable}
             sourceLabelById={sourceLabelById}
             onAllocate={(sourceId, amountCents) => commitAllocation(sourceId, e.id, amountCents)}
@@ -502,7 +542,7 @@ export function BudgetPlanEditor(props: Props) {
     if (!parentId || !category) return;
     const amountCents = Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100));
     const tempId = `temp-${tempIdSeed()}`;
-    addOptimisticExpense({
+    mutateExpenses({ kind: 'add', item: {
       id: tempId,
       kind,
       teamId: null,
@@ -516,7 +556,7 @@ export function BudgetPlanEditor(props: Props) {
       allocatedCents: 0,
       remainderFromGrantCents: amountCents,
       spentCents: 0
-    });
+    } });
     setOpenGroups((prev) => new Set(prev).add(parentId));
     await upsertExpenseItemAction(formData);
   }
@@ -528,7 +568,7 @@ export function BudgetPlanEditor(props: Props) {
     const catLabel = CATEGORY_LABELS[c.category || 'other'];
     return (
       <div className="hq-sheet-row hq-sheet-subrow" role="row" key={c.id}>
-        <form id={rowId} action={upsertExpenseItemAction} hidden />
+        <form id={rowId} action={commitExpense} hidden />
         <input form={rowId} type="hidden" name="plan_id" value={planId} />
         <input form={rowId} type="hidden" name="expense_id" value={c.id} />
         <input form={rowId} type="hidden" name="parent_id" value={parent.id} />
@@ -556,7 +596,7 @@ export function BudgetPlanEditor(props: Props) {
             agLabel={`AG-${AG_ABBR[c.category || 'other']}`}
             grantOver={grantOverByCategory.get(c.category || 'other') || false}
             allocations={allocByExpense(c.id)}
-            sources={sources}
+            sources={liveSources}
             editable={draftEditable}
             sourceLabelById={sourceLabelById}
             onAllocate={(sourceId, amountCents) => commitAllocation(sourceId, c.id, amountCents)}
@@ -583,7 +623,7 @@ export function BudgetPlanEditor(props: Props) {
         planId={planId}
         parent={parent}
         available={available}
-        sources={sources}
+        sources={liveSources}
         onAdd={handleAddSub}
       />
     );
@@ -613,7 +653,7 @@ export function BudgetPlanEditor(props: Props) {
     return (
       <>
         <div className="hq-sheet-row" role="row" key={parent.id}>
-          <form id={rowId} action={upsertExpenseItemAction} hidden />
+          <form id={rowId} action={commitExpense} hidden />
           <input form={rowId} type="hidden" name="plan_id" value={planId} />
           <input form={rowId} type="hidden" name="expense_id" value={parent.id} />
           <input form={rowId} type="hidden" name="kind" value={parent.kind} />
@@ -673,7 +713,7 @@ export function BudgetPlanEditor(props: Props) {
               agLabel={`AG-${AG_ABBR[parent.category || 'other']}`}
               grantOver={grantOverByCategory.get(parent.category || 'other') || false}
               allocations={allocByExpense(parent.id)}
-              sources={sources}
+              sources={liveSources}
               editable={draftEditable}
               sourceLabelById={sourceLabelById}
               onAllocate={(sourceId, amountCents) => commitAllocation(sourceId, parent.id, amountCents)}
