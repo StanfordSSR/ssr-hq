@@ -252,6 +252,15 @@ export function BudgetPlanEditor(props: Props) {
     }
     await upsertExpenseItemAction(formData);
   };
+  // Dedicated delete action so it never collides with the row's commit form.
+  const deleteExpense = async (formData: FormData) => {
+    const id = String(formData.get('expense_id') || '');
+    if (id) hide(id);
+    await deleteExpenseItemAction(formData);
+  };
+  const confirmDeleteSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    if (!window.confirm('Delete this line item? This cannot be undone.')) event.preventDefault();
+  };
   const [optimisticAllocations, applyAllocation] = useOptimistic(
     allocations,
     (state, action: { kind: 'set' | 'remove'; sourceId: string; expenseId: string; amountCents: number }) => {
@@ -526,9 +535,13 @@ export function BudgetPlanEditor(props: Props) {
         )}
         <span className="hq-sheet-actions">
           {draftEditable && !temp ? (
-            <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={confirmDelete(e.id)}>
-              ✕
-            </button>
+            <form action={deleteExpense} onSubmit={confirmDeleteSubmit}>
+              <input type="hidden" name="plan_id" value={planId} />
+              <input type="hidden" name="expense_id" value={e.id} />
+              <button className="hq-sheet-del" type="submit" title="Remove" aria-label="Remove">
+                ✕
+              </button>
+            </form>
           ) : null}
         </span>
       </div>
@@ -604,9 +617,13 @@ export function BudgetPlanEditor(props: Props) {
         )}
         <span className="hq-sheet-actions">
           {rowEditable ? (
-            <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={confirmDelete(c.id)}>
-              ✕
-            </button>
+            <form action={deleteExpense} onSubmit={confirmDeleteSubmit}>
+              <input type="hidden" name="plan_id" value={planId} />
+              <input type="hidden" name="expense_id" value={c.id} />
+              <button className="hq-sheet-del" type="submit" title="Remove" aria-label="Remove">
+                ✕
+              </button>
+            </form>
           ) : null}
         </span>
       </div>
@@ -728,9 +745,13 @@ export function BudgetPlanEditor(props: Props) {
           )}
           <span className="hq-sheet-actions">
             {draftEditable && !temp ? (
-              <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove" onClick={confirmDelete(parent.id)}>
-                ✕
-              </button>
+              <form action={deleteExpense} onSubmit={confirmDeleteSubmit}>
+                <input type="hidden" name="plan_id" value={planId} />
+                <input type="hidden" name="expense_id" value={parent.id} />
+                <button className="hq-sheet-del" type="submit" title="Remove" aria-label="Remove">
+                  ✕
+                </button>
+              </form>
             ) : null}
           </span>
         </div>
