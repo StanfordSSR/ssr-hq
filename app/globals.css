@@ -7049,3 +7049,7 @@ tr:last-child td {
   font-weight: 700;
   padding-left: 18px;
 }
+
+.hq-sheet-section-gap {
+  height: 16px;
+}

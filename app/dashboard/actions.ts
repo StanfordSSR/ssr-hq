@@ -4520,16 +4520,37 @@ export async function upsertExpenseItemAction(formData: FormData) {
     lock_cadence: lockCadence,
     notes
   };
+  let savedId = expenseId;
   if (expenseId) {
     await admin.from('budget_expense_items').update(payload).eq('id', expenseId);
   } else {
-    await admin.from('budget_expense_items').insert(payload);
+    const { data: inserted } = await admin.from('budget_expense_items').insert(payload).select('id').single();
+    savedId = (inserted?.id as string) || '';
   }
   // Once a parent has sub-items, its own amount/funding is replaced by the
   // sub-items — clear them so nothing is double-counted.
   if (isSubItem) {
     await admin.from('budget_expense_items').update({ amount_cents: 0 }).eq('id', parentId).gt('amount_cents', 0);
     await admin.from('budget_allocations').delete().eq('expense_id', parentId);
+
+    // Optional funding source chosen on the add row — allocate the sub-item's
+    // amount from it (only if categories are compatible and it isn't a grant).
+    const sourceId = String(formData.get('source_id') || '').trim();
+    if (sourceId && savedId && amountCents > 0) {
+      const { data: src } = await admin
+        .from('budget_funding_sources')
+        .select('kind, category')
+        .eq('id', sourceId)
+        .maybeSingle();
+      if (src && src.kind !== 'annual_grant' && (!category || !src.category || src.category === category)) {
+        await admin
+          .from('budget_allocations')
+          .upsert(
+            { plan_id: planId, source_id: sourceId, expense_id: savedId, amount_cents: amountCents },
+            { onConflict: 'source_id,expense_id' }
+          );
+      }
+    }
   }
   if (plan.status === 'approved') {
     await writePlanThrough(admin, planId, plan.academic_year);

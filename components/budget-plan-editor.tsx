@@ -578,32 +578,14 @@ export function BudgetPlanEditor(props: Props) {
     const available = (['equipment', 'food', 'travel', 'other'] as const).filter((c) => !used.has(c));
     if (available.length === 0) return null;
     return (
-      <form key={`add-${parent.id}`} className="hq-sheet-row hq-sheet-subrow hq-sheet-add" action={handleAddSub}>
-        <input type="hidden" name="plan_id" value={planId} />
-        <input type="hidden" name="parent_id" value={parent.id} />
-        <input type="hidden" name="kind" value={parent.kind} />
-        <span className="hq-sheet-type hq-sheet-type-sub" aria-hidden="true">↳</span>
-        <span className="hq-sheet-dim">add category…</span>
-        <span className="hq-sheet-dim">—</span>
-        <select className="hq-sheet-input" name="category" defaultValue={available[0]} aria-label="Category">
-          {available.map((c) => (
-            <option key={c} value={c}>
-              {CATEGORY_LABELS[c]}
-            </option>
-          ))}
-        </select>
-        <span className="hq-sheet-dim">—</span>
-        <span className="hq-sheet-amount">
-          <span>$</span>
-          <input name="amount" type="number" min="0" step="0.01" placeholder="0" aria-label="Amount" />
-        </span>
-        <span className="hq-sheet-dim">—</span>
-        <span className="hq-sheet-actions">
-          <button className="hq-sheet-add-btn" type="submit" title="Add sub-item" aria-label="Add sub-item">
-            +
-          </button>
-        </span>
-      </form>
+      <AddSubRow
+        key={`add-${parent.id}`}
+        planId={planId}
+        parent={parent}
+        available={available}
+        sources={sources}
+        onAdd={handleAddSub}
+      />
     );
   };
 
@@ -839,6 +821,8 @@ export function BudgetPlanEditor(props: Props) {
             );
           })}
 
+          {sortedSources.length > 0 && blocks.length > 0 ? <div className="hq-sheet-section-gap" aria-hidden="true" /> : null}
+
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={blockIds} strategy={verticalListSortingStrategy}>
               {blocks.map((block) => (
@@ -989,6 +973,67 @@ function AddRow({
       )}
       <span className="hq-sheet-actions">
         <button className="hq-sheet-add-btn" type="submit" title="Add line item" aria-label="Add line item">
+          +
+        </button>
+      </span>
+    </form>
+  );
+}
+
+function AddSubRow({
+  planId,
+  parent,
+  available,
+  sources,
+  onAdd
+}: {
+  planId: string;
+  parent: Expense;
+  available: string[];
+  sources: Source[];
+  onAdd: (formData: FormData) => void | Promise<void>;
+}) {
+  const [category, setCategory] = useState<string>(available[0]);
+  const eligible = sources
+    .filter((s) => s.kind !== 'annual_grant')
+    .filter((s) => !s.category || s.category === category);
+  return (
+    <form className="hq-sheet-row hq-sheet-subrow hq-sheet-add" action={onAdd}>
+      <input type="hidden" name="plan_id" value={planId} />
+      <input type="hidden" name="parent_id" value={parent.id} />
+      <input type="hidden" name="kind" value={parent.kind} />
+      <span className="hq-sheet-type hq-sheet-type-sub" aria-hidden="true">↳</span>
+      <span className="hq-sheet-dim">add category…</span>
+      <span className="hq-sheet-dim">—</span>
+      <select
+        className="hq-sheet-input"
+        name="category"
+        value={category}
+        onChange={(event) => setCategory(event.target.value)}
+        aria-label="Category"
+      >
+        {available.map((c) => (
+          <option key={c} value={c}>
+            {CATEGORY_LABELS[c]}
+          </option>
+        ))}
+      </select>
+      <span className="hq-sheet-dim">—</span>
+      <span className="hq-sheet-amount">
+        <span>$</span>
+        <input name="amount" type="number" min="0" step="0.01" placeholder="0" aria-label="Amount" />
+      </span>
+      <select key={category} className="hq-sheet-input" name="source_id" defaultValue="" aria-label="Funded by">
+        <option value="">Funded by annual grant</option>
+        {eligible.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.label}
+            {s.category ? ` · ${s.category}` : ''}
+          </option>
+        ))}
+      </select>
+      <span className="hq-sheet-actions">
+        <button className="hq-sheet-add-btn" type="submit" title="Add sub-item" aria-label="Add sub-item">
           +
         </button>
       </span>
