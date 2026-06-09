@@ -181,6 +181,7 @@ async function renderPlan(
       notes: source.notes,
       amountCents: source.amountCents,
       isDefaultPool: source.isDefaultPool,
+      sortOrder: source.sortOrder,
       committedCents: r?.committedCents || 0,
       remainingCents: r?.remainingCents ?? source.amountCents
     };
@@ -195,6 +196,7 @@ async function renderPlan(
       label: expense.label,
       amountCents: expense.amountCents,
       lockCadence: expense.lockCadence,
+      sortOrder: expense.sortOrder,
       effectiveCents: r?.effectiveCents ?? expense.amountCents,
       allocatedCents: r?.allocatedCents || 0,
       remainderFromGrantCents: r?.remainderFromGrantCents || 0,

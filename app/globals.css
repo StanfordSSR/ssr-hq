@@ -6833,3 +6833,17 @@ tr:last-child td {
 .hq-sheet-row-pending {
   opacity: 0.55;
 }
+
+.hq-sheet-grip {
+  cursor: grab;
+  user-select: none;
+}
+.hq-sheet-grip:active {
+  cursor: grabbing;
+}
+.hq-sheet-row-dragging {
+  opacity: 0.4;
+}
+.hq-sheet-row-over {
+  box-shadow: inset 0 2px 0 0 var(--cardinal);
+}

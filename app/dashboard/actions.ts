@@ -4527,6 +4527,23 @@ export async function upsertAllocationAction(formData: FormData) {
   revalidateBudgetPlan();
 }
 
+export async function reorderBudgetItemsAction(
+  planId: string,
+  table: 'budget_expense_items' | 'budget_funding_sources',
+  orderedIds: string[]
+) {
+  await requireAdmin();
+  if (!planId || !Array.isArray(orderedIds) || orderedIds.length === 0) return;
+  if (table !== 'budget_expense_items' && table !== 'budget_funding_sources') return;
+  const admin = createAdminClient();
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      admin.from(table).update({ sort_order: index }).eq('id', id).eq('plan_id', planId)
+    )
+  );
+  revalidateBudgetPlan();
+}
+
 export async function submitBudgetPlanForApprovalAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/finances/plan',
