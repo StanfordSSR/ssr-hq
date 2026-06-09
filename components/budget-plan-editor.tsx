@@ -91,6 +91,7 @@ export function BudgetPlanEditor(props: Props) {
     version,
     canEdit,
     currentUserIsPresident,
+    currentUserId,
     sources,
     expenses,
     allocations,
@@ -102,332 +103,190 @@ export function BudgetPlanEditor(props: Props) {
     uncoveredCents
   } = props;
 
-  const editable = canEdit && (status === 'draft' || status === 'pending_approval');
-  const teamName = (id: string | null) => teams.find((t) => t.id === id)?.name || 'Team';
-  const sourceLabel = (id: string) => sources.find((s) => s.id === id)?.label || 'Source';
-
-  const teamExpenses = expenses.filter((e) => e.kind === 'team');
-  const otherExpenses = expenses.filter((e) => e.kind !== 'team');
-  const teamIds = Array.from(new Set(teamExpenses.map((e) => e.teamId).filter(Boolean))) as string[];
-
-  const fundingPct = totalFundingCents > 0 ? Math.min(100, Math.round((totalExpenseCents / totalFundingCents) * 100)) : 0;
+  const draftEditable = canEdit && (status === 'draft' || status === 'pending_approval');
+  const teamName = (id: string | null) => teams.find((t) => t.id === id)?.name || '';
+  const sourceLabelById = (id: string) => sources.find((s) => s.id === id)?.label || 'Source';
+  const allocByExpense = (expenseId: string) => allocations.filter((a) => a.expenseId === expenseId);
 
   return (
     <div className="form-stack hq-budget-plan">
-      <div className="eoy-autofill-grid">
-        <div className="eoy-autofill-card">
-          <span className="eoy-autofill-label">Total funding</span>
-          <strong className="eoy-autofill-value">{usd(totalFundingCents)}</strong>
-        </div>
-        <div className="eoy-autofill-card">
-          <span className="eoy-autofill-label">Planned expenses</span>
-          <strong className="eoy-autofill-value">{usd(totalExpenseCents)}</strong>
-          <span className="helper">{fundingPct}% of funding committed</span>
-        </div>
-        <div className="eoy-autofill-card">
-          <span className="eoy-autofill-label">Unfunded</span>
-          <strong className="eoy-autofill-value" style={{ color: uncoveredCents > 0 ? '#8c1515' : undefined }}>
-            {usd(uncoveredCents)}
-          </strong>
-          {uncoveredCents > 0 ? <span className="eoy-autofill-warning">Funding falls short of expenses.</span> : null}
-        </div>
+      <div className="hq-sheet-summary">
+        <span>
+          <strong>{usd(totalFundingCents)}</strong> funding
+        </span>
+        <span>
+          <strong>{usd(totalExpenseCents)}</strong> planned
+        </span>
+        <span className={uncoveredCents > 0 ? 'hq-sheet-warn' : ''}>
+          <strong>{usd(uncoveredCents)}</strong> unfunded
+        </span>
       </div>
 
-      {/* ── Funding sources ── */}
-      <section className="hq-question-card">
-        <div className="hq-block-head">
-          <h3>Funding sources</h3>
-          <span className="hq-inline-note">where the money comes from</span>
-        </div>
+      <div className="hq-sheet-wrap">
+        <div className="hq-sheet" role="table">
+          <div className="hq-sheet-head" role="row">
+            <span>Type</span>
+            <span>Line item</span>
+            <span>Team / kind</span>
+            <span>Category</span>
+            <span>Lock</span>
+            <span>Amount</span>
+            <span>Funded by</span>
+            <span aria-hidden="true" />
+          </div>
 
-        <div className="hq-budget-line-list">
-          {sources.map((source) => (
-            <div key={source.id} className="hq-budget-line">
-              <div className="hq-budget-line-main">
-                <strong>
-                  {source.label}
-                  {source.isDefaultPool ? <span className="hq-budget-tag">default pool</span> : null}
-                </strong>
-                <span className="helper">
-                  {SOURCE_KIND_LABELS[source.kind] || source.kind} · {usd(source.committedCents)} committed ·{' '}
-                  {usd(source.remainingCents)} free
+          {sources.map((s) => {
+            const rowId = `src-${s.id}`;
+            return (
+              <div className="hq-sheet-row" role="row" key={s.id}>
+                <form id={rowId} action={upsertFundingSourceAction} hidden />
+                <input form={rowId} type="hidden" name="plan_id" value={planId} />
+                <input form={rowId} type="hidden" name="source_id" value={s.id} />
+                <input form={rowId} type="hidden" name="is_default_pool" value={s.isDefaultPool ? 'on' : ''} />
+                <span className="hq-sheet-type hq-sheet-type-source">Source</span>
+                {draftEditable ? (
+                  <input form={rowId} className="hq-sheet-input" name="label" defaultValue={s.label} aria-label="Name" />
+                ) : (
+                  <span className="hq-sheet-cell">{s.label}</span>
+                )}
+                {draftEditable ? (
+                  <select form={rowId} className="hq-sheet-input" name="kind" defaultValue={s.kind} aria-label="Kind">
+                    {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="hq-sheet-cell">{SOURCE_KIND_LABELS[s.kind] || s.kind}</span>
+                )}
+                <span className="hq-sheet-dim">{s.isDefaultPool ? 'default pool' : '—'}</span>
+                <span className="hq-sheet-dim">—</span>
+                {draftEditable ? (
+                  <span className="hq-sheet-amount">
+                    <span>$</span>
+                    <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(s.amountCents)} aria-label="Amount" />
+                  </span>
+                ) : (
+                  <span className="hq-sheet-cell hq-sheet-num">{usd(s.amountCents)}</span>
+                )}
+                <span className="hq-sheet-dim">{usd(s.remainingCents)} free</span>
+                <span className="hq-sheet-actions">
+                  {draftEditable ? (
+                    <>
+                      <button form={rowId} className="hq-sheet-save" title="Save" aria-label="Save">
+                        ✓
+                      </button>
+                      {!s.isDefaultPool ? (
+                        <button form={rowId} formAction={deleteFundingSourceAction} className="hq-sheet-del" title="Remove" aria-label="Remove">
+                          ✕
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
                 </span>
               </div>
-              <strong className="hq-budget-line-amount">{usd(source.amountCents)}</strong>
-              {editable ? (
-                <details className="hq-budget-edit">
-                  <summary>Edit</summary>
-                  <form action={upsertFundingSourceAction} className="hq-budget-form">
-                    <input type="hidden" name="plan_id" value={planId} />
-                    <input type="hidden" name="source_id" value={source.id} />
-                    <input className="input" name="label" defaultValue={source.label} required />
-                    <select className="select" name="kind" defaultValue={source.kind}>
-                      {Object.entries(SOURCE_KIND_LABELS).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
+            );
+          })}
+
+          {expenses.map((e) => {
+            const rowId = `exp-${e.id}`;
+            const isTeam = e.kind === 'team';
+            const rowEditable = draftEditable || (canEdit && status === 'approved' && e.lockCadence === 'unlocked');
+            const typeLabel = isTeam ? 'Team' : e.kind === 'operations' ? 'Ops' : e.kind === 'general' ? 'General' : 'Event';
+            return (
+              <div className="hq-sheet-row" role="row" key={e.id}>
+                <form id={rowId} action={upsertExpenseItemAction} hidden />
+                <input form={rowId} type="hidden" name="plan_id" value={planId} />
+                <input form={rowId} type="hidden" name="expense_id" value={e.id} />
+                <input form={rowId} type="hidden" name="kind" value={e.kind} />
+                <span className={`hq-sheet-type hq-sheet-type-${isTeam ? 'team' : 'event'}`}>{typeLabel}</span>
+                {rowEditable ? (
+                  <input form={rowId} className="hq-sheet-input" name="label" defaultValue={e.label} aria-label="Name" />
+                ) : (
+                  <span className="hq-sheet-cell">{e.label}</span>
+                )}
+                {isTeam ? (
+                  rowEditable ? (
+                    <select form={rowId} className="hq-sheet-input" name="team_id" defaultValue={e.teamId || ''} aria-label="Team">
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
                         </option>
                       ))}
                     </select>
-                    <input className="input" name="amount" type="number" min="0" step="0.01" defaultValue={dollars(source.amountCents)} />
-                    <label className="hq-budget-check">
-                      <input type="checkbox" name="is_default_pool" defaultChecked={source.isDefaultPool} /> Default pool
-                    </label>
-                    <div className="button-row">
-                      <button className="button" type="submit">
-                        Save
-                      </button>
-                    </div>
-                  </form>
-                  {!source.isDefaultPool ? (
-                    <form action={deleteFundingSourceAction}>
-                      <input type="hidden" name="plan_id" value={planId} />
-                      <input type="hidden" name="source_id" value={source.id} />
-                      <button className="hq-inline-link" type="submit">
-                        Remove source
-                      </button>
-                    </form>
-                  ) : null}
-                </details>
-              ) : null}
-            </div>
-          ))}
-        </div>
-
-        {editable ? (
-          <details className="hq-budget-add">
-            <summary>+ Add funding source</summary>
-            <form action={upsertFundingSourceAction} className="hq-budget-form">
-              <input type="hidden" name="plan_id" value={planId} />
-              <input className="input" name="label" placeholder="Sponsor name / grant" required />
-              <select className="select" name="kind" defaultValue="sponsorship">
-                {Object.entries(SOURCE_KIND_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <input className="input" name="amount" type="number" min="0" step="0.01" placeholder="Amount" />
-              <div className="button-row">
-                <button className="button" type="submit">
-                  Add source
-                </button>
-              </div>
-            </form>
-          </details>
-        ) : null}
-      </section>
-
-      {/* ── Team budgets (category sub-budgets) ── */}
-      <section className="hq-question-card">
-        <div className="hq-block-head">
-          <h3>Team budgets</h3>
-          <span className="hq-inline-note">per-category caps with lock cadence</span>
-        </div>
-
-        {teamIds.map((teamId) => {
-          const rows = teamExpenses.filter((e) => e.teamId === teamId);
-          const teamTotal = rows.reduce((sum, r) => sum + r.effectiveCents, 0);
-          const teamSpent = rows.reduce((sum, r) => sum + r.spentCents, 0);
-          return (
-            <div key={teamId} className="hq-budget-team">
-              <div className="hq-budget-team-head">
-                <strong>{teamName(teamId)}</strong>
-                <span className="helper">
-                  {usd(teamTotal)} budget · {usd(teamSpent)} spent
-                </span>
-              </div>
-              {rows.map((row) => (
-                <div key={row.id} className="hq-budget-cat">
-                  <div className="hq-budget-cat-head">
-                    <span>{CATEGORY_LABELS[row.category || 'other']}</span>
-                    <span className={`hq-budget-tag hq-budget-tag-${row.lockCadence}`}>{row.lockCadence}</span>
-                    <strong>{usd(row.effectiveCents)}</strong>
-                  </div>
-                  <div className="hq-budget-progress">
-                    <div
-                      className="hq-budget-progress-fill"
-                      style={{ width: `${row.effectiveCents > 0 ? Math.min(100, Math.round((row.spentCents / row.effectiveCents) * 100)) : 0}%` }}
-                    />
-                  </div>
-                  <span className="helper">{usd(row.spentCents)} spent · {usd(Math.max(0, row.effectiveCents - row.spentCents))} left</span>
-                  {editable ? (
-                    <details className="hq-budget-edit">
-                      <summary>Edit</summary>
-                      <form action={upsertExpenseItemAction} className="hq-budget-form">
-                        <input type="hidden" name="plan_id" value={planId} />
-                        <input type="hidden" name="expense_id" value={row.id} />
-                        <input type="hidden" name="kind" value="team" />
-                        <input type="hidden" name="team_id" value={teamId} />
-                        <input type="hidden" name="category" value={row.category || 'other'} />
-                        <input type="hidden" name="label" value={row.label} />
-                        <input className="input" name="amount" type="number" min="0" step="0.01" defaultValue={dollars(row.amountCents)} />
-                        <select className="select" name="lock_cadence" defaultValue={row.lockCadence}>
-                          <option value="yearly">Locked yearly</option>
-                          <option value="quarterly">Locked quarterly</option>
-                          <option value="unlocked">Unlocked</option>
-                        </select>
-                        <div className="button-row">
-                          <button className="button" type="submit">
-                            Save
-                          </button>
-                        </div>
-                      </form>
-                    </details>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </section>
-
-      {/* ── Events / operations ── */}
-      <section className="hq-question-card">
-        <div className="hq-block-head">
-          <h3>Events &amp; operations</h3>
-        </div>
-        <div className="hq-budget-line-list">
-          {otherExpenses.map((row) => (
-            <div key={row.id} className="hq-budget-line">
-              <div className="hq-budget-line-main">
-                <strong>
-                  {row.label} <span className={`hq-budget-tag hq-budget-tag-${row.lockCadence}`}>{row.lockCadence}</span>
-                </strong>
-                <span className="helper">
-                  {row.kind} · {usd(row.remainderFromGrantCents)} from annual grant
-                </span>
-              </div>
-              <strong className="hq-budget-line-amount">{usd(row.effectiveCents)}</strong>
-              {canEdit ? (
-                <details className="hq-budget-edit">
-                  <summary>Edit</summary>
-                  <form action={upsertExpenseItemAction} className="hq-budget-form">
-                    <input type="hidden" name="plan_id" value={planId} />
-                    <input type="hidden" name="expense_id" value={row.id} />
-                    <input type="hidden" name="kind" value={row.kind} />
-                    <input className="input" name="label" defaultValue={row.label} required />
-                    <input className="input" name="amount" type="number" min="0" step="0.01" defaultValue={dollars(row.amountCents)} />
-                    <select className="select" name="lock_cadence" defaultValue={row.lockCadence}>
-                      <option value="yearly">Locked yearly</option>
-                      <option value="quarterly">Locked quarterly</option>
-                      <option value="unlocked">Unlocked</option>
+                  ) : (
+                    <span className="hq-sheet-cell">{teamName(e.teamId)}</span>
+                  )
+                ) : (
+                  <>
+                    <input form={rowId} type="hidden" name="team_id" value="" />
+                    <span className="hq-sheet-dim">—</span>
+                  </>
+                )}
+                {isTeam ? (
+                  rowEditable ? (
+                    <select form={rowId} className="hq-sheet-input" name="category" defaultValue={e.category || 'other'} aria-label="Category">
+                      {Object.entries(CATEGORY_LABELS).map(([v, l]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ))}
                     </select>
-                    <div className="button-row">
-                      <button className="button" type="submit">
-                        Save
+                  ) : (
+                    <span className="hq-sheet-cell">{CATEGORY_LABELS[e.category || 'other']}</span>
+                  )
+                ) : (
+                  <span className="hq-sheet-dim">—</span>
+                )}
+                {rowEditable ? (
+                  <select form={rowId} className="hq-sheet-input" name="lock_cadence" defaultValue={e.lockCadence} aria-label="Lock">
+                    <option value="yearly">Yearly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="unlocked">Unlocked</option>
+                  </select>
+                ) : (
+                  <span className={`hq-budget-tag hq-budget-tag-${e.lockCadence}`}>{e.lockCadence}</span>
+                )}
+                {rowEditable ? (
+                  <span className="hq-sheet-amount">
+                    <span>$</span>
+                    <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(e.amountCents)} aria-label="Amount" />
+                  </span>
+                ) : (
+                  <span className="hq-sheet-cell hq-sheet-num">{usd(e.effectiveCents)}</span>
+                )}
+                <FundedByCell
+                  planId={planId}
+                  expenseId={e.id}
+                  allocations={allocByExpense(e.id)}
+                  sources={sources}
+                  remainderCents={e.remainderFromGrantCents}
+                  editable={draftEditable}
+                  sourceLabelById={sourceLabelById}
+                />
+                <span className="hq-sheet-actions">
+                  {rowEditable ? (
+                    <>
+                      <button form={rowId} className="hq-sheet-save" title="Save" aria-label="Save">
+                        ✓
                       </button>
-                    </div>
-                  </form>
-                  {editable ? (
-                    <form action={deleteExpenseItemAction}>
-                      <input type="hidden" name="plan_id" value={planId} />
-                      <input type="hidden" name="expense_id" value={row.id} />
-                      <button className="hq-inline-link" type="submit">
-                        Remove
-                      </button>
-                    </form>
+                      {draftEditable ? (
+                        <button form={rowId} formAction={deleteExpenseItemAction} className="hq-sheet-del" title="Remove" aria-label="Remove">
+                          ✕
+                        </button>
+                      ) : null}
+                    </>
                   ) : null}
-                </details>
-              ) : null}
-            </div>
-          ))}
-          {otherExpenses.length === 0 ? <p className="empty-note">No events or operations line items yet.</p> : null}
-        </div>
-
-        {editable ? (
-          <details className="hq-budget-add">
-            <summary>+ Add event / operations line item</summary>
-            <form action={upsertExpenseItemAction} className="hq-budget-form">
-              <input type="hidden" name="plan_id" value={planId} />
-              <input className="input" name="label" placeholder="e.g. Spring showcase" required />
-              <select className="select" name="kind" defaultValue="event">
-                <option value="event">Event</option>
-                <option value="operations">Operations</option>
-                <option value="general">General</option>
-              </select>
-              <input className="input" name="amount" type="number" min="0" step="0.01" placeholder="Amount" />
-              <select className="select" name="lock_cadence" defaultValue="unlocked">
-                <option value="unlocked">Unlocked</option>
-                <option value="yearly">Locked yearly</option>
-                <option value="quarterly">Locked quarterly</option>
-              </select>
-              <div className="button-row">
-                <button className="button" type="submit">
-                  Add line item
-                </button>
+                </span>
               </div>
-            </form>
-          </details>
-        ) : null}
-      </section>
+            );
+          })}
 
-      {/* ── Allocations ── */}
-      <section className="hq-question-card">
-        <div className="hq-block-head">
-          <h3>Source allocations</h3>
-          <span className="hq-inline-note">remainder draws from the annual grant</span>
+          {draftEditable ? <AddRow planId={planId} teams={teams} /> : null}
         </div>
-        <div className="hq-summary-list">
-          {allocations.map((alloc) => (
-            <div key={alloc.id} className="hq-summary-row">
-              <span>{sourceLabel(alloc.sourceId)}</span>
-              <strong>→ {expenses.find((e) => e.id === alloc.expenseId)?.label || 'line item'}</strong>
-              <strong>{usd(alloc.amountCents)}</strong>
-              {editable ? (
-                <form action={upsertAllocationAction}>
-                  <input type="hidden" name="plan_id" value={planId} />
-                  <input type="hidden" name="source_id" value={alloc.sourceId} />
-                  <input type="hidden" name="expense_id" value={alloc.expenseId} />
-                  <input type="hidden" name="amount" value="0" />
-                  <button className="hq-inline-link" type="submit">
-                    Remove
-                  </button>
-                </form>
-              ) : null}
-            </div>
-          ))}
-          {allocations.length === 0 ? (
-            <p className="empty-note">No explicit allocations — every line item draws fully from the annual grant.</p>
-          ) : null}
-        </div>
+      </div>
 
-        {editable ? (
-          <details className="hq-budget-add">
-            <summary>+ Allocate a source to a line item</summary>
-            <form action={upsertAllocationAction} className="hq-budget-form">
-              <input type="hidden" name="plan_id" value={planId} />
-              <select className="select" name="source_id" required defaultValue="">
-                <option value="" disabled>
-                  Funding source…
-                </option>
-                {sources.filter((s) => !s.isDefaultPool).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label} ({usd(s.remainingCents)} free)
-                  </option>
-                ))}
-              </select>
-              <select className="select" name="expense_id" required defaultValue="">
-                <option value="" disabled>
-                  Line item…
-                </option>
-                {expenses.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.kind === 'team' ? `${teamName(e.teamId)} — ${CATEGORY_LABELS[e.category || 'other']}` : e.label}
-                  </option>
-                ))}
-              </select>
-              <input className="input" name="amount" type="number" min="0" step="0.01" placeholder="Amount" required />
-              <div className="button-row">
-                <button className="button" type="submit">
-                  Allocate
-                </button>
-              </div>
-            </form>
-          </details>
-        ) : null}
-      </section>
-
-      {/* ── Approval ── */}
       <BudgetApprovalPanel
         targetType="plan"
         targetId={planId}
@@ -436,12 +295,163 @@ export function BudgetPlanEditor(props: Props) {
         version={version}
         canEdit={canEdit}
         currentUserIsPresident={currentUserIsPresident}
-        currentUserId={props.currentUserId}
+        currentUserId={currentUserId}
         approvals={approvals}
         presidents={presidents}
         uncoveredCents={uncoveredCents}
       />
     </div>
+  );
+}
+
+function AddRow({ planId, teams }: { planId: string; teams: Team[] }) {
+  const [type, setType] = useState<'team' | 'event' | 'operations' | 'source'>('team');
+  const isSource = type === 'source';
+  const isTeam = type === 'team';
+  const action = isSource ? upsertFundingSourceAction : upsertExpenseItemAction;
+
+  return (
+    <form className="hq-sheet-row hq-sheet-add" action={action}>
+      <input type="hidden" name="plan_id" value={planId} />
+      {!isSource ? <input type="hidden" name="kind" value={type} /> : null}
+      <select
+        className="hq-sheet-input"
+        value={type}
+        onChange={(event) => setType(event.target.value as typeof type)}
+        aria-label="Type"
+      >
+        <option value="team">Team</option>
+        <option value="event">Event</option>
+        <option value="operations">Ops</option>
+        <option value="source">Source</option>
+      </select>
+      <input className="hq-sheet-input" name="label" placeholder="New line item…" required />
+      {isSource ? (
+        <select className="hq-sheet-input" name="kind" defaultValue="sponsorship" aria-label="Kind">
+          {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      ) : isTeam ? (
+        <select className="hq-sheet-input" name="team_id" defaultValue={teams[0]?.id || ''} aria-label="Team">
+          {teams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="hq-sheet-dim">—</span>
+      )}
+      {isTeam ? (
+        <select className="hq-sheet-input" name="category" defaultValue="equipment" aria-label="Category">
+          {Object.entries(CATEGORY_LABELS).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="hq-sheet-dim">—</span>
+      )}
+      {isSource ? (
+        <span className="hq-sheet-dim">—</span>
+      ) : (
+        <select className="hq-sheet-input" name="lock_cadence" defaultValue={isTeam ? 'yearly' : 'unlocked'} aria-label="Lock">
+          <option value="yearly">Yearly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="unlocked">Unlocked</option>
+        </select>
+      )}
+      <span className="hq-sheet-amount">
+        <span>$</span>
+        <input name="amount" type="number" min="0" step="0.01" placeholder="0" aria-label="Amount" />
+      </span>
+      <span className="hq-sheet-dim">—</span>
+      <span className="hq-sheet-actions">
+        <button className="hq-sheet-add-btn" type="submit" title="Add line item" aria-label="Add line item">
+          +
+        </button>
+      </span>
+    </form>
+  );
+}
+
+function FundedByCell({
+  planId,
+  expenseId,
+  allocations,
+  sources,
+  remainderCents,
+  editable,
+  sourceLabelById
+}: {
+  planId: string;
+  expenseId: string;
+  allocations: Allocation[];
+  sources: Source[];
+  remainderCents: number;
+  editable: boolean;
+  sourceLabelById: (id: string) => string;
+}) {
+  const summary =
+    allocations.length === 0
+      ? remainderCents > 0
+        ? `Grant ${usd(remainderCents)}`
+        : '—'
+      : `${allocations.length} source${allocations.length > 1 ? 's' : ''}${remainderCents > 0 ? ' + grant' : ''}`;
+
+  if (!editable && allocations.length === 0) {
+    return <span className="hq-sheet-dim">{summary}</span>;
+  }
+
+  return (
+    <details className="hq-sheet-funded">
+      <summary>{summary}</summary>
+      <div className="hq-sheet-funded-body">
+        {allocations.map((a) => (
+          <span key={a.sourceId} className="hq-sheet-chip">
+            {sourceLabelById(a.sourceId)} {usd(a.amountCents)}
+            {editable ? (
+              <form action={upsertAllocationAction}>
+                <input type="hidden" name="plan_id" value={planId} />
+                <input type="hidden" name="source_id" value={a.sourceId} />
+                <input type="hidden" name="expense_id" value={expenseId} />
+                <input type="hidden" name="amount" value="0" />
+                <button className="hq-sheet-chip-x" type="submit" title="Remove" aria-label="Remove allocation">
+                  ✕
+                </button>
+              </form>
+            ) : null}
+          </span>
+        ))}
+        {remainderCents > 0 ? <span className="hq-sheet-dim">Grant covers {usd(remainderCents)}</span> : null}
+        {editable ? (
+          <form action={upsertAllocationAction} className="hq-sheet-funded-add">
+            <input type="hidden" name="plan_id" value={planId} />
+            <input type="hidden" name="expense_id" value={expenseId} />
+            <select className="hq-sheet-input" name="source_id" required defaultValue="">
+              <option value="" disabled>
+                Source…
+              </option>
+              {sources
+                .filter((s) => !s.isDefaultPool)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+            </select>
+            <input className="hq-sheet-input" name="amount" type="number" min="0" step="0.01" placeholder="$" required />
+            <button className="hq-sheet-save" type="submit" title="Allocate" aria-label="Allocate">
+              +
+            </button>
+          </form>
+        ) : null}
+      </div>
+    </details>
   );
 }
 

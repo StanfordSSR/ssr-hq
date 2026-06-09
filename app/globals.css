@@ -6617,3 +6617,209 @@ tr:last-child td {
 .hq-budget-cat-head strong {
   margin-left: auto;
 }
+
+/* Budget planner — spreadsheet grid */
+.hq-sheet-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.hq-sheet-summary strong {
+  color: var(--text);
+  font-size: 16px;
+}
+.hq-sheet-summary .hq-sheet-warn strong {
+  color: var(--cardinal);
+}
+.hq-sheet-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.hq-sheet {
+  --sheet-cols: 78px minmax(150px, 1.4fr) 150px 116px 104px 116px minmax(150px, 1fr) 56px;
+  display: flex;
+  flex-direction: column;
+  min-width: 860px;
+}
+.hq-sheet-head,
+.hq-sheet-row {
+  display: grid;
+  grid-template-columns: var(--sheet-cols);
+  align-items: center;
+}
+.hq-sheet-head {
+  background: var(--panel-soft);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+  border-bottom: 1px solid var(--line);
+}
+.hq-sheet-head > span {
+  padding: 8px 10px;
+}
+.hq-sheet-row {
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.hq-sheet-row:last-child {
+  border-bottom: none;
+}
+.hq-sheet-row > * {
+  padding: 3px 6px;
+  min-width: 0;
+}
+.hq-sheet-cell {
+  padding: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hq-sheet-input {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  padding: 5px 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.hq-sheet-input:hover {
+  border-color: var(--line);
+}
+.hq-sheet-input:focus {
+  border-color: var(--cardinal);
+  outline: none;
+  background: #fff;
+}
+.hq-sheet-amount {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.hq-sheet-amount > span {
+  color: var(--muted);
+}
+.hq-sheet-amount input {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  padding: 5px 4px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hq-sheet-amount input:hover {
+  border-color: var(--line);
+}
+.hq-sheet-amount input:focus {
+  border-color: var(--cardinal);
+  outline: none;
+  background: #fff;
+}
+.hq-sheet-type {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.hq-sheet-type-source {
+  color: #2563a8;
+}
+.hq-sheet-type-team {
+  color: var(--cardinal);
+}
+.hq-sheet-type-event {
+  color: #2f7d5b;
+}
+.hq-sheet-dim {
+  color: var(--muted);
+  font-size: 12px;
+}
+.hq-sheet-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hq-sheet-actions {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+.hq-sheet-save,
+.hq-sheet-del,
+.hq-sheet-add-btn,
+.hq-sheet-chip-x {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 5px 7px;
+  border-radius: 6px;
+}
+.hq-sheet-save:hover,
+.hq-sheet-add-btn:hover {
+  background: #e7f0ea;
+  color: #2f7d5b;
+}
+.hq-sheet-del:hover,
+.hq-sheet-chip-x:hover {
+  background: #fdecec;
+  color: var(--cardinal);
+}
+.hq-sheet-add {
+  background: var(--panel-soft);
+}
+.hq-sheet-add-btn {
+  color: var(--cardinal);
+  font-weight: 800;
+  font-size: 16px;
+}
+.hq-sheet-funded > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  list-style: none;
+  padding: 5px 6px;
+}
+.hq-sheet-funded > summary::-webkit-details-marker {
+  display: none;
+}
+.hq-sheet-funded[open] > summary {
+  color: var(--text);
+  font-weight: 600;
+}
+.hq-sheet-funded-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px 8px;
+}
+.hq-sheet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 4px 2px 9px;
+  font-size: 12px;
+}
+.hq-sheet-chip form {
+  display: inline-flex;
+}
+.hq-sheet-funded-add {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.hq-sheet-funded-add .hq-sheet-input {
+  max-width: 130px;
+  border-color: var(--line);
+}
