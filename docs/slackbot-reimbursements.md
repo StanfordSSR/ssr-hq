@@ -46,8 +46,10 @@ but native buttons require handling the typed version.)
   "recipient_emails": ["lead1@stanford.edu", "lead2@stanford.edu"], // ALL active leads of the team
   "title":   "Reimbursement to review — <Team Name>",
   "message": "<multiline summary: submitter, item, amount, Granted #, instruction>",
-  "cta_label": "Review & sign",          // or "Review reimbursement" when no signature needed
-  "cta_url":   "https://hq.stanfordssr.org/approve-reimbursement/<decision_token>",
+  // cta_label / cta_url are present ONLY for above-threshold (signature) pushes.
+  // Below threshold there is NO cta — render native buttons, no link (see §2).
+  "cta_label": "Review & sign",          // present only when requires_signature === true
+  "cta_url":   "https://hq.stanfordssr.org/approve-reimbursement/<decision_token>",  // present only when requires_signature === true
   "metadata": {
     "reimbursement_id":      "<uuid>",   // ← key for callbacks, polling, and message grouping
     "team_id":               "<uuid>",
@@ -72,12 +74,15 @@ each message's `(channel_id, message_ts)` — store them (see §4).
 
 ## 2. Rendering rules — driven entirely by `metadata.requires_signature`
 
-- **`false`** → post the summary with **Approve** and **Reject** buttons. Encode
-  `reimbursement_id` and the `decision` into each button (e.g. `action_id: "reimb_approve"`,
-  `value: "<reimbursement_id>"`).
-- **`true`** → **no buttons.** Post the summary with only the **Review & sign** link
-  (`cta_url`). These are settled on the web page; HQ verifies the drawn signature
-  against that team's leads. (The poll loop in §4 flips these later.)
+- **`false`** (below threshold) → post the summary with native **Approve** and **Reject**
+  buttons and **no link** — the whole approval happens in Slack. (HQ omits `cta_url` for
+  these, so there's nothing to link to.) Encode `reimbursement_id` and the `decision` into
+  each button (e.g. `action_id: "reimb_approve"`, `value: "<reimbursement_id>"`). The tap
+  is handled in §3.
+- **`true`** (above threshold) → **no buttons.** Post the summary with only the
+  **Review & sign** link (`cta_url`). A signature can't be captured in Slack, so these
+  are settled on the web page; HQ verifies the drawn signature against that team's leads
+  and then pushes the outcome back (§4) so you can flip the message.
 
 DM each email in `recipient_emails` (resolve email → Slack user). Record every message
 posted under `reimbursement_id`.

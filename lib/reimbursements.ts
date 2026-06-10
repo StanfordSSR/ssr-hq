@@ -194,18 +194,16 @@ export async function sendReimbursementSlackPush(
     `• Granted #: ${reimbursement.reimbursement_number}`,
     reimbursement.requires_signature
       ? `This is over the signature threshold — open the link to review and *sign* to approve.`
-      : `Approve or reject below, or open the link for details.`
+      : `Approve or reject below.`
   ];
 
-  const payload = {
+  const basePayload = {
     idempotency_key: `reimbursement_approval:${reimbursement.id}`,
     team_id: SLACKBOT_SYSTEM_TEAM_ID,
     team_name: SLACKBOT_SYSTEM_TEAM_NAME,
     recipient_emails: emails,
     title,
     message: lines.join('\n'),
-    cta_label: reimbursement.requires_signature ? 'Review & sign' : 'Review reimbursement',
-    cta_url: approveUrl,
     metadata: {
       reimbursement_id: reimbursement.id,
       team_id: reimbursement.team_id,
@@ -220,14 +218,26 @@ export async function sendReimbursementSlackPush(
     }
   } as const;
 
+  // Only above-threshold pushes carry a link — those are settled by signing on
+  // the web page. Below threshold, leads approve with native Slack buttons and
+  // there is intentionally NO external link.
+  const cta = reimbursement.requires_signature
+    ? { cta_label: 'Review & sign', cta_url: approveUrl }
+    : {};
+
   try {
-    await sendSlackbotNotification({ ...payload, type: 'reimbursement_approval' });
+    await sendSlackbotNotification({ ...basePayload, ...cta, type: 'reimbursement_approval' });
   } catch (error) {
     console.error('Reimbursement Slack push (typed) failed, retrying as manual_message:', error);
-    // Fallback so leads still get a clickable link even if the bot does not yet
-    // understand the reimbursement_approval type.
+    // Fallback only matters if the bot can't render native buttons for the typed
+    // event; in that degraded case include the link so the lead can still act.
     try {
-      await sendSlackbotNotification({ ...payload, type: 'manual_message' });
+      await sendSlackbotNotification({
+        ...basePayload,
+        cta_label: reimbursement.requires_signature ? 'Review & sign' : 'Review reimbursement',
+        cta_url: approveUrl,
+        type: 'manual_message'
+      });
     } catch (innerError) {
       console.error('Reimbursement Slack push fallback failed:', innerError);
     }
