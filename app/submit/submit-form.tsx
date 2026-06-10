@@ -6,7 +6,16 @@ type TeamOption = { id: string; name: string };
 
 const NAME_STORAGE_KEY = 'ssr_submitter_name';
 
-export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
+const OFF_CAMPUS_NOTICE =
+  "We noticed you're not on campus. Please confirm you are following all relevant policy when it comes to orders not shipped to campus.";
+
+export function SubmitReimbursementForm({
+  teams,
+  offCampus = false
+}: {
+  teams: TeamOption[];
+  offCampus?: boolean;
+}) {
   const [teamId, setTeamId] = useState(teams[0]?.id || '');
   const [submitterName, setSubmitterName] = useState('');
   const [itemName, setItemName] = useState('');
@@ -21,6 +30,11 @@ export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+
+  // Shown when HQ geolocates the submitter outside the Bay Area (either at page
+  // load, or re-flagged by the server at submit time). Must be acknowledged.
+  const [showOffCampus, setShowOffCampus] = useState(offCampus);
+  const [offCampusAck, setOffCampusAck] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +114,12 @@ export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+
+    if (showOffCampus && !offCampusAck) {
+      setError('Please confirm the off-campus policy notice before submitting.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -109,11 +129,18 @@ export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
       body.append('item_name', itemName);
       body.append('amount', amount);
       body.append('reimbursement_number', reimbursementNumber);
+      body.append('off_campus_ack', showOffCampus && offCampusAck ? 'true' : 'false');
       if (receipt) body.append('receipt', receipt);
 
       const response = await fetch('/api/submit', { method: 'POST', body });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        // Server geolocated this submission off-campus even if the page didn't —
+        // reveal the notice and make them confirm before retrying.
+        if (data?.requireOffCampusAck) {
+          setShowOffCampus(true);
+          setOffCampusAck(false);
+        }
         setError(data?.error || 'Could not submit. Please try again.');
         setSubmitting(false);
         return;
@@ -297,7 +324,37 @@ export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
         </div>
       </div>
 
-      <button className="button" type="submit" disabled={submitting || scanning}>
+      {showOffCampus ? (
+        <div
+          style={{
+            border: '1.5px solid #8c1515',
+            background: '#f7ecec',
+            borderRadius: 10,
+            padding: '0.9rem 1rem'
+          }}
+        >
+          <strong style={{ display: 'block', marginBottom: '0.4rem' }}>Off-campus notice</strong>
+          <p className="helper" style={{ margin: '0 0 0.6rem' }}>
+            {OFF_CAMPUS_NOTICE}
+          </p>
+          <label className="hq-switch" style={{ alignItems: 'flex-start' }}>
+            <input
+              type="checkbox"
+              checked={offCampusAck}
+              onChange={(event) => setOffCampusAck(event.target.checked)}
+            />
+            <span className="hq-switch-copy">
+              <strong>I confirm I&apos;m following all relevant policy for orders not shipped to campus.</strong>
+            </span>
+          </label>
+        </div>
+      ) : null}
+
+      <button
+        className="button"
+        type="submit"
+        disabled={submitting || scanning || (showOffCampus && !offCampusAck)}
+      >
         {submitting ? 'Submitting…' : 'Submit reimbursement'}
       </button>
 

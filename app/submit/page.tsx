@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { Header } from '@/components/header';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getReimbursementSettings } from '@/lib/reimbursements';
+import { extractSubmissionFootprint, getReimbursementSettings } from '@/lib/reimbursements';
 import { SubmitReimbursementForm } from '@/app/submit/submit-form';
 
 export const dynamic = 'force-dynamic';
@@ -14,11 +15,13 @@ export const metadata = {
 // Public, login-free page. Anyone with the link can submit a reimbursement.
 export default async function SubmitPage() {
   const admin = createAdminClient();
-  const [{ data: teams }, settings] = await Promise.all([
+  const [{ data: teams }, settings, requestHeaders] = await Promise.all([
     admin.from('teams').select('id, name').eq('is_active', true).order('name', { ascending: true }),
-    getReimbursementSettings()
+    getReimbursementSettings(),
+    headers()
   ]);
 
+  const offCampus = extractSubmissionFootprint(requestHeaders).geo.outsideBayArea;
   const teamOptions = (teams || []).map((t) => ({ id: t.id, name: t.name }));
   const threshold = (settings.signatureThresholdCents / 100).toLocaleString('en-US', {
     style: 'currency',
@@ -54,7 +57,7 @@ export default async function SubmitPage() {
 
           <div className="auth-card">
             {settings.intakeEnabled ? (
-              <SubmitReimbursementForm teams={teamOptions} />
+              <SubmitReimbursementForm teams={teamOptions} offCampus={offCampus} />
             ) : (
               <p className="helper">
                 Reimbursement submissions are currently closed. Please check with your team lead.
