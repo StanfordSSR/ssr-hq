@@ -21,6 +21,7 @@ type ReimbursementRow = {
   decided_by_profile_id: string | null;
   finance_processed_at: string | null;
   decision_token: string;
+  off_campus_ack: boolean;
   created_at: string;
 };
 
@@ -42,7 +43,7 @@ export default async function ReimbursementsPage() {
   let query = admin
     .from('member_reimbursements')
     .select(
-      'id, team_id, submitter_name, item_name, amount_cents, reimbursement_number, receipt_path, status, requires_signature, approval_kind, decided_at, decided_by_profile_id, finance_processed_at, decision_token, created_at'
+      'id, team_id, submitter_name, item_name, amount_cents, reimbursement_number, receipt_path, status, requires_signature, approval_kind, decided_at, decided_by_profile_id, finance_processed_at, decision_token, off_campus_ack, created_at'
     )
     .order('created_at', { ascending: false })
     .limit(500);
@@ -120,7 +121,14 @@ export default async function ReimbursementsPage() {
                   <tr key={r.id}>
                     <td>{formatDateLabel(new Date(r.created_at))}</td>
                     <td>{teamName.get(r.team_id) || '—'}</td>
-                    <td>{r.submitter_name}</td>
+                    <td>
+                      {r.submitter_name}
+                      {r.off_campus_ack ? (
+                        <span className="hq-inline-note" title="Submitted from outside the Bay Area; submitter acknowledged the off-campus policy.">
+                          {' '}⚠ off-campus
+                        </span>
+                      ) : null}
+                    </td>
                     <td style={{ fontWeight: 700 }}>{r.item_name}</td>
                     <td>
                       {money(r.amount_cents)}

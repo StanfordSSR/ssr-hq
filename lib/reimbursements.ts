@@ -17,6 +17,119 @@ import {
 import { RECEIPT_BUCKET } from '@/lib/purchases';
 
 export const REIMBURSEMENT_RECEIPT_MAX_BYTES = 6 * 1024 * 1024;
+
+// Footprint retention: kept this many days for abuse/fraud review, then purged.
+export const FOOTPRINT_RETENTION_DAYS = 60;
+
+export type SubmissionGeo = {
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  outsideBayArea: boolean;
+};
+
+export type SubmissionFootprint = {
+  ip: string | null;
+  userAgent: string | null;
+  acceptLanguage: string | null;
+  referer: string | null;
+  geo: SubmissionGeo;
+};
+
+// Greater Bay Area bounding box (deliberately generous so on-campus, SF, East
+// Bay, South Bay and the Peninsula all read as "in area").
+const BAY_AREA = { minLat: 36.85, maxLat: 38.55, minLng: -123.3, maxLng: -121.2 };
+
+// True only when we have a location AND it falls outside the Bay Area. Unknown
+// location returns false so we never block legitimate on-campus submitters.
+export function isOutsideBayArea(geo: Pick<SubmissionGeo, 'latitude' | 'longitude' | 'country' | 'region'>) {
+  const { latitude, longitude, country, region } = geo;
+  if (typeof latitude === 'number' && typeof longitude === 'number') {
+    return (
+      latitude < BAY_AREA.minLat ||
+      latitude > BAY_AREA.maxLat ||
+      longitude < BAY_AREA.minLng ||
+      longitude > BAY_AREA.maxLng
+    );
+  }
+  // No coordinates: fall back to coarse country/region signal when present.
+  if (country) {
+    return country.toUpperCase() !== 'US' || (region ? region.toUpperCase() !== 'CA' : false);
+  }
+  return false;
+}
+
+function firstForwardedIp(value: string | null): string | null {
+  if (!value) return null;
+  const first = value.split(',')[0]?.trim();
+  return first || null;
+}
+
+// Reads IP, user agent and Vercel geolocation headers off a request. Works for
+// both route handlers (request.headers) and server components (await headers()).
+export function extractSubmissionFootprint(headers: Headers): SubmissionFootprint {
+  const latRaw = headers.get('x-vercel-ip-latitude');
+  const lngRaw = headers.get('x-vercel-ip-longitude');
+  const latitude = latRaw ? Number(latRaw) : null;
+  const longitude = lngRaw ? Number(lngRaw) : null;
+  const country = headers.get('x-vercel-ip-country');
+  const region = headers.get('x-vercel-ip-country-region');
+  const city = headers.get('x-vercel-ip-city');
+
+  const geo: SubmissionGeo = {
+    country: country || null,
+    region: region || null,
+    city: city ? decodeURIComponent(city) : null,
+    latitude: Number.isFinite(latitude) ? latitude : null,
+    longitude: Number.isFinite(longitude) ? longitude : null,
+    outsideBayArea: false
+  };
+  geo.outsideBayArea = isOutsideBayArea(geo);
+
+  return {
+    ip:
+      firstForwardedIp(headers.get('x-forwarded-for')) ||
+      headers.get('x-real-ip') ||
+      headers.get('x-vercel-forwarded-for'),
+    userAgent: headers.get('user-agent'),
+    acceptLanguage: headers.get('accept-language'),
+    referer: headers.get('referer'),
+    geo
+  };
+}
+
+export async function recordSubmissionFootprint(reimbursementId: string, footprint: SubmissionFootprint) {
+  const admin = createAdminClient();
+  const { error } = await admin.from('reimbursement_submission_footprints').insert({
+    reimbursement_id: reimbursementId,
+    ip: footprint.ip,
+    user_agent: footprint.userAgent,
+    accept_language: footprint.acceptLanguage,
+    referer: footprint.referer,
+    geo: footprint.geo
+  });
+  if (error) {
+    console.error('Failed to record submission footprint:', error.message);
+  }
+}
+
+// Purge footprints past the retention window. Called from the daily cron.
+export async function purgeOldSubmissionFootprints() {
+  const admin = createAdminClient();
+  const cutoff = new Date(Date.now() - FOOTPRINT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { error, count } = await admin
+    .from('reimbursement_submission_footprints')
+    .delete({ count: 'exact' })
+    .lt('created_at', cutoff);
+  if (error) {
+    console.error('Failed to purge submission footprints:', error.message);
+    return { purged: 0 };
+  }
+  return { purged: count || 0 };
+}
+
 export const REIMBURSEMENT_RECEIPT_ALLOWED_TYPES = [
   'application/pdf',
   'image/png',

@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
 import {
+  extractSubmissionFootprint,
   getActiveTeamLeads,
   getCurrentAcademicYearSafe,
   getReimbursementSettings,
   matchSubmitterToTeam,
   normalizeReimbursementNumber,
+  recordSubmissionFootprint,
   sendReimbursementSlackPush,
   uploadReimbursementReceipt,
   type ReimbursementRow
@@ -37,10 +39,26 @@ export async function POST(request: NextRequest) {
   const itemName = String(formData.get('item_name') || '').trim();
   const amountRaw = String(formData.get('amount') || '').trim();
   const reimbursementNumberRaw = String(formData.get('reimbursement_number') || '').trim();
+  const offCampusAck = String(formData.get('off_campus_ack') || '') === 'true';
   const receipt = formData.get('receipt');
 
   if (!teamId || !submitterName || !itemName || !amountRaw || !reimbursementNumberRaw) {
     return NextResponse.json({ error: 'Please fill in every field.' }, { status: 400 });
+  }
+
+  // Capture the submitter's network footprint, and require the off-campus
+  // acknowledgement if we geolocate them outside the Bay Area.
+  const footprint = extractSubmissionFootprint(request.headers);
+  if (footprint.geo.outsideBayArea && !offCampusAck) {
+    return NextResponse.json(
+      {
+        error:
+          "We noticed you're not on campus. Please confirm you are following all relevant policy " +
+          'when it comes to orders not shipped to campus.',
+        requireOffCampusAck: true
+      },
+      { status: 422 }
+    );
   }
 
   const amount = Number(amountRaw.replace(/[^0-9.]/g, ''));
@@ -120,7 +138,8 @@ export async function POST(request: NextRequest) {
       receipt_path: receiptPath,
       receipt_file_name: receiptFileName,
       decision_token: decisionToken,
-      requires_signature: requiresSignature
+      requires_signature: requiresSignature,
+      off_campus_ack: footprint.geo.outsideBayArea ? offCampusAck : false
     })
     .select('*')
     .single();
@@ -141,8 +160,17 @@ export async function POST(request: NextRequest) {
     targetType: 'member_reimbursement',
     targetId: reimbursementId,
     summary: `${match.canonicalName} submitted a ${reimbursementNumber} reimbursement for ${team.name}.`,
-    details: { teamId, amountCents, requiresSignature, source: 'public_intake' }
+    details: {
+      teamId,
+      amountCents,
+      requiresSignature,
+      source: 'public_intake',
+      offCampus: footprint.geo.outsideBayArea,
+      offCampusAck: footprint.geo.outsideBayArea ? offCampusAck : null
+    }
   });
+
+  await recordSubmissionFootprint(reimbursementId, footprint);
 
   await sendReimbursementSlackPush(inserted as ReimbursementRow, leads, team.name);
 
