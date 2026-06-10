@@ -27,5 +27,8 @@ export const env = {
   slackbotNotifySecret: process.env.SSR_SLACKBOT_NOTIFY_SECRET,
   resendApiKey: process.env.RESEND_API_KEY,
   resendSenderEmail: process.env.RESEND_SENDER_EMAIL || 'hq@stanfordssr.org',
-  resendSenderName: process.env.RESEND_SENDER_NAME || 'SSR HQ'
+  resendSenderName: process.env.RESEND_SENDER_NAME || 'SSR HQ',
+  openaiApiKey: process.env.OPENAI_API_KEY,
+  // Vision model used to read pasted receipt screenshots on the public intake.
+  openaiReceiptModel: process.env.OPENAI_RECEIPT_MODEL || 'gpt-4o'
 };

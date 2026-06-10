@@ -29,6 +29,7 @@ const adminNav: NavItem[] = [
   { href: '/dashboard/members', label: 'Users' },
   { href: '/dashboard/finances', label: 'Manage Finances' },
   { href: '/dashboard/finances/plan', label: 'Budget Plan' },
+  { href: '/dashboard/reimbursements', label: 'Reimbursements' },
   reportsNav,
   { href: '/dashboard/tasks', label: 'Assign Tasks' },
   { href: '/dashboard/settings', label: 'Club Settings' }
@@ -44,6 +45,7 @@ const presidentNav: NavItem[] = [
   { href: '/dashboard/tasks', label: 'Tasks' },
   { href: '/dashboard/purchases', label: 'Purchases' },
   { href: '/dashboard/expenses', label: 'Expense Log' },
+  { href: '/dashboard/reimbursements', label: 'Reimbursements' },
   { href: '/dashboard/settings', label: 'Club Settings' }
 ];
 
@@ -52,6 +54,7 @@ const financialOfficerNav: NavItem[] = [
   { href: '/dashboard/finances', label: 'Finances' },
   { href: '/dashboard/purchases', label: 'Purchases' },
   { href: '/dashboard/expenses', label: 'Expense Log' },
+  { href: '/dashboard/reimbursements', label: 'Reimbursements' },
   { href: '/dashboard/receipts', label: 'Receipts' }
 ];
 
@@ -60,6 +63,7 @@ const leadNav: NavItem[] = [
   { href: '/dashboard/purchases', label: 'Log Purchase', emphasis: 'primary' },
   { href: '/dashboard/members', label: 'Manage Members' },
   { href: '/dashboard/expenses', label: 'Expense Log' },
+  { href: '/dashboard/reimbursements', label: 'Reimbursements' },
   { href: '/dashboard/tasks', label: 'Tasks', notificationKey: 'tasks' }
 ];
 
