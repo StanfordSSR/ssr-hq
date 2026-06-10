@@ -16,6 +16,7 @@ export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const [scanning, setScanning] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,10 +64,12 @@ export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
       }
       const filledItem = typeof data.itemName === 'string' && data.itemName.trim();
       const filledAmount = typeof data.amount === 'number' && data.amount > 0;
+      const filledRnum = typeof data.reimbursementNumber === 'string' && data.reimbursementNumber.trim();
       if (filledItem) setItemName(data.itemName);
       if (filledAmount) setAmount(String(data.amount));
+      if (filledRnum) setReimbursementNumber(data.reimbursementNumber);
       setScanNote(
-        filledItem || filledAmount
+        filledItem || filledAmount || filledRnum
           ? 'Scanned ✓ — double-check the values below before submitting.'
           : "Couldn't read this one clearly — enter the details manually."
       );
@@ -200,13 +203,27 @@ export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
               fileInputRef.current?.click();
             }
           }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            if (!dragging) setDragging(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            setDragging(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            handleFile(event.dataTransfer.files?.[0]);
+          }}
           style={{
-            border: '1.5px dashed #c9bcbc',
+            border: `1.5px dashed ${dragging ? '#8c1515' : '#c9bcbc'}`,
             borderRadius: 10,
             padding: previewUrl ? '0.75rem' : '1.25rem',
             textAlign: 'center',
             cursor: 'pointer',
-            background: '#faf7f7'
+            background: dragging ? '#f3e9e9' : '#faf7f7',
+            transition: 'background 0.15s, border-color 0.15s'
           }}
         >
           {previewUrl ? (
@@ -214,7 +231,11 @@ export function SubmitReimbursementForm({ teams }: { teams: TeamOption[] }) {
             <img src={previewUrl} alt="Receipt preview" style={{ maxHeight: 180, maxWidth: '100%', borderRadius: 6 }} />
           ) : (
             <span className="helper" style={{ display: 'block' }}>
-              {scanning ? 'Reading receipt…' : 'Paste a screenshot here, or click to upload.'}
+              {scanning
+                ? 'Reading receipt…'
+                : dragging
+                  ? 'Drop the receipt to scan it'
+                  : 'Drag & drop, paste a screenshot, or click to upload.'}
             </span>
           )}
         </div>
