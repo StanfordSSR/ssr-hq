@@ -12,7 +12,8 @@ type SlackbotNotifyPayload = {
     | 'task_assigned'
     | 'invite_reminder'
     | 'budget_approval'
-    | 'reimbursement_approval';
+    | 'reimbursement_approval'
+    | 'reimbursement_decided';
   team_id: string;
   team_name: string;
   recipient_emails: string[];
