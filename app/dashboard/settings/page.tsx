@@ -20,9 +20,12 @@ import {
   updateAcademicCalendarSettingsAction,
   updateAcademicRolloverSettingsAction,
   updateReceiptNotificationSettingsAction,
+  updateReimbursementSettingsAction,
   updateReportNotificationSettingsAction
 } from '@/app/dashboard/actions';
 import { getReceiptNotificationSettings } from '@/lib/receipt-workflow';
+import { getReimbursementSettings } from '@/lib/reimbursements';
+import { env } from '@/lib/env';
 import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { EoySettingsForm } from '@/components/eoy-settings-form';
 import { getEoyReportSettings } from '@/lib/eoy-report';
@@ -55,6 +58,13 @@ export default async function SettingsPage() {
   }
 
   const canEdit = currentRole === 'admin';
+  const siteHost = (() => {
+    try {
+      return new URL(env.siteUrl).host;
+    } catch {
+      return 'hq.stanfordssr.org';
+    }
+  })();
   const [
     calendarSettings,
     calendarTemplate,
@@ -66,7 +76,8 @@ export default async function SettingsPage() {
     auditEntriesResponse,
     allProfilesResponse,
     rosterMembersResponse,
-    eoyReportSettings
+    eoyReportSettings,
+    reimbursementSettings
   ] =
     await Promise.all([
       getAcademicCalendarSettings(),
@@ -86,7 +97,8 @@ export default async function SettingsPage() {
         .from('team_roster_members')
         .select('id, team_id, full_name, stanford_email, slack_user_id, teams(name)')
         .order('full_name'),
-      getEoyReportSettings()
+      getEoyReportSettings(),
+      getReimbursementSettings()
     ]);
   const currentAcademicYear = calendarSettings.effectiveAcademicYear;
   const nextAcademicYear = calendarSettings.nextAcademicYear;
@@ -526,6 +538,47 @@ export default async function SettingsPage() {
                   <div className="hq-summary-row"><span>Email reminders</span><strong>{receiptSettings.emailEnabled ? 'Enabled' : 'Disabled'}</strong></div>
                   <div className="hq-summary-row"><span>Slack reminders</span><strong>{receiptSettings.slackEnabled ? 'Enabled' : 'Disabled'}</strong></div>
                   <div className="hq-summary-row"><span>Reminder cadence</span><strong>{receiptSettings.reminderDays.map((day) => `Day ${day}`).join(', ')}</strong></div>
+                </div>
+              )}
+            </section>
+
+            <section className="hq-lead-block">
+              <div className="hq-block-head">
+                <h3>Member reimbursements</h3>
+              </div>
+              <p className="helper">
+                Members submit purchases at <strong>{siteHost}/submit</strong>. Purchases at or below the
+                threshold can be approved with a single Slack button; above it, the lead must sign on the link.
+              </p>
+              {canEdit ? (
+                <form action={updateReimbursementSettingsAction} className="form-stack">
+                  <label className="hq-switch">
+                    <input type="checkbox" name="intake_enabled" defaultChecked={reimbursementSettings.intakeEnabled} />
+                    <span className="hq-switch-track" aria-hidden="true" />
+                    <span className="hq-switch-copy">
+                      <strong>Accept submissions</strong>
+                      <small>Turn the public /submit page on or off.</small>
+                    </span>
+                  </label>
+                  <div className="field">
+                    <label className="label" htmlFor="signature-threshold">Signature threshold (USD)</label>
+                    <input
+                      className="input"
+                      id="signature-threshold"
+                      name="signature_threshold"
+                      type="number"
+                      min="0"
+                      step="1"
+                      defaultValue={(reimbursementSettings.signatureThresholdCents / 100).toString()}
+                    />
+                    <span className="helper">Purchases over this amount require a signed approval.</span>
+                  </div>
+                  <div className="button-row"><button className="button" type="submit">Save reimbursement settings</button></div>
+                </form>
+              ) : (
+                <div className="hq-summary-list">
+                  <div className="hq-summary-row"><span>Public submissions</span><strong>{reimbursementSettings.intakeEnabled ? 'Open' : 'Closed'}</strong></div>
+                  <div className="hq-summary-row"><span>Signature threshold</span><strong>${(reimbursementSettings.signatureThresholdCents / 100).toLocaleString()}</strong></div>
                 </div>
               )}
             </section>

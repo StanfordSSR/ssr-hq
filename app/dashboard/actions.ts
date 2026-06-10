@@ -1550,6 +1550,45 @@ export async function updateReceiptNotificationSettingsAction(formData: FormData
   });
 }
 
+export async function updateReimbursementSettingsAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Updated reimbursement settings.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const thresholdDollars = Number(String(formData.get('signature_threshold') || '').replace(/[^0-9.]/g, ''));
+      if (!Number.isFinite(thresholdDollars) || thresholdDollars < 0) {
+        throw new Error('Enter a valid signature threshold.');
+      }
+      const intakeEnabled = String(formData.get('intake_enabled') || '') === 'on';
+      const thresholdCents = Math.round(thresholdDollars * 100);
+
+      const admin = createAdminClient();
+      const { error } = await admin.from('reimbursement_settings').upsert({
+        id: 1,
+        signature_threshold_cents: thresholdCents,
+        intake_enabled: intakeEnabled,
+        updated_at: new Date().toISOString()
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'settings.reimbursements.updated',
+        targetType: 'reimbursement_settings',
+        targetId: '1',
+        summary: 'Updated member reimbursement settings.',
+        details: { thresholdCents, intakeEnabled }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.settings);
+    }
+  });
+}
+
 export async function updateReportNotificationSettingsAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/settings',
