@@ -337,14 +337,15 @@ export function SubmitReimbursementForm({
           <p className="helper" style={{ margin: '0 0 0.6rem' }}>
             {OFF_CAMPUS_NOTICE}
           </p>
-          <label className="hq-switch" style={{ alignItems: 'flex-start' }}>
+          <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', cursor: 'pointer' }}>
             <input
               type="checkbox"
               checked={offCampusAck}
               onChange={(event) => setOffCampusAck(event.target.checked)}
+              style={{ marginTop: '0.2rem', flexShrink: 0 }}
             />
-            <span className="hq-switch-copy">
-              <strong>I confirm I&apos;m following all relevant policy for orders not shipped to campus.</strong>
+            <span style={{ fontWeight: 600 }}>
+              I confirm I&apos;m following all relevant policy for orders not shipped to campus.
             </span>
           </label>
         </div>
