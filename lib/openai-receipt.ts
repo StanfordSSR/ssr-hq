@@ -9,6 +9,7 @@ export type ExtractedReceipt = {
   itemName: string | null;
   amount: number | null;
   merchant: string | null;
+  reimbursementNumber: string | null;
 };
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
@@ -35,6 +36,14 @@ function coerceText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= 160 ? trimmed : trimmed ? trimmed.slice(0, 160) : null;
+}
+
+// Pull a Stanford Granted reimbursement number (e.g. "R-119704") out of whatever
+// the model returns, normalized to "R-<digits>". Null if it's not present.
+function coerceReimbursementNumber(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const match = value.toUpperCase().match(/R[-\s]?(\d{3,})/);
+  return match ? `R-${match[1]}` : null;
 }
 
 export async function extractReceiptFields(
@@ -64,12 +73,15 @@ export async function extractReceiptFields(
           {
             role: 'system',
             content:
-              'You read receipts and order confirmations for a student robotics club. ' +
+              'You read receipts, order confirmations, and Stanford Granted reimbursement ' +
+              'screenshots for a student robotics club. ' +
               'Return ONLY a JSON object with keys: item_name (a short human description ' +
               'of what was bought, e.g. "Motor controller" or "Team pizza" — prefer the ' +
               'main line item, or a brief summary if there are several), amount (the grand ' +
-              'total actually paid, as a number, including tax and shipping), and merchant ' +
-              '(the store name if visible). Use null for any field you cannot read with ' +
+              'total actually paid, as a number, including tax and shipping), merchant ' +
+              '(the store name if visible), and reimbursement_number (a Stanford Granted ' +
+              'reimbursement number of the form "R-119704" if one appears in the image, e.g. ' +
+              'on a Granted portal confirmation). Use null for any field you cannot read with ' +
               'confidence. Never invent values.'
           },
           {
@@ -99,20 +111,21 @@ export async function extractReceiptFields(
     };
     const raw = data.choices?.[0]?.message?.content;
     if (!raw) {
-      return { itemName: null, amount: null, merchant: null };
+      return { itemName: null, amount: null, merchant: null, reimbursementNumber: null };
     }
 
     let parsed: Record<string, unknown> = {};
     try {
       parsed = JSON.parse(raw) as Record<string, unknown>;
     } catch {
-      return { itemName: null, amount: null, merchant: null };
+      return { itemName: null, amount: null, merchant: null, reimbursementNumber: null };
     }
 
     return {
       itemName: coerceText(parsed.item_name),
       amount: coerceAmount(parsed.amount),
-      merchant: coerceText(parsed.merchant)
+      merchant: coerceText(parsed.merchant),
+      reimbursementNumber: coerceReimbursementNumber(parsed.reimbursement_number)
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
