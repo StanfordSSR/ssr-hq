@@ -53,6 +53,7 @@ import {
 } from '@/lib/notifications';
 import { env } from '@/lib/env';
 import { buildInviteConfirmLink } from '@/lib/invite-links';
+import { confirmationMatches } from '@/lib/confirmation';
 import {
   buildSignatureProfile,
   extractSignatureFeatures,
@@ -3365,7 +3366,7 @@ async function deleteTeamRosterMemberCore(formData: FormData) {
     throw new Error('Recorded member not found.');
   }
 
-  if (confirmationName !== rosterMember.full_name) {
+  if (!confirmationMatches(confirmationName, { fullName: rosterMember.full_name })) {
     throw new Error('Confirmation name did not match.');
   }
 
@@ -3485,7 +3486,7 @@ async function deletePortalLeadCore(formData: FormData) {
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from('profiles')
-    .select('id, full_name, role, is_admin, is_president')
+    .select('id, full_name, email, role, is_admin, is_president')
     .eq('id', leadId)
     .maybeSingle();
 
@@ -3504,35 +3505,44 @@ async function deletePortalLeadCore(formData: FormData) {
     throw new Error('Users with admin or president access cannot be deleted from the lead removal flow.');
   }
 
-  if (!leadMembershipCount && profile.role !== 'team_lead') {
+  // Orphaned profiles (no name, never attached to a team — e.g. an invite sent
+  // to a mistyped email) are deletable here regardless of their role column.
+  const isOrphan = !profile.full_name && !leadMembershipCount;
+  if (!isOrphan && !leadMembershipCount && profile.role !== 'team_lead') {
     throw new Error('Only team leads can be removed from the portal here.');
   }
 
-  const expectedName = profile.full_name || '';
   if (confirmationPhrase !== 'DELETE') {
     throw new Error('First confirmation must be DELETE.');
   }
 
-  if (confirmationName !== expectedName) {
-    throw new Error('Second confirmation must match the lead name exactly.');
+  if (!confirmationMatches(confirmationName, { fullName: profile.full_name, email: profile.email })) {
+    throw new Error('Second confirmation must match the displayed name (or the account email).');
   }
 
+  const displayName = profile.full_name || profile.email || 'team lead';
   await recordAuditEvent({
     actorId: user.id,
     action: 'member.portal_deleted',
     targetType: 'profile',
     targetId: leadId,
-    summary: `Deleted portal access for ${expectedName || 'team lead'}.`,
+    summary: `Deleted portal access for ${displayName}.`,
     details: {
       leadId,
-      fullName: expectedName
+      fullName: profile.full_name,
+      email: profile.email
     }
   });
 
+  // Deleting the auth user cascades to the profile. If the auth user is
+  // already gone (half-created account), fall back to removing the profile
+  // row directly instead of stranding an undeletable entry.
   const { error: deleteError } = await admin.auth.admin.deleteUser(leadId);
-
   if (deleteError) {
-    throw new Error(deleteError.message);
+    const { error: profileDeleteError } = await admin.from('profiles').delete().eq('id', leadId);
+    if (profileDeleteError) {
+      throw new Error(deleteError.message);
+    }
   }
 
   await syncQueueAndRevalidate(REVALIDATE_PATHS.deleteLead);

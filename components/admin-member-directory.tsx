@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { deletePortalLeadInlineAction, setPortalUserPasswordInlineAction } from '@/app/dashboard/actions';
+import { confirmationMatches } from '@/lib/confirmation';
 
 type AdminMemberRow = {
   id: string;
@@ -171,7 +172,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                         <input type="hidden" name="confirmation_phrase" value={confirmationPhrase} />
                         <input type="hidden" name="confirmation_name" value={confirmationName} />
                         <p className="hq-roster-delete-copy">
-                          Type <strong>DELETE</strong> and then <strong>{row.name}</strong> to remove this lead from the portal and delete their account.
+                          Type <strong>DELETE</strong> and then <strong>{row.name}</strong> (or their email) to remove this lead from the portal and delete their account.
                         </p>
                         <div className="hq-admin-delete-grid">
                           <input
@@ -189,7 +190,11 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                           <button
                             className="button-secondary"
                             type="submit"
-                            disabled={isPending || confirmationPhrase !== 'DELETE' || confirmationName !== row.name}
+                            disabled={
+                              isPending ||
+                              confirmationPhrase !== 'DELETE' ||
+                              !confirmationMatches(confirmationName, { fullName: row.name, email: row.email })
+                            }
                           >
                             {isPending ? 'Removing...' : 'Confirm removal'}
                           </button>
