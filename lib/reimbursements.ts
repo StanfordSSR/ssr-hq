@@ -378,7 +378,56 @@ export async function finalizeReimbursementDecision(opts: {
     }
   });
 
+  // Push the outcome to the Slack bot so it can edit the leads' DMs to
+  // "Approved/Rejected by …" — covers every path (Slack button, sign link, and
+  // in-portal), so the bot doesn't have to poll. Best-effort and non-blocking.
+  await notifyReimbursementDecided(reimbursement, decision, opts.deciderProfileId, opts.approvalKind);
+
   return { purchaseLogId };
+}
+
+// Fire-and-forget "decision recorded" event to the Slack bot. The bot looks up
+// the messages it posted for metadata.reimbursement_id and edits them all.
+async function notifyReimbursementDecided(
+  reimbursement: ReimbursementRow,
+  decision: 'approved' | 'rejected',
+  deciderProfileId: string | null,
+  approvalKind: 'button' | 'signature'
+) {
+  try {
+    const admin = createAdminClient();
+    let decidedByName: string | null = null;
+    if (deciderProfileId) {
+      const { data } = await admin
+        .from('profiles')
+        .select('full_name')
+        .eq('id', deciderProfileId)
+        .maybeSingle();
+      decidedByName = data?.full_name ?? null;
+    }
+
+    const leads = await getActiveTeamLeads(reimbursement.team_id);
+    const emails = leads.map((l) => (l.email || '').toLowerCase()).filter(Boolean);
+
+    await sendSlackbotNotification({
+      idempotency_key: `reimbursement_decided:${reimbursement.id}:${decision}`,
+      type: 'reimbursement_decided',
+      team_id: SLACKBOT_SYSTEM_TEAM_ID,
+      team_name: SLACKBOT_SYSTEM_TEAM_NAME,
+      recipient_emails: emails,
+      title: 'Reimbursement decided',
+      message: `${decidedByName || 'A team lead'} ${decision} ${reimbursement.submitter_name}'s ${reimbursement.reimbursement_number} reimbursement.`,
+      metadata: {
+        reimbursement_id: reimbursement.id,
+        team_id: reimbursement.team_id,
+        decision,
+        decided_by_name: decidedByName,
+        approval_kind: approvalKind
+      }
+    });
+  } catch (error) {
+    console.error('Reimbursement decided push failed:', error);
+  }
 }
 
 export async function getReimbursementByToken(token: string): Promise<ReimbursementRow | null> {

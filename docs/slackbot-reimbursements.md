@@ -129,8 +129,40 @@ stored message → `✅ Approved by <name>` / `❌ Rejected by <name>`, remove t
 Get `<name>` from the clicking user, or from the status endpoint below.
 
 **b) Decisions made outside Slack** — the sign-link approval and the in-portal
-approve/reject produce **no Slack event**. **Poll HQ** for any reimbursement still
-pending on the bot's side:
+approve/reject produce no Slack event. **HQ now PUSHES the outcome to the bot** the
+instant *any* decision is recorded (Slack button, sign link, or in-portal), via the
+bot's existing notify endpoint with a new type:
+
+```jsonc
+{
+  "idempotency_key": "reimbursement_decided:<reimbursement_id>:<decision>",
+  "type": "reimbursement_decided",
+  "team_id":   "00000000-0000-0000-0000-000000000000",
+  "team_name": "SSR HQ",
+  "recipient_emails": ["lead1@stanford.edu", "lead2@stanford.edu"],
+  "title":   "Reimbursement decided",
+  "message": "Jordan Lee approved Sam Patel's R-119704 reimbursement.",
+  "metadata": {
+    "reimbursement_id": "<uuid>",          // ← look up the DMs you posted for this id
+    "team_id":          "<uuid>",
+    "decision":         "approved" | "rejected",
+    "decided_by_name":  "Jordan Lee" | null,
+    "approval_kind":    "button" | "signature"
+  }
+}
+```
+
+**On receiving `reimbursement_decided`:** do NOT post a new DM. Instead look up every
+message you stored under `metadata.reimbursement_id` and `chat.update` them all to
+`✅ Approved by <decided_by_name>` / `❌ Rejected by <decided_by_name>` (append
+"(signed)" when `approval_kind === "signature"`), removing buttons. Mark it settled
+locally and stop any polling for it. Treat it idempotently — if you already edited the
+messages (e.g. from a button callback in §4a), this is a harmless no-op. Return your
+normal `{ ok: true }` notify response.
+
+This push makes §4a's edit-in-callback optional and the poll loop unnecessary. The poll
+endpoint below still exists as a **fallback/reconciliation** if you want belt-and-suspenders
+(e.g. a sweep for anything whose push was missed):
 
 ```
 GET https://hq.stanfordssr.org/api/internal/reimbursement-status?id=<uuid>
@@ -151,16 +183,6 @@ Authorization: Bearer <SSR_SLACKBOT_NOTIFY_SECRET>
   ]
 }
 ```
-
-Poll loop: for each posted reimbursement still believed `pending`, poll periodically
-(suggest **every 60s for ~60 min**, then stop). When `status !== "pending"`, run the
-same message sync as §4a, using `decided_by_name` (append "(signed)" when
-`approval_kind === "signature"`), then stop polling that id. Batch pending ids into one
-`ids=` call. Ignore `finance_processed` (downstream finance bookkeeping, irrelevant to
-the lead DMs).
-
-> Skip the poll for items already settled via a button — only poll ones still pending
-> on the bot's side (covers sign-link approvals and anything done from the HQ portal).
 
 ## 5. Suggested bot-side data model
 
