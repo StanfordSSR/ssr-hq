@@ -20,23 +20,15 @@ export default async function PersonalProfilePage() {
     .eq('id', user.id)
     .single();
 
-  const canEnrollSignature =
-    profile?.role === 'president' ||
-    profile?.role === 'financial_officer' ||
-    Boolean(profile?.is_president) ||
-    Boolean(profile?.is_financial_officer);
-
-  let signatureEnrolled = false;
-  let signatureSampleCount = 0;
-  if (canEnrollSignature) {
-    const { data: sig } = await createAdminClient()
-      .from('signature_profiles')
-      .select('sample_count')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    signatureEnrolled = Boolean(sig);
-    signatureSampleCount = sig?.sample_count || 0;
-  }
+  // Anyone may need to sign — team leads approve reimbursements, officers sign
+  // budgets/approvals — so signature enrollment is available to all users.
+  const { data: sig } = await createAdminClient()
+    .from('signature_profiles')
+    .select('sample_count')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  const signatureEnrolled = Boolean(sig);
+  const signatureSampleCount = sig?.sample_count || 0;
 
   return (
     <div className="hq-page">
@@ -99,22 +91,21 @@ export default async function PersonalProfilePage() {
         </form>
       </section>
 
-      {canEnrollSignature ? (
-        <section className="hq-panel hq-surface-muted">
-          <div className="hq-section-head">
-            <div className="hq-section-head-copy">
-              <p className="hq-eyebrow">Security</p>
-              <h2 className="hq-section-title hq-section-title-compact">Digital signature verification</h2>
-              <p className="hq-subtitle">
-                As a {profile?.role === 'financial_officer' ? 'financial officer' : 'president'}, your approval signatures are
-                verified against an enrolled reference of your handwriting. Enroll a few sample signatures here; every
-                future approval you sign is automatically checked against them.
-              </p>
-            </div>
+      <section className="hq-panel hq-surface-muted">
+        <div className="hq-section-head">
+          <div className="hq-section-head-copy">
+            <p className="hq-eyebrow">Security</p>
+            <h2 className="hq-section-title hq-section-title-compact">Digital signature verification</h2>
+            <p className="hq-subtitle">
+              Your approval signatures are verified against an enrolled reference of your handwriting.
+              Team leads need this to approve higher-value reimbursements, and officers use it to sign
+              budgets and approvals. Enroll a few sample signatures here; every future approval you sign
+              is automatically checked against them.
+            </p>
           </div>
-          <SignatureEnrollment enrolled={signatureEnrolled} sampleCount={signatureSampleCount} />
-        </section>
-      ) : null}
+        </div>
+        <SignatureEnrollment enrolled={signatureEnrolled} sampleCount={signatureSampleCount} />
+      </section>
     </div>
   );
 }
