@@ -4840,24 +4840,14 @@ async function requireSigningPresident() {
 
 // --- Signature verification ---------------------------------------------
 
-function canEnrollSignature(profile: { role?: string | null; is_president?: boolean | null; is_financial_officer?: boolean | null }) {
-  return (
-    profile.role === 'president' ||
-    profile.role === 'financial_officer' ||
-    Boolean(profile.is_president) ||
-    Boolean(profile.is_financial_officer)
-  );
-}
-
+// Signature enrollment is open to any active user: team leads sign to approve
+// higher-value reimbursements, and officers sign budgets and approvals.
 export async function enrollSignatureAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard/profile',
     successMessage: 'Signature enrolled. Future approvals will be verified against it.',
     action: async () => {
-      const { user, profile } = await getViewerContext();
-      if (!canEnrollSignature(profile)) {
-        throw new Error('Only presidents and financial officers enroll a verification signature.');
-      }
+      const { user } = await getViewerContext();
 
       let raw: unknown;
       try {
