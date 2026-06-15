@@ -72,6 +72,7 @@ type AdminMemberRow = {
   sortName: string;
   sortJoined: number;
   canManagePassword?: boolean;
+  signatureEnrolled?: boolean;
 };
 
 function formatLastSeen(value: string) {
@@ -108,7 +109,7 @@ export default async function ManageMembersPage() {
   const isPresident = currentRole === 'president';
 
   if (isAdmin || isPresident) {
-    const [{ data: profilesData }, { data: teamsData }, { data: membershipsData }, { data: rosterData }, { data: authUsers }] =
+    const [{ data: profilesData }, { data: teamsData }, { data: membershipsData }, { data: rosterData }, { data: authUsers }, { data: signatureRows }] =
       await Promise.all([
         admin
           .from('profiles')
@@ -126,8 +127,11 @@ export default async function ManageMembersPage() {
           .order('joined_year')
           .order('joined_month')
           .order('full_name'),
-        admin.auth.admin.listUsers()
+        admin.auth.admin.listUsers(),
+        admin.from('signature_profiles').select('user_id')
       ]);
+
+    const signatureEnrolledSet = new Set((signatureRows || []).map((row) => row.user_id));
 
     const profiles = (profilesData || []) as Profile[];
     const teams = (teamsData || []) as Team[];
@@ -186,7 +190,8 @@ export default async function ManageMembersPage() {
         profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)),
       sortGroup: profileHasAdminRole(profile) ? 0 : profileHasPresidentRole(profile) ? 1 : profileHasFinancialOfficerRole(profile) ? 2 : 3,
       sortName: profile.full_name || '',
-      sortJoined: 0
+      sortJoined: 0,
+      signatureEnrolled: signatureEnrolledSet.has(profile.id)
       };
     });
 

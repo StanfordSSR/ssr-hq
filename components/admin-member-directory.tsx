@@ -17,6 +17,7 @@ type AdminMemberRow = {
   accessDetail?: string;
   canDeletePortal?: boolean;
   canManagePassword?: boolean;
+  signatureEnrolled?: boolean;
 };
 
 type AdminMemberDirectoryProps = {
@@ -86,6 +87,9 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
             <th>Email</th>
             <th>Role</th>
             <th>Status</th>
+            <th style={{ width: '1%', textAlign: 'center', whiteSpace: 'nowrap' }} title="Signature enrolled">
+              Sig
+            </th>
             <th>Perms</th>
             <th>Team</th>
             <th>Portal</th>
@@ -111,6 +115,19 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                       </div>
                     ) : (
                       <span className="hq-member-static-note">No portal</span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {row.signatureEnrolled === undefined ? (
+                      <span className="hq-member-static-note">—</span>
+                    ) : row.signatureEnrolled ? (
+                      <span className="hq-member-access-on" title="Signature enrolled" style={{ fontWeight: 700 }}>
+                        ✓
+                      </span>
+                    ) : (
+                      <span className="hq-member-access-off" title="No signature enrolled" style={{ fontWeight: 700 }}>
+                        ✗
+                      </span>
                     )}
                   </td>
                   <td>{row.permissions}</td>
@@ -166,7 +183,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
 
                 {expanded && expandedMode === 'delete' && row.canDeletePortal && row.profileId ? (
                   <tr key={`${row.id}-confirm`}>
-                    <td colSpan={7}>
+                    <td colSpan={8}>
                       <form action={handleDelete} className="hq-admin-delete-form">
                         <input type="hidden" name="lead_id" value={row.profileId} />
                         <input type="hidden" name="confirmation_phrase" value={confirmationPhrase} />
@@ -206,7 +223,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
 
                 {expanded && expandedMode === 'password' && row.canManagePassword && row.profileId ? (
                   <tr key={`${row.id}-password`}>
-                    <td colSpan={7}>
+                    <td colSpan={8}>
                       <form action={handlePasswordSet} className="hq-admin-delete-form">
                         <input type="hidden" name="profile_id" value={row.profileId} />
                         <input type="hidden" name="password" value={passwordValue} />
