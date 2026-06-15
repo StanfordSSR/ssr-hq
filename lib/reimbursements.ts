@@ -141,6 +141,8 @@ export const REIMBURSEMENT_RECEIPT_ALLOWED_TYPES = [
 export type ReimbursementSettings = {
   signatureThresholdCents: number;
   intakeEnabled: boolean;
+  signatureReminderEnabled: boolean;
+  signatureReminderIntervalDays: number;
 };
 
 export type ReimbursementRow = {
@@ -171,14 +173,17 @@ export async function getReimbursementSettings(): Promise<ReimbursementSettings>
   const admin = createAdminClient();
   const { data } = await admin
     .from('reimbursement_settings')
-    .select('signature_threshold_cents, intake_enabled')
+    .select('signature_threshold_cents, intake_enabled, signature_reminder_enabled, signature_reminder_interval_days')
     .eq('id', 1)
     .maybeSingle();
 
   return {
     signatureThresholdCents:
       typeof data?.signature_threshold_cents === 'number' ? data.signature_threshold_cents : 10000,
-    intakeEnabled: data?.intake_enabled ?? true
+    intakeEnabled: data?.intake_enabled ?? true,
+    signatureReminderEnabled: data?.signature_reminder_enabled ?? true,
+    signatureReminderIntervalDays:
+      typeof data?.signature_reminder_interval_days === 'number' ? data.signature_reminder_interval_days : 7
   };
 }
 

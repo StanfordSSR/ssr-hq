@@ -573,12 +573,35 @@ export default async function SettingsPage() {
                     />
                     <span className="helper">Purchases over this amount require a signed approval.</span>
                   </div>
+                  <label className="hq-switch">
+                    <input type="checkbox" name="signature_reminder_enabled" defaultChecked={reimbursementSettings.signatureReminderEnabled} />
+                    <span className="hq-switch-track" aria-hidden="true" />
+                    <span className="hq-switch-copy">
+                      <strong>Signature enrollment reminders</strong>
+                      <small>Slack nudge to leads &amp; officers who haven&apos;t enrolled a signature.</small>
+                    </span>
+                  </label>
+                  <div className="field">
+                    <label className="label" htmlFor="signature-reminder-interval">Reminder interval (days)</label>
+                    <input
+                      className="input"
+                      id="signature-reminder-interval"
+                      name="signature_reminder_interval_days"
+                      type="number"
+                      min="1"
+                      max="365"
+                      step="1"
+                      defaultValue={reimbursementSettings.signatureReminderIntervalDays.toString()}
+                    />
+                    <span className="helper">How often to re-send the nudge until they enroll (e.g. 7 = weekly).</span>
+                  </div>
                   <div className="button-row"><button className="button" type="submit">Save reimbursement settings</button></div>
                 </form>
               ) : (
                 <div className="hq-summary-list">
                   <div className="hq-summary-row"><span>Public submissions</span><strong>{reimbursementSettings.intakeEnabled ? 'Open' : 'Closed'}</strong></div>
                   <div className="hq-summary-row"><span>Signature threshold</span><strong>${(reimbursementSettings.signatureThresholdCents / 100).toLocaleString()}</strong></div>
+                  <div className="hq-summary-row"><span>Enrollment reminders</span><strong>{reimbursementSettings.signatureReminderEnabled ? `Every ${reimbursementSettings.signatureReminderIntervalDays} days` : 'Off'}</strong></div>
                 </div>
               )}
             </section>
