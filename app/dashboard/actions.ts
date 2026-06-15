@@ -1562,12 +1562,19 @@ export async function updateReimbursementSettingsAction(formData: FormData) {
       }
       const intakeEnabled = String(formData.get('intake_enabled') || '') === 'on';
       const thresholdCents = Math.round(thresholdDollars * 100);
+      const signatureReminderEnabled = String(formData.get('signature_reminder_enabled') || '') === 'on';
+      const intervalRaw = Math.round(
+        Number(String(formData.get('signature_reminder_interval_days') || '7').replace(/[^0-9]/g, ''))
+      );
+      const signatureReminderIntervalDays = Math.min(365, Math.max(1, Number.isFinite(intervalRaw) && intervalRaw > 0 ? intervalRaw : 7));
 
       const admin = createAdminClient();
       const { error } = await admin.from('reimbursement_settings').upsert({
         id: 1,
         signature_threshold_cents: thresholdCents,
         intake_enabled: intakeEnabled,
+        signature_reminder_enabled: signatureReminderEnabled,
+        signature_reminder_interval_days: signatureReminderIntervalDays,
         updated_at: new Date().toISOString()
       });
 
@@ -1581,7 +1588,7 @@ export async function updateReimbursementSettingsAction(formData: FormData) {
         targetType: 'reimbursement_settings',
         targetId: '1',
         summary: 'Updated member reimbursement settings.',
-        details: { thresholdCents, intakeEnabled }
+        details: { thresholdCents, intakeEnabled, signatureReminderEnabled, signatureReminderIntervalDays }
       });
 
       revalidatePaths(REVALIDATE_PATHS.settings);
