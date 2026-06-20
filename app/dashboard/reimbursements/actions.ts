@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getViewerContext } from '@/lib/auth';
 import { recordAuditEvent } from '@/lib/audit';
-import { getActiveTeamLeads, getReimbursementById, finalizeReimbursementDecision } from '@/lib/reimbursements';
+import { getReimbursementById, finalizeReimbursementDecision } from '@/lib/reimbursements';
 import { getLeadTeamIds } from '@/lib/lead-state';
 
 type ActionResult = { ok: boolean; message: string };
@@ -61,13 +61,15 @@ export async function setReimbursementProcessedAction(
   return { ok: true, message: processed ? 'Marked as filed in Granted.' : 'Reopened.' };
 }
 
-// A lead approves/rejects a pending reimbursement from inside the portal. Above
-// the signature threshold this is blocked — those must be signed on the link.
+// A team lead approves/rejects a pending reimbursement for their own team from
+// inside the portal. ONLY active leads of that team may decide — presidents,
+// financial officers and admins cannot approve, they only file approved ones in
+// Granted. Above the signature threshold this is blocked — those must be signed.
 export async function decideReimbursementInPortalAction(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const { user, currentRole } = await getViewerContext();
+  const { user } = await getViewerContext();
   const id = String(formData.get('reimbursement_id') || '').trim();
   const decision = String(formData.get('decision') || '') as 'approved' | 'rejected';
   if (!id || (decision !== 'approved' && decision !== 'rejected')) {
@@ -82,16 +84,10 @@ export async function decideReimbursementInPortalAction(
     return { ok: false, message: `Already ${reimbursement.status}.` };
   }
 
-  // Authorize: admins/presidents anywhere, leads only on their own teams.
-  const isFinanceRole = currentRole === 'admin' || currentRole === 'president';
-  if (!isFinanceRole) {
-    if (currentRole !== 'team_lead') {
-      return { ok: false, message: 'Only a team lead can decide this.' };
-    }
-    const myTeams = await getLeadTeamIds(user.id);
-    if (!myTeams.includes(reimbursement.team_id)) {
-      return { ok: false, message: 'You do not lead this team.' };
-    }
+  // Only an active lead of this reimbursement's team can decide it.
+  const myLeadTeams = await getLeadTeamIds(user.id);
+  if (!myLeadTeams.includes(reimbursement.team_id)) {
+    return { ok: false, message: 'Only a team lead of this team can approve its reimbursements.' };
   }
 
   if (reimbursement.requires_signature && decision === 'approved') {
@@ -101,14 +97,11 @@ export async function decideReimbursementInPortalAction(
     };
   }
 
-  const leads = await getActiveTeamLeads(reimbursement.team_id);
-  const deciderId = leads.some((l) => l.userId === user.id) ? user.id : leads[0]?.userId ?? user.id;
-
   try {
     await finalizeReimbursementDecision({
       reimbursement,
       decision,
-      deciderProfileId: deciderId,
+      deciderProfileId: user.id,
       approvalKind: 'button',
       source: 'portal'
     });

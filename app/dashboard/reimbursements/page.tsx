@@ -48,15 +48,17 @@ export default async function ReimbursementsPage() {
     .order('created_at', { ascending: false })
     .limit(500);
 
-  let myTeamIds: string[] = [];
+  // The teams this viewer actually leads — the only ones they can approve for,
+  // regardless of any finance/president role they also hold.
+  const myLeadTeamIds = await getLeadTeamIds(user.id);
   if (!isFinance) {
-    myTeamIds = await getLeadTeamIds(user.id);
-    if (myTeamIds.length === 0) {
+    if (myLeadTeamIds.length === 0) {
       redirect('/dashboard');
     }
-    query = query.in('team_id', myTeamIds);
+    query = query.in('team_id', myLeadTeamIds);
   }
 
+  const leadTeamSet = new Set(myLeadTeamIds);
   const { data: rowsData } = await query;
   const rows = (rowsData || []) as ReimbursementRow[];
 
@@ -145,11 +147,15 @@ export default async function ReimbursementsPage() {
                       '—'
                     )}</td>
                     <td>
-                      <PortalDecideButtons
-                        id={r.id}
-                        requiresSignature={r.requires_signature}
-                        token={r.decision_token}
-                      />
+                      {leadTeamSet.has(r.team_id) ? (
+                        <PortalDecideButtons
+                          id={r.id}
+                          requiresSignature={r.requires_signature}
+                          token={r.decision_token}
+                        />
+                      ) : (
+                        <span className="hq-inline-note">Awaiting team lead</span>
+                      )}
                     </td>
                   </tr>
                 ))}
