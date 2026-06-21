@@ -124,6 +124,17 @@ export function LeadershipExpenseLogger({
             </div>
           </div>
 
+          <div className="field">
+            <label className="label" htmlFor="leadership-category">
+              Category
+            </label>
+            <select className="select" id="leadership-category" name="category" defaultValue="equipment">
+              <option value="equipment">Equipment</option>
+              <option value="food">Food</option>
+              <option value="travel">Travel</option>
+            </select>
+          </div>
+
           {paymentMethod === 'credit_card' ? (
             <div className="field">
               <label className="label" htmlFor="leadership-receipt">

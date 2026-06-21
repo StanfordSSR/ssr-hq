@@ -195,7 +195,9 @@ export function mergeQuestions(stored: unknown): EoyQuestionConfig {
 
 export function getEoyWindow(academicYear: string, dueMonthDay: string) {
   const startYear = parseStartYear(academicYear);
-  const dueAt = new Date(`${startYear + 1}-${dueMonthDay}T12:00:00-08:00`);
+  // Due at 6 PM Pacific on the configured day. The EOY deadline is always in
+  // June (PDT), so -07:00 is the correct Pacific offset.
+  const dueAt = new Date(`${startYear + 1}-${dueMonthDay}T18:00:00-07:00`);
   const openAt = new Date(dueAt.getTime() - OPEN_WINDOW_DAYS * DAY_MS);
   return { openAt, dueAt };
 }

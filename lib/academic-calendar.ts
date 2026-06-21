@@ -106,6 +106,18 @@ export function formatDateLabel(date: Date) {
   }).format(date);
 }
 
+// Same as formatDateLabel but pinned to Pacific time, so an instant near
+// midnight UTC (e.g. a 6 PM Pacific deadline, which is the next day in UTC)
+// still shows the intended Pacific calendar day.
+export function formatPacificDateLabel(date: Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'America/Los_Angeles'
+  }).format(date);
+}
+
 export function formatCountdown(target: Date, now: Date) {
   const diff = target.getTime() - now.getTime();
   const days = Math.max(0, Math.ceil(diff / DAY_MS));

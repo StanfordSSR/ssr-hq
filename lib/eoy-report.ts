@@ -2,7 +2,7 @@ import { cache } from 'react';
 import { createAdminClient } from '@/lib/supabase-admin';
 import {
   formatCountdown,
-  formatDateLabel,
+  formatPacificDateLabel,
   formatPacificDateKey,
   getCurrentAcademicYear,
   getNextAcademicYear,
@@ -29,7 +29,7 @@ const getEoyReportSettingsCached = cache(async function getEoyReportSettingsCach
     .maybeSingle();
 
   return {
-    dueMonthDay: isMonthDay(data?.due_month_day) ? data!.due_month_day : '06-20',
+    dueMonthDay: isMonthDay(data?.due_month_day) ? data!.due_month_day : '06-21',
     emailEnabled: data?.email_enabled ?? true,
     slackEnabled: data?.slack_enabled ?? false,
     reminderDays: Array.isArray(data?.reminder_days) && data!.reminder_days.length ? data!.reminder_days : [14, 7, 1],
@@ -52,15 +52,15 @@ export async function getEoyReportState(now = new Date()): Promise<EoyReportStat
 
   if (now < openAt) {
     reportState = 'upcoming';
-    message = `${EOY_REPORT_TITLE} opens on ${formatDateLabel(openAt)}.`;
+    message = `${EOY_REPORT_TITLE} opens on ${formatPacificDateLabel(openAt)}.`;
     countdownTarget = openAt;
   } else if (now <= dueAt) {
     reportState = 'open';
-    message = `${EOY_REPORT_TITLE} is open and due by ${formatDateLabel(dueAt)}.`;
+    message = `${EOY_REPORT_TITLE} is open and due by ${formatPacificDateLabel(dueAt)} at 6 PM PT.`;
     countdownTarget = dueAt;
   } else {
     reportState = 'closed';
-    message = `${EOY_REPORT_TITLE} closed on ${formatDateLabel(dueAt)}.`;
+    message = `${EOY_REPORT_TITLE} closed on ${formatPacificDateLabel(dueAt)} at 6 PM PT.`;
     countdownTarget = dueAt;
   }
 
