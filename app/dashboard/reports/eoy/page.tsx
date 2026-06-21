@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getViewerContext } from '@/lib/auth';
-import { formatDateLabel } from '@/lib/academic-calendar';
+import { formatDateLabel, formatPacificDateLabel } from '@/lib/academic-calendar';
 import {
   EOY_REPORT_TITLE,
   applyEoyQuestionTokens,
@@ -253,7 +253,7 @@ export default async function EoyReportPage({
           <div className="hq-report-card">
             <strong>{EOY_REPORT_TITLE}</strong>
             <span>{state.message}</span>
-            <p>Opens on {formatDateLabel(state.openAt)} and is due {formatDateLabel(state.dueAt)}.</p>
+            <p>Opens on {formatPacificDateLabel(state.openAt)} and is due {formatPacificDateLabel(state.dueAt)} at 6 PM PT.</p>
           </div>
         </section>
       ) : state.reportState === 'closed' && report?.status !== 'submitted' ? (
@@ -301,7 +301,7 @@ export default async function EoyReportPage({
             <h3>
               {teamName} · {state.academicYear}
             </h3>
-            <span className="hq-inline-note">Due {formatDateLabel(state.dueAt)}</span>
+            <span className="hq-inline-note">Due {formatPacificDateLabel(state.dueAt)} at 6 PM PT</span>
           </div>
 
           <EoyReportEditor
