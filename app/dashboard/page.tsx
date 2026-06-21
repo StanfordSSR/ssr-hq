@@ -9,6 +9,7 @@ import { formatQuarterReportTitle } from '@/lib/reports';
 import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
+import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
 
 type Team = {
   id: string;
@@ -168,7 +169,7 @@ export default async function DashboardPage() {
   const isFinancialOfficer = currentRole === 'financial_officer';
 
   if (isAdmin || isPresident || isFinancialOfficer) {
-    const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }] = await Promise.all([
+    const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }, academicYear] = await Promise.all([
       admin
         .from('teams')
         .select('id, name, description, logo_url, is_active, created_at')
@@ -182,7 +183,8 @@ export default async function DashboardPage() {
         .from('profiles')
         .select('id', { count: 'exact', head: true })
         .eq('active', true),
-      admin.from('team_roster_members').select('id')
+      admin.from('team_roster_members').select('id'),
+      getCurrentAcademicYear()
     ]);
     const teams = (teamsData || []) as Team[];
     const memberships = (membershipsData || []) as Membership[];
@@ -219,6 +221,10 @@ export default async function DashboardPage() {
             </div>
           </div>
         </section>
+
+        {isAdmin || isPresident ? (
+          <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} />
+        ) : null}
 
         <section className="hq-admin-grid">
           {(isAdmin ? adminCards : isPresident ? presidentCards : financialOfficerCards).map((card) => (
