@@ -11,7 +11,6 @@ import {
 import {
   EOY_REPORT_TITLE,
   getEoyWindow,
-  isMonthDay,
   mergeQuestions,
   type EoyMemberRef,
   type EoyReportSettings,
@@ -29,7 +28,12 @@ const getEoyReportSettingsCached = cache(async function getEoyReportSettingsCach
     .maybeSingle();
 
   return {
-    dueMonthDay: isMonthDay(data?.due_month_day) ? data!.due_month_day : '06-21',
+    // TEMPORARY OVERRIDE: force the year-end deadline to June 21 regardless of
+    // the stored setting (admin can't reach Club Settings to change it right
+    // now). To restore admin control, change this back to:
+    //   isMonthDay(data?.due_month_day) ? data!.due_month_day : '06-21'
+    // and re-add `isMonthDay` to the eoy-report-shared import above.
+    dueMonthDay: '06-21',
     emailEnabled: data?.email_enabled ?? true,
     slackEnabled: data?.slack_enabled ?? false,
     reminderDays: Array.isArray(data?.reminder_days) && data!.reminder_days.length ? data!.reminder_days : [14, 7, 1],
