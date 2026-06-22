@@ -132,6 +132,7 @@ export function LeadershipExpenseLogger({
               <option value="equipment">Equipment</option>
               <option value="food">Food</option>
               <option value="travel">Travel</option>
+              <option value="registration">Registration</option>
             </select>
           </div>
 

@@ -9,7 +9,7 @@ import {
   type ReportingWindow
 } from '@/lib/academic-calendar';
 
-export const EXPENSE_CATEGORIES = ['equipment', 'food', 'travel', 'other'] as const;
+export const EXPENSE_CATEGORIES = ['equipment', 'food', 'travel', 'registration', 'other'] as const;
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
 export type LockCadence = 'yearly' | 'quarterly' | 'unlocked';
 export type BudgetPlanStatus = 'draft' | 'pending_approval' | 'approved' | 'superseded';
@@ -18,6 +18,7 @@ export const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   equipment: 'Equipment',
   food: 'Food',
   travel: 'Travel',
+  registration: 'Registration',
   other: 'Other'
 };
 

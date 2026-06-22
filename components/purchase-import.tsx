@@ -43,7 +43,7 @@ type PreparedPurchase = {
   personName?: string;
   purchasedAt?: string;
   paymentMethod: PaymentMethod;
-  category: 'equipment' | 'food' | 'travel';
+  category: 'equipment' | 'food' | 'travel' | 'registration';
 };
 
 const initialState = {
