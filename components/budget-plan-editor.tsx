@@ -85,6 +85,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   equipment: 'Equipment',
   food: 'Food',
   travel: 'Travel',
+  registration: 'Registration',
   other: 'Other'
 };
 const SOURCE_KIND_LABELS: Record<string, string> = {
@@ -99,6 +100,7 @@ const CATEGORY_OPTIONS: Array<[string, string]> = [
   ['equipment', 'Equipment'],
   ['food', 'Food'],
   ['travel', 'Travel'],
+  ['registration', 'Registration'],
   ['other', 'Other']
 ];
 
@@ -115,8 +117,8 @@ function autoSave(event: { currentTarget: { form: HTMLFormElement | null } }) {
   event.currentTarget.form?.requestSubmit();
 }
 
-const CATEGORY_RANK: Record<string, number> = { equipment: 0, food: 1, travel: 2, other: 3 };
-const AG_ABBR: Record<string, string> = { equipment: 'equi', food: 'food', travel: 'trav', other: 'other' };
+const CATEGORY_RANK: Record<string, number> = { equipment: 0, food: 1, travel: 2, registration: 3, other: 4 };
+const AG_ABBR: Record<string, string> = { equipment: 'equi', food: 'food', travel: 'trav', registration: 'reg', other: 'other' };
 const SHEET_HEAD_LABELS = ['Type', 'Line item', 'Team / kind', 'Category', 'Lock', 'Amount', 'Funded by / notes', ''];
 const DEFAULT_COLS = [78, 230, 146, 110, 100, 116, 250, 56];
 
@@ -634,7 +636,7 @@ export function BudgetPlanEditor(props: Props) {
 
   const renderAddSubRow = (parent: Expense, children: Expense[]) => {
     const used = new Set(children.map((c) => c.category));
-    const available = (['equipment', 'food', 'travel', 'other'] as const).filter((c) => !used.has(c));
+    const available = (['equipment', 'food', 'travel', 'registration', 'other'] as const).filter((c) => !used.has(c));
     if (available.length === 0) return null;
     return (
       <AddSubRow

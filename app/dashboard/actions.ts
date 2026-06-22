@@ -934,7 +934,10 @@ export async function logPurchaseAction(formData: FormData) {
       const categoryValue = String(formData.get('category') || 'equipment').trim();
       const receiptFile = formData.get('receipt');
       const category =
-        categoryValue === 'food' || categoryValue === 'travel' || categoryValue === 'equipment'
+        categoryValue === 'food' ||
+        categoryValue === 'travel' ||
+        categoryValue === 'equipment' ||
+        categoryValue === 'registration'
           ? categoryValue
           : detectPurchaseCategory(description);
 
@@ -1144,7 +1147,10 @@ export async function importPurchasesAction(
         purchased_at: normalizedPurchasedAt,
         payment_method: normalizedPaymentMethod,
         category:
-          purchase.category === 'food' || purchase.category === 'travel' || purchase.category === 'equipment'
+          purchase.category === 'food' ||
+          purchase.category === 'travel' ||
+          purchase.category === 'equipment' ||
+          purchase.category === 'registration'
             ? purchase.category
             : detectPurchaseCategory(description),
         receipt_not_needed: true
@@ -1210,7 +1216,12 @@ export async function updatePurchaseCategoryAction(formData: FormData) {
         throw new Error('Missing purchase id.');
       }
 
-      if (category !== 'equipment' && category !== 'food' && category !== 'travel') {
+      if (
+        category !== 'equipment' &&
+        category !== 'food' &&
+        category !== 'travel' &&
+        category !== 'registration'
+      ) {
         throw new Error('Invalid category.');
       }
 
@@ -1258,7 +1269,10 @@ export async function updatePurchaseDetailsAction(formData: FormData) {
       const paymentMethod = normalizePaymentMethod(String(formData.get('payment_method') || 'unknown'));
       const categoryValue = String(formData.get('category') || 'equipment').trim();
       const category =
-        categoryValue === 'food' || categoryValue === 'travel' || categoryValue === 'equipment'
+        categoryValue === 'food' ||
+        categoryValue === 'travel' ||
+        categoryValue === 'equipment' ||
+        categoryValue === 'registration'
           ? categoryValue
           : detectPurchaseCategory(description);
 
@@ -4389,9 +4403,9 @@ export async function createBudgetPlanAction(formData: FormData) {
       });
       if (error) throw new Error(error.message);
 
-      // Four permanent annual-grant rows — one per category.
+      // Permanent annual-grant rows — one per category.
       await admin.from('budget_funding_sources').insert(
-        (['equipment', 'food', 'travel', 'other'] as const).map((category, index) => ({
+        (['equipment', 'food', 'travel', 'registration', 'other'] as const).map((category, index) => ({
           plan_id: planId,
           label: 'Annual grant',
           kind: 'annual_grant',
@@ -4405,7 +4419,7 @@ export async function createBudgetPlanAction(formData: FormData) {
       const { data: teams } = await admin.from('teams').select('id, name').eq('is_active', true).order('name');
       const categoryRows: Array<Record<string, unknown>> = [];
       (((teams || []) as Array<{ id: string; name: string }>) || []).forEach((team, teamIndex) => {
-        (['equipment', 'food', 'travel'] as const).forEach((category, categoryIndex) => {
+        (['equipment', 'food', 'travel', 'registration'] as const).forEach((category, categoryIndex) => {
           categoryRows.push({
             plan_id: planId,
             kind: 'team',
@@ -4457,7 +4471,7 @@ export async function upsertFundingSourceAction(formData: FormData) {
   await ensureEditableDraft(admin, planId, plan.status);
 
   const kind = ['annual_grant', 'reserve_grant', 'grant', 'sponsorship', 'other'].includes(kindRaw) ? kindRaw : 'other';
-  const category = ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
+  const category = ['equipment', 'food', 'travel', 'registration', 'other'].includes(categoryRaw) ? categoryRaw : null;
 
   if (kind === 'annual_grant') {
     const { data: existing } = await admin
@@ -4529,8 +4543,8 @@ export async function upsertExpenseItemAction(formData: FormData) {
   const kind = ['team', 'event', 'operations', 'general'].includes(kindRaw) ? kindRaw : 'general';
   const lockCadence = ['yearly', 'quarterly', 'unlocked'].includes(lockCadenceRaw) ? lockCadenceRaw : 'yearly';
   const category =
-    (kind === 'team' || isSubItem) && ['equipment', 'food', 'travel', 'other'].includes(categoryRaw) ? categoryRaw : null;
-  const categoryLabels: Record<string, string> = { equipment: 'Equipment', food: 'Food', travel: 'Travel', other: 'Other' };
+    (kind === 'team' || isSubItem) && ['equipment', 'food', 'travel', 'registration', 'other'].includes(categoryRaw) ? categoryRaw : null;
+  const categoryLabels: Record<string, string> = { equipment: 'Equipment', food: 'Food', travel: 'Travel', registration: 'Registration', other: 'Other' };
 
   // Team rows and sub-items get derived labels; other kinds use the typed label.
   let resolvedLabel = label;
@@ -4700,7 +4714,7 @@ export async function reorderBudgetItemsAction(
   revalidateBudgetPlan();
 }
 
-// Wipe a plan's team category rows and recreate a clean Equipment/Food/Travel
+// Wipe a plan's team category rows and recreate a clean Equipment/Food/Travel/Registration
 // set for every active team.
 export async function resetTeamBudgetsAction(formData: FormData) {
   await requireAdmin();
@@ -4719,7 +4733,8 @@ export async function resetTeamBudgetsAction(formData: FormData) {
   const categories: Array<[string, string]> = [
     ['equipment', 'Equipment'],
     ['food', 'Food'],
-    ['travel', 'Travel']
+    ['travel', 'Travel'],
+    ['registration', 'Registration']
   ];
   const rows: Array<Record<string, unknown>> = [];
   ((teams || []) as Array<{ id: string; name: string }>).forEach((team, teamIndex) => {

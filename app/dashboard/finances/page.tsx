@@ -31,7 +31,7 @@ type PurchaseLog = {
   team_id: string;
   amount_cents: number;
   purchased_at: string;
-  category: 'equipment' | 'food' | 'travel';
+  category: 'equipment' | 'food' | 'travel' | 'registration';
   description?: string;
   person_name?: string | null;
   payment_method?: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
@@ -44,10 +44,11 @@ const paymentMethodLabel: Record<'reimbursement' | 'credit_card' | 'amazon' | 'u
   unknown: 'Unknown'
 };
 
-const categoryLabel: Record<'equipment' | 'food' | 'travel', string> = {
+const categoryLabel: Record<'equipment' | 'food' | 'travel' | 'registration', string> = {
   equipment: 'Equipment',
   food: 'Food',
-  travel: 'Travel'
+  travel: 'Travel',
+  registration: 'Registration'
 };
 
 function readSingle(value: string | string[] | undefined) {
@@ -197,6 +198,7 @@ export default async function FinancesPage({
     equipment: '#8c1515',
     food: '#d17c3f',
     travel: '#3f6e8f',
+    registration: '#5b8c5a',
     prior: '#8c8585',
     unused: '#dfd7d7'
   } as const;
@@ -209,6 +211,9 @@ export default async function FinancesPage({
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
     travel: filteredPurchases
       .filter((purchase) => purchase.category === 'travel')
+      .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
+    registration: filteredPurchases
+      .filter((purchase) => purchase.category === 'registration')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0)
   };
 
@@ -229,7 +234,8 @@ export default async function FinancesPage({
       : ([
           { id: 'equipment', name: 'Equipment', amount: categoryTotals.equipment, color: categoryColors.equipment },
           { id: 'food', name: 'Food', amount: categoryTotals.food, color: categoryColors.food },
-          { id: 'travel', name: 'Travel', amount: categoryTotals.travel, color: categoryColors.travel }
+          { id: 'travel', name: 'Travel', amount: categoryTotals.travel, color: categoryColors.travel },
+          { id: 'registration', name: 'Registration', amount: categoryTotals.registration, color: categoryColors.registration }
         ].filter((entry) => entry.amount > 0) as Array<{ id: string; name: string; amount: number; color: string }>);
 
   if (validSelectedTeamId === 'all') {

@@ -10,7 +10,7 @@ type PurchaseEntryActionsProps = {
   purchasedAt: string;
   personName: string | null;
   paymentMethod: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel';
+  category: 'equipment' | 'food' | 'travel' | 'registration';
 };
 
 export function PurchaseEntryActions({
@@ -71,6 +71,7 @@ export function PurchaseEntryActions({
               <option value="equipment">Equipment</option>
               <option value="food">Food</option>
               <option value="travel">Travel</option>
+              <option value="registration">Registration</option>
             </select>
           </div>
 

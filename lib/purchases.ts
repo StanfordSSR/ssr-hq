@@ -1,4 +1,4 @@
-export type PurchaseCategory = 'equipment' | 'food' | 'travel';
+export type PurchaseCategory = 'equipment' | 'food' | 'travel' | 'registration';
 export type PurchasePaymentMethod = 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
 export type ReceiptNotificationSettings = {
   emailEnabled: boolean;
@@ -13,6 +13,8 @@ export const RECEIPT_ALLOWED_TYPES = ['application/pdf', 'image/png', 'image/jpe
 const FOOD_PATTERN =
   /(pizza|boba|food|meal|snack|lunch|dinner|breakfast|coffee|cafe|restaurant|doordash|ubereats)/;
 const TRAVEL_PATTERN = /(zipcar|hertz|uber|lyft|flight|gas|fuel|hotel|mileage|parking|train|travel|car\b)/;
+const REGISTRATION_PATTERN =
+  /(registration|register|entry fee|tournament fee|competition fee|league fee|sign[- ]?up fee|dues)/;
 
 export function detectPurchaseCategory(description: string): PurchaseCategory {
   const value = description.toLowerCase();
@@ -23,6 +25,10 @@ export function detectPurchaseCategory(description: string): PurchaseCategory {
 
   if (TRAVEL_PATTERN.test(value)) {
     return 'travel';
+  }
+
+  if (REGISTRATION_PATTERN.test(value)) {
+    return 'registration';
   }
 
   return 'equipment';

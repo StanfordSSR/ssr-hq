@@ -5,7 +5,7 @@ import { updatePurchaseCategoryAction } from '@/app/dashboard/actions';
 
 type PurchaseCategoryFormProps = {
   purchaseId: string;
-  category: 'equipment' | 'food' | 'travel';
+  category: 'equipment' | 'food' | 'travel' | 'registration';
 };
 
 export function PurchaseCategoryForm({ purchaseId, category }: PurchaseCategoryFormProps) {
@@ -18,6 +18,7 @@ export function PurchaseCategoryForm({ purchaseId, category }: PurchaseCategoryF
         <option value="equipment">Equipment</option>
         <option value="food">Food</option>
         <option value="travel">Travel</option>
+        <option value="registration">Registration</option>
       </select>
       <button className="button-secondary" type="submit">
         Save

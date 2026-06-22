@@ -13,6 +13,7 @@ describe('detectPurchaseCategory', () => {
     expect(detectPurchaseCategory('Boba run')).toBe('food');
     expect(detectPurchaseCategory('Zipcar rental')).toBe('travel');
     expect(detectPurchaseCategory('Flight to competition')).toBe('travel');
+    expect(detectPurchaseCategory('Tournament registration fee')).toBe('registration');
     expect(detectPurchaseCategory('Motor controller')).toBe('equipment');
   });
 });

@@ -32,7 +32,7 @@ type Purchase = {
   purchased_at: string;
   person_name: string | null;
   payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel';
+  category: 'equipment' | 'food' | 'travel' | 'registration';
   receipt_path: string | null;
   receipt_file_name: string | null;
   receipt_not_needed: boolean;
@@ -48,13 +48,15 @@ const paymentMethodLabel: Record<Purchase['payment_method'], string> = {
 const categoryLabel: Record<Purchase['category'], string> = {
   equipment: 'Equipment',
   food: 'Food',
-  travel: 'Travel'
+  travel: 'Travel',
+  registration: 'Registration'
 };
 
 const categoryColors: Record<Purchase['category'] | 'unused', string> = {
   equipment: '#8c1515',
   food: '#d17c3f',
   travel: '#3f6e8f',
+  registration: '#5b8c5a',
   unused: '#dfd7d7'
 };
 
@@ -238,6 +240,9 @@ export default async function ExpenseLogPage({
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
     travel: summaryPurchases
       .filter((purchase) => purchase.category === 'travel')
+      .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
+    registration: summaryPurchases
+      .filter((purchase) => purchase.category === 'registration')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0)
   };
 
@@ -351,6 +356,10 @@ export default async function ExpenseLogPage({
                 <div>
                   <span style={{ color: categoryColors.travel }}>Travel</span>
                   <strong>${(categoryTotals.travel / 100).toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span style={{ color: categoryColors.registration }}>Registration</span>
+                  <strong>${(categoryTotals.registration / 100).toLocaleString()}</strong>
                 </div>
                 {alreadySpentBeforeRangeCents > 0 ? (
                   <div>
