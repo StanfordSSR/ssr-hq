@@ -10,6 +10,7 @@ import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
+import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
 
 type Team = {
   id: string;
@@ -225,6 +226,8 @@ export default async function DashboardPage() {
         {isAdmin || isPresident ? (
           <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} />
         ) : null}
+
+        {isAdmin || isPresident ? <VisitorLinkGenerator /> : null}
 
         <section className="hq-admin-grid">
           {(isAdmin ? adminCards : isPresident ? presidentCards : financialOfficerCards).map((card) => (

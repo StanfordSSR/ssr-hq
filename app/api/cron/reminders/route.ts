@@ -3,6 +3,7 @@ import { env } from '@/lib/env';
 import { runQueuedNotificationsCron } from '@/lib/notification-queue';
 import { purgeOldSubmissionFootprints } from '@/lib/reimbursements';
 import { runSignatureEnrollmentReminderCron } from '@/lib/signature-reminders';
+import { purgeExpiredVisitorAgreements } from '@/lib/visitor-agreements';
 
 export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization');
@@ -13,9 +14,11 @@ export async function GET(request: NextRequest) {
   const result = await runQueuedNotificationsCron();
   const footprints = await purgeOldSubmissionFootprints();
   const signatureReminders = await runSignatureEnrollmentReminderCron();
+  const visitorAgreements = await purgeExpiredVisitorAgreements();
   return NextResponse.json({
     ...result,
     footprintsPurged: footprints.purged,
-    signatureReminders
+    signatureReminders,
+    visitorAgreementsPurged: visitorAgreements.deleted
   });
 }
