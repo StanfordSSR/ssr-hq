@@ -3,8 +3,19 @@ import {
   extractSignatureFeatures,
   parseStrokes,
   verifySignature,
-  type SignatureProfile
+  type SignatureProfile,
+  type SignatureStroke
 } from '@/lib/signature-verify';
+import type { SubmissionGeo } from '@/lib/reimbursements';
+
+export type VisitorSignerMeta = {
+  language?: string;
+  timezone?: string;
+  screenW?: number;
+  screenH?: number;
+  platform?: string;
+  userAgent?: string;
+};
 
 // External visitor access agreements. A president (or admin) issues an
 // unguessable contract link, signs it (verified against their enrolled
@@ -32,6 +43,9 @@ export type VisitorAgreement = {
   signed_at: string | null;
   signer_ip: string | null;
   signer_user_agent: string | null;
+  participant_signature_strokes: SignatureStroke[] | null;
+  signer_geo: SubmissionGeo | null;
+  signer_meta: VisitorSignerMeta | null;
   created_at: string;
   updated_at: string;
 };

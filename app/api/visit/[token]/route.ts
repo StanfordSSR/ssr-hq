@@ -3,10 +3,13 @@ import { env } from '@/lib/env';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
 import { sendVisitorBadgeEmail } from '@/lib/notifications';
+import { extractSubmissionFootprint } from '@/lib/reimbursements';
+import { extractSignatureFeatures, parseStrokes } from '@/lib/signature-verify';
 import {
   generateToken,
   getAgreementByContractToken,
-  isAgreementExpired
+  isAgreementExpired,
+  type VisitorSignerMeta
 } from '@/lib/visitor-agreements';
 
 export const runtime = 'nodejs';
@@ -30,6 +33,34 @@ function firstHeaderValue(value: string | null): string | null {
   if (!value) return null;
   const first = value.split(',')[0]?.trim();
   return first || null;
+}
+
+// Keep only the known client-meta keys, capping string lengths and ignoring
+// anything else the client might send. Returns null when nothing usable came
+// through so we don't store an empty object.
+function sanitizeSignerMeta(raw: unknown): VisitorSignerMeta | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const input = raw as Record<string, unknown>;
+  const str = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() ? value.trim().slice(0, 400) : undefined;
+  const num = (value: unknown): number | undefined =>
+    typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+  const meta: VisitorSignerMeta = {};
+  const language = str(input.language);
+  const timezone = str(input.timezone);
+  const platform = str(input.platform);
+  const userAgent = str(input.userAgent);
+  const screenW = num(input.screenW);
+  const screenH = num(input.screenH);
+  if (language !== undefined) meta.language = language;
+  if (timezone !== undefined) meta.timezone = timezone;
+  if (platform !== undefined) meta.platform = platform;
+  if (userAgent !== undefined) meta.userAgent = userAgent;
+  if (screenW !== undefined) meta.screenW = screenW;
+  if (screenH !== undefined) meta.screenH = screenH;
+
+  return Object.keys(meta).length > 0 ? meta : null;
 }
 
 // Public endpoint: an external visitor signs the contract behind a contract
@@ -59,6 +90,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     phone?: unknown;
     acknowledgements?: unknown;
     signature?: unknown;
+    strokes?: unknown;
+    client_meta?: unknown;
   };
   try {
     body = await request.json();
@@ -106,6 +139,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
   }
 
+  // Ensure a real signature was actually drawn (not an empty pad or a one-dot
+  // scribble) by deriving features from the captured pen path.
+  const strokes = parseStrokes(body.strokes);
+  if (!extractSignatureFeatures(strokes)) {
+    return NextResponse.json(
+      { error: 'Please draw your full signature.' },
+      { status: 400 }
+    );
+  }
+
+  const signerGeo = extractSubmissionFootprint(request.headers).geo;
+  const signerMeta = sanitizeSignerMeta(body.client_meta);
+
   const signerIp =
     firstHeaderValue(request.headers.get('x-forwarded-for')) ||
     request.headers.get('x-real-ip') ||
@@ -127,6 +173,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       signed_at: new Date().toISOString(),
       signer_ip: signerIp,
       signer_user_agent: signerUserAgent,
+      participant_signature_strokes: strokes,
+      signer_geo: signerGeo,
+      signer_meta: signerMeta,
       status: 'signed',
       badge_token: badgeToken
     })
