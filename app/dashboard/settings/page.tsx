@@ -32,6 +32,7 @@ import { getEoyReportSettings } from '@/lib/eoy-report';
 import { StatementReconciliation } from '@/components/statement-reconciliation';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { SettingsTabs } from '@/components/settings-tabs';
+import { formatAgreementDateRange } from '@/lib/visitor-agreements';
 import {
   getRoleLabel,
   getViewerContext,
@@ -77,7 +78,8 @@ export default async function SettingsPage() {
     allProfilesResponse,
     rosterMembersResponse,
     eoyReportSettings,
-    reimbursementSettings
+    reimbursementSettings,
+    visitorAgreementsResponse
   ] =
     await Promise.all([
       getAcademicCalendarSettings(),
@@ -98,7 +100,15 @@ export default async function SettingsPage() {
         .select('id, team_id, full_name, stanford_email, slack_user_id, teams(name)')
         .order('full_name'),
       getEoyReportSettings(),
-      getReimbursementSettings()
+      getReimbursementSettings(),
+      admin
+        .from('visitor_agreements')
+        .select(
+          'id, participant_name, participant_university, participant_email, issuer_name, access_start, access_end, signed_at, signer_ip, status'
+        )
+        .eq('status', 'signed')
+        .order('signed_at', { ascending: false })
+        .limit(200)
     ]);
   const currentAcademicYear = calendarSettings.effectiveAcademicYear;
   const nextAcademicYear = calendarSettings.nextAcademicYear;
@@ -123,6 +133,18 @@ export default async function SettingsPage() {
   const queuedNotificationsData = queuedNotificationsResponse.data || [];
   const auditEntriesData = auditEntriesResponse.data || [];
   const allProfilesData = allProfilesResponse.data || [];
+  const signedVisitorAgreements = (visitorAgreementsResponse.data || []) as Array<{
+    id: string;
+    participant_name: string | null;
+    participant_university: string | null;
+    participant_email: string | null;
+    issuer_name: string;
+    access_start: string;
+    access_end: string;
+    signed_at: string | null;
+    signer_ip: string | null;
+    status: string;
+  }>;
   const reportQuestions = reportQuestionsData.map((question) => ({
     id: question.id,
     prompt: question.prompt,
@@ -956,6 +978,60 @@ export default async function SettingsPage() {
                       </div>
                     )) : <p className="empty-note">Audit events will appear here as club data changes.</p>}
                   </div>
+                </section>
+              )
+            },
+            {
+              id: 'visitors',
+              label: 'Visitor agreements',
+              content: (
+                <section className="hq-lead-block">
+                  <div className="hq-block-head">
+                    <h3>Signed visitor agreements</h3>
+                  </div>
+                  <p className="helper">
+                    External participants who have signed the access agreement. Open one to review
+                    the full signed document and signing evidence.
+                  </p>
+                  {signedVisitorAgreements.length > 0 ? (
+                    <div className="table-wrap hq-table-wrap-compact">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Participant</th>
+                            <th>University</th>
+                            <th>Issued by</th>
+                            <th>Access dates</th>
+                            <th>Signed</th>
+                            <th>IP</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {signedVisitorAgreements.map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.participant_name || 'Unnamed participant'}</td>
+                              <td>{row.participant_university || '—'}</td>
+                              <td>{row.issuer_name}</td>
+                              <td>{formatAgreementDateRange(row.access_start, row.access_end)}</td>
+                              <td>{row.signed_at ? formatAuditTimestamp(row.signed_at) : '—'}</td>
+                              <td>{row.signer_ip || '—'}</td>
+                              <td>
+                                <Link
+                                  href={`/dashboard/visitor-agreements/${row.id}`}
+                                  className="hq-inline-link"
+                                >
+                                  View signed agreement
+                                </Link>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="empty-note">No signed visitor agreements yet.</p>
+                  )}
                 </section>
               )
             }

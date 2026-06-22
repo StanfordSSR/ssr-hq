@@ -2,7 +2,15 @@
 
 import { useState } from 'react';
 
-type SettingsTabId = 'board' | 'reminders' | 'continuity' | 'reporting' | 'reconciliation' | 'slack' | 'audit';
+type SettingsTabId =
+  | 'board'
+  | 'reminders'
+  | 'continuity'
+  | 'reporting'
+  | 'reconciliation'
+  | 'slack'
+  | 'audit'
+  | 'visitors';
 
 export function SettingsTabs({
   initialTab,
