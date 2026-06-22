@@ -279,6 +279,37 @@ export async function sendReceiptDigestEmail({
   await sendEmail({ to, subject, text, html });
 }
 
+export async function sendVisitorBadgeEmail({
+  to,
+  name,
+  badgeUrl,
+  accessEnd
+}: {
+  to: string;
+  name: string;
+  badgeUrl: string;
+  accessEnd: string;
+}) {
+  const firstName = name.trim().split(/\s+/)[0] || 'there';
+  const validThrough = new Date(`${accessEnd}T12:00:00`).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+  const subject = 'Your SSR visitor badge';
+  const text = `Hi ${firstName},\n\nThanks for completing the Stanford Student Robotics external participant access agreement. Open your visitor badge here:\n${badgeUrl}\n\nShow this animated badge when you arrive. It works until ${validThrough}.\n\nSSR HQ`;
+  const html = renderEmailFrame({
+    eyebrow: 'Visitor access',
+    heading: `Welcome, ${name}`,
+    body: `<p style="margin:0 0 14px;">Thanks for completing the Stanford Student Robotics external participant access agreement.</p><p style="margin:0 0 14px;">Open the link below to view your visitor badge. It shows your name and a live clock — present it on your phone when you arrive at the facilities.</p><p style="margin:0;">Keep this email handy; the badge link works through your access window.</p>`,
+    footer: `This badge is valid through ${validThrough}. If you did not request access, you can ignore this email.`,
+    ctaLabel: 'Open your badge',
+    ctaUrl: badgeUrl
+  });
+
+  await sendEmail({ to: [to], subject, text, html });
+}
+
 export async function sendReportReminderEmail({
   to,
   teamName,
