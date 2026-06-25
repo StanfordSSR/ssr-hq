@@ -56,12 +56,20 @@ export function LoginForm() {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: redirectTo
+        emailRedirectTo: redirectTo,
+        // Accounts are invite-only: never create a new user from a login
+        // attempt. Only emails an admin has already invited can sign in.
+        shouldCreateUser: false
       }
     });
 
     if (error) {
-      setError(error.message);
+      const inviteOnly = /signup|sign-?up|not allowed|otp|disabled|not found|user/i.test(error.message);
+      setError(
+        inviteOnly
+          ? 'This email isn’t registered for HQ. Accounts are invite-only — ask an admin to invite you.'
+          : error.message
+      );
       setLoading(false);
       return;
     }
