@@ -58,7 +58,7 @@ export default async function EoyReportPage({
   const admin = createAdminClient();
   const { user, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
-  const isPresident = currentRole === 'president';
+  const isPresident = currentRole === 'president' || currentRole === 'vice_president';
 
   const state = await getEoyReportState(new Date());
   const settings = await getEoyReportSettings();
@@ -91,7 +91,7 @@ export default async function EoyReportPage({
         <div className="hq-page">
           <section className="hq-page-head">
             <div className="hq-page-head-copy">
-              <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'President'}</p>
+              <p className="hq-eyebrow">{isAdmin ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : 'President'}</p>
               <h1 className="hq-page-title">End-of-year report detail</h1>
               <p className="hq-subtitle">
                 {teamName} · {selectedReport.academic_year} · {selectedReport.status}
@@ -130,7 +130,7 @@ export default async function EoyReportPage({
       <div className="hq-page">
         <section className="hq-page-head">
           <div className="hq-page-head-copy">
-            <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'President'}</p>
+            <p className="hq-eyebrow">{isAdmin ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : 'President'}</p>
             <h1 className="hq-page-title">{EOY_REPORT_TITLE}</h1>
             <p className="hq-subtitle">{state.message}</p>
           </div>

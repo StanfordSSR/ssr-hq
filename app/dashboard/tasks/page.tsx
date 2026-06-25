@@ -80,7 +80,7 @@ export default async function TasksPage() {
   const admin = createAdminClient();
   const { user, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
-  const isPresident = currentRole === 'president';
+  const isPresident = currentRole === 'president' || currentRole === 'vice_president';
   const isPrivilegedViewer = isAdmin || isPresident;
   const reportState = await getNextReportState();
   const eoyState = await getEoyReportState();
@@ -259,7 +259,7 @@ export default async function TasksPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : 'Lead portal'}</p>
+          <p className="hq-eyebrow">{isAdmin ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : isPresident ? 'President' : 'Lead portal'}</p>
           <h1 className="hq-page-title">{isAdmin ? 'Assign tasks' : 'Tasks'}</h1>
           <p className="hq-subtitle">
             {isAdmin
@@ -416,7 +416,10 @@ export default async function TasksPage() {
           ) : isPresident ? (
             <div className="hq-report-card">
               <strong>Read-only access</strong>
-              <span>Presidents can view all assigned tasks but cannot create or remove them.</span>
+              <span>
+                {currentRole === 'vice_president' ? 'Vice presidents' : 'Presidents'} can view all assigned tasks but
+                cannot create or remove them.
+              </span>
             </div>
           ) : (
             <div className="form-stack">

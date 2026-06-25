@@ -10,6 +10,7 @@ import {
   getViewerContext,
   profileHasAdminRole,
   profileHasPresidentRole,
+  profileHasVicePresidentRole,
   requireAdmin,
   requireAdminOrPresident,
   requireSignedInUser,
@@ -47,6 +48,7 @@ import {
   sendInviteEmail,
   sendInviteReminderEmail,
   sendPresidentInviteEmail,
+  sendVicePresidentInviteEmail,
   sendReceiptDigestEmail,
   sendReportReminderEmail,
   sendTaskEmails
@@ -121,6 +123,7 @@ const REVALIDATE_PATHS = {
   profile: ['/dashboard', '/dashboard/profile', '/dashboard/members'],
   deleteLead: ['/dashboard', '/dashboard/members', '/dashboard/teams', '/dashboard/tasks', '/dashboard/reports'],
   presidentRole: ['/dashboard', '/dashboard/settings', '/dashboard/members'],
+  vicePresidentRole: ['/dashboard', '/dashboard/settings', '/dashboard/members'],
   financialOfficerRole: ['/dashboard', '/dashboard/settings', '/dashboard/finances', '/dashboard/purchases', '/dashboard/expenses']
 } satisfies Record<string, string[]>;
 
@@ -517,7 +520,7 @@ async function createPortalInviteProfile({
 }: {
   email: string;
   fullName: string;
-  role: 'team_lead' | 'president' | 'financial_officer';
+  role: 'team_lead' | 'president' | 'vice_president' | 'financial_officer';
 }) {
   const admin = createAdminClient();
   const { data: generated, error: generateError } = await admin.auth.admin.generateLink({
@@ -543,6 +546,7 @@ async function createPortalInviteProfile({
     role,
     is_admin: role === 'president' ? false : undefined,
     is_president: role === 'president',
+    is_vice_president: role === 'vice_president',
     is_financial_officer: role === 'financial_officer',
     active: true
   });
@@ -952,8 +956,13 @@ export async function logPurchaseAction(formData: FormData) {
       const { user, currentRole } = await requireActiveProfile();
 
       if (expenseType === 'leadership') {
-        if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'financial_officer') {
-          throw new Error('Only financial officers, presidents, or admins can log leadership expenses.');
+        if (
+          currentRole !== 'admin' &&
+          currentRole !== 'president' &&
+          currentRole !== 'vice_president' &&
+          currentRole !== 'financial_officer'
+        ) {
+          throw new Error('Only financial officers, presidents, vice presidents, or admins can log leadership expenses.');
         }
       } else {
         if (!teamId) {
@@ -3854,6 +3863,169 @@ export async function invitePresidentAction(formData: FormData) {
       });
 
       revalidatePaths(REVALIDATE_PATHS.presidentRole);
+    }
+  });
+}
+
+export async function assignVicePresidentRoleAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Assigned the Vice President role.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const profileId = String(formData.get('profile_id') || '').trim();
+      if (!profileId) {
+        throw new Error('Select a user to assign.');
+      }
+
+      const admin = createAdminClient();
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('id, full_name, role, is_vice_president, active')
+        .eq('id', profileId)
+        .maybeSingle();
+
+      if (!profile || !profile.active) {
+        throw new Error('Selected user was not found.');
+      }
+
+      if (profileHasVicePresidentRole(profile)) {
+        throw new Error('That user already has Vice President access.');
+      }
+
+      const { error } = await admin
+        .from('profiles')
+        .update({ is_vice_president: true })
+        .eq('id', profileId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'role.assigned',
+        targetType: 'profile',
+        targetId: profileId,
+        summary: `Assigned Vice President role to ${profile.full_name || 'user'}.`,
+        details: {
+          role: 'vice_president'
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.vicePresidentRole);
+    }
+  });
+}
+
+export async function removeVicePresidentRoleAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Removed the Vice President role.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const profileId = String(formData.get('profile_id') || '').trim();
+      if (!profileId) {
+        throw new Error('Missing vice president id.');
+      }
+
+      const admin = createAdminClient();
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('id, full_name, role, is_vice_president, is_admin, is_president, is_financial_officer')
+        .eq('id', profileId)
+        .maybeSingle();
+
+      if (!profile || !profileHasVicePresidentRole(profile)) {
+        throw new Error('Vice president not found.');
+      }
+
+      // Clearing the flag isn't enough when vice_president is their PRIMARY role —
+      // demote the role column to their next-highest remaining role.
+      const fallbackRole = profile.is_admin
+        ? 'admin'
+        : profile.is_president
+          ? 'president'
+          : profile.is_financial_officer
+            ? 'financial_officer'
+            : 'team_lead';
+      const nextRole = profile.role === 'vice_president' ? fallbackRole : profile.role;
+
+      const { error } = await admin
+        .from('profiles')
+        .update({ is_vice_president: false, role: nextRole })
+        .eq('id', profileId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'role.removed',
+        targetType: 'profile',
+        targetId: profileId,
+        summary: `Removed Vice President role from ${profile.full_name || 'user'}.`,
+        details: {
+          role: 'vice_president'
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.vicePresidentRole);
+    }
+  });
+}
+
+export async function inviteVicePresidentAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Sent the Vice President invite.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const email = String(formData.get('email') || '').trim().toLowerCase();
+      const fullName = String(formData.get('full_name') || '').trim();
+
+      if (!email) {
+        throw new Error('Email is required.');
+      }
+
+      const { generated, actionLink } = await createPortalInviteProfile({
+        email,
+        fullName,
+        role: 'vice_president'
+      });
+
+      await sendVicePresidentInviteEmail({
+        to: email,
+        fullName,
+        actionLink
+      });
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'member.invited',
+        targetType: 'profile',
+        targetId: generated.user.id,
+        summary: `Invited ${email} to the portal as Vice President.`,
+        details: {
+          email,
+          role: 'vice_president'
+        }
+      });
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'email.sent',
+        targetType: 'profile',
+        targetId: generated.user.id,
+        summary: `Sent vice president invite email to ${email}.`,
+        details: {
+          email,
+          role: 'vice_president'
+        }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.vicePresidentRole);
     }
   });
 }

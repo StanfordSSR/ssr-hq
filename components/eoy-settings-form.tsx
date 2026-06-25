@@ -20,10 +20,14 @@ const QUESTION_LABELS: Array<{ key: keyof Omit<EoyQuestionConfig, 'acknowledgeme
 
 export function EoySettingsForm({
   settings,
-  readOnly = false
+  readOnly = false,
+  canEdit = true
 }: {
   settings: EoyReportSettings;
   readOnly?: boolean;
+  // When false, render the read-only summary instead of the editable form. Used
+  // to keep vice presidents (and any non-editor) from changing EOY settings.
+  canEdit?: boolean;
 }) {
   const [questions, setQuestions] = useState<EoyQuestionConfig>(settings.questions);
 
@@ -45,7 +49,7 @@ export function EoySettingsForm({
       acknowledgements: current.acknowledgements.filter((_, entryIndex) => entryIndex !== index)
     }));
 
-  if (readOnly) {
+  if (readOnly || !canEdit) {
     return (
       <div className="hq-summary-list">
         <div className="hq-summary-row">

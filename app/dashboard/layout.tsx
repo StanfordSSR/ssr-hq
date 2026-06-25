@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { signOutAction } from '@/app/dashboard/teams/actions';
 import { switchActiveRoleAction } from '@/app/dashboard/actions';
 import { DashboardStatusBanner } from '@/components/dashboard-status-banner';
-import { getRoleLabel, getViewerContext } from '@/lib/auth';
+import { getRoleLabel, getViewerContext, holdsSigningRole } from '@/lib/auth';
 import { getLeadTaskIndicatorState } from '@/lib/lead-state';
 
 type NavItem = {
@@ -41,6 +41,25 @@ const adminNav: NavItem[] = [
 ];
 
 const presidentNav: NavItem[] = [
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard/teams', label: 'Teams' },
+  { href: '/dashboard/members', label: 'Users' },
+  {
+    label: 'Finances',
+    children: [
+      { href: '/dashboard/finances', label: 'Overview' },
+      { href: '/dashboard/finances/plan', label: 'Budget Plan' },
+      { href: '/dashboard/purchases', label: 'Purchases' },
+      { href: '/dashboard/expenses', label: 'Expense Log' },
+      { href: '/dashboard/reimbursements', label: 'Reimbursements' }
+    ]
+  },
+  reportsNav,
+  { href: '/dashboard/tasks', label: 'Tasks' },
+  { href: '/dashboard/settings', label: 'Club Settings' }
+];
+
+const vicePresidentNav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/teams', label: 'Teams' },
   { href: '/dashboard/members', label: 'Users' },
@@ -98,14 +117,30 @@ export default async function DashboardLayout({
     redirect('/login');
   }
 
+  // Signing officers (president, vice president, financial officer) must enroll a
+  // signature before they can use the portal. /enroll-signature lives outside
+  // /dashboard, so this redirect won't loop.
+  if (holdsSigningRole(profile)) {
+    const { data: signatureRow } = await createAdminClient()
+      .from('signature_profiles')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (!signatureRow) {
+      redirect('/enroll-signature');
+    }
+  }
+
   const nav =
     currentRole === 'admin'
       ? adminNav
       : currentRole === 'president'
         ? presidentNav
-        : currentRole === 'financial_officer'
-          ? financialOfficerNav
-          : leadNav;
+        : currentRole === 'vice_president'
+          ? vicePresidentNav
+          : currentRole === 'financial_officer'
+            ? financialOfficerNav
+            : leadNav;
   let hasPendingLeadTasks = false;
 
   if (currentRole === 'team_lead') {

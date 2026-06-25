@@ -32,6 +32,14 @@ function money(cents: number) {
 export default async function ReimbursementsPage() {
   const { user, currentRole } = await getViewerContext();
   const isFinance =
+    currentRole === 'admin' ||
+    currentRole === 'president' ||
+    currentRole === 'vice_president' ||
+    currentRole === 'financial_officer';
+  // Marking a reimbursement filed in Granted is a finance WRITE action. Vice
+  // presidents get the same read-only finance VIEW as presidents, but cannot
+  // perform this write (the server action also rejects them).
+  const canFileReimbursements =
     currentRole === 'admin' || currentRole === 'president' || currentRole === 'financial_officer';
   const isLead = currentRole === 'team_lead';
 
@@ -211,7 +219,7 @@ export default async function ReimbursementsPage() {
                         )}
                       </td>
                       <td>
-                        <FinanceFileToggle id={r.id} processed={false} />
+                        {canFileReimbursements ? <FinanceFileToggle id={r.id} processed={false} /> : null}
                       </td>
                     </tr>
                   ))}
@@ -261,7 +269,7 @@ export default async function ReimbursementsPage() {
                     </td>
                     {isFinance ? (
                       <td>
-                        {r.status === 'approved' && r.finance_processed_at ? (
+                        {canFileReimbursements && r.status === 'approved' && r.finance_processed_at ? (
                           <FinanceFileToggle id={r.id} processed={true} />
                         ) : null}
                       </td>

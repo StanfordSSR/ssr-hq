@@ -116,7 +116,11 @@ export default async function ReceiptsPage({
   const params = (await searchParams) || {};
   const admin = createAdminClient();
   const { currentRole } = await getViewerContext();
-  const canView = currentRole === 'admin' || currentRole === 'president' || currentRole === 'financial_officer';
+  const canView =
+    currentRole === 'admin' ||
+    currentRole === 'president' ||
+    currentRole === 'vice_president' ||
+    currentRole === 'financial_officer';
 
   if (!canView) {
     redirect('/dashboard');
@@ -164,7 +168,7 @@ export default async function ReceiptsPage({
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">
-            {currentRole === 'admin' ? 'Admin' : currentRole === 'president' ? 'President' : 'Financial officer'}
+            {currentRole === 'admin' ? 'Admin' : currentRole === 'president' ? 'President' : currentRole === 'vice_president' ? 'Vice president' : 'Financial officer'}
           </p>
           <h1 className="hq-page-title">Receipts</h1>
           <p className="hq-subtitle">

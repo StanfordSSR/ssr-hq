@@ -90,8 +90,9 @@ export default async function ExpenseLogPage({
   const { user, profile: me, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
   const isPresident = currentRole === 'president';
+  const isVicePresident = currentRole === 'vice_president';
   const isFinancialOfficer = currentRole === 'financial_officer';
-  const isReadOnlyFinanceViewer = isPresident || isFinancialOfficer;
+  const isReadOnlyFinanceViewer = isPresident || isVicePresident || isFinancialOfficer;
   const isPrivilegedViewer = isAdmin || isReadOnlyFinanceViewer;
   const myTeamIds = isPrivilegedViewer ? [] : await getLeadTeamIds(user.id);
   const { data: teamsData } = isPrivilegedViewer
@@ -315,7 +316,7 @@ export default async function ExpenseLogPage({
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>
+          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isVicePresident ? 'Vice president' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>
           <h1 className="hq-page-title">
             {isPrivilegedViewer ? 'Expense log' : `${selectedTeamName} expense log`}
           </h1>

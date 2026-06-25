@@ -66,7 +66,7 @@ export default async function ReportsPage({
   const admin = createAdminClient();
   const { user, profile: me, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
-  const isPresident = currentRole === 'president';
+  const isPresident = currentRole === 'president' || currentRole === 'vice_president';
 
   if (isAdmin || isPresident) {
     const reportState = await getNextReportState(new Date());
@@ -112,7 +112,7 @@ export default async function ReportsPage({
         <div className="hq-page">
           <section className="hq-page-head">
             <div className="hq-page-head-copy">
-              <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'President'}</p>
+              <p className="hq-eyebrow">{isAdmin ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : 'President'}</p>
               <h1 className="hq-page-title">Report detail</h1>
               <p className="hq-subtitle">
                 {teamNameMap.get(selectedReport.team_id) || 'Unknown team'} · {selectedReport.quarter} · {selectedReport.academic_year}
@@ -178,7 +178,7 @@ export default async function ReportsPage({
       <div className="hq-page">
         <section className="hq-page-head">
           <div className="hq-page-head-copy">
-            <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'President'}</p>
+            <p className="hq-eyebrow">{isAdmin ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : 'President'}</p>
             <h1 className="hq-page-title">Team reports</h1>
             <p className="hq-subtitle">Review the current quarter submissions and browse report history across teams.</p>
           </div>

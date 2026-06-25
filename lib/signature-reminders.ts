@@ -26,7 +26,9 @@ export async function runSignatureEnrollmentReminderCron() {
         .from('profiles')
         .select('id, full_name, email')
         .eq('active', true)
-        .or('role.eq.president,role.eq.financial_officer,is_president.eq.true,is_financial_officer.eq.true'),
+        .or(
+          'role.eq.president,role.eq.vice_president,role.eq.financial_officer,is_president.eq.true,is_vice_president.eq.true,is_financial_officer.eq.true'
+        ),
       admin.from('team_memberships').select('user_id').eq('team_role', 'lead').eq('is_active', true),
       admin.from('signature_profiles').select('user_id'),
       admin.from('signature_enrollment_reminders').select('user_id, last_sent_at')
