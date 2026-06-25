@@ -523,7 +523,7 @@ async function createPortalInviteProfile({
   role: 'team_lead' | 'president' | 'vice_president' | 'financial_officer';
 }) {
   const admin = createAdminClient();
-  const { data: generated, error: generateError } = await admin.auth.admin.generateLink({
+  const invite = await admin.auth.admin.generateLink({
     type: 'invite',
     email,
     options: {
@@ -535,8 +535,30 @@ async function createPortalInviteProfile({
     }
   });
 
-  if (generateError || !generated?.properties?.action_link || !generated.user?.id) {
-    throw new Error(generateError?.message || 'Failed to generate invite link.');
+  let generated: NonNullable<typeof invite.data>;
+  if (invite.error) {
+    // The email already has an account (e.g. someone self-registered before the
+    // invite). Don't fail — assign the role to the existing account and send a
+    // working login link instead.
+    if (/regist|already|exist/i.test(invite.error.message)) {
+      const magic = await admin.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+        options: { redirectTo: `${env.siteUrl}/auth/callback` }
+      });
+      if (magic.error || !magic.data?.user?.id || !magic.data.properties) {
+        throw new Error(
+          magic.error?.message || 'That email is already registered and a login link could not be generated.'
+        );
+      }
+      generated = magic.data;
+    } else {
+      throw new Error(invite.error.message);
+    }
+  } else if (!invite.data?.properties?.action_link || !invite.data.user?.id) {
+    throw new Error('Failed to generate invite link.');
+  } else {
+    generated = invite.data;
   }
 
   const { error: profileError } = await admin.from('profiles').upsert({
