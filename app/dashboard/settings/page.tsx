@@ -11,10 +11,13 @@ import {
 import {
   assignFinancialOfficerRoleAction,
   assignPresidentRoleAction,
+  assignVicePresidentRoleAction,
   inviteFinancialOfficerAction,
   invitePresidentAction,
+  inviteVicePresidentAction,
   removeFinancialOfficerRoleAction,
   removePresidentRoleAction,
+  removeVicePresidentRoleAction,
   sendManualSlackPushAction,
   updateInviteNotificationSettingsAction,
   updateAcademicCalendarSettingsAction,
@@ -39,7 +42,8 @@ import {
   profileHasAdminRole,
   profileHasFinancialOfficerRole,
   profileHasLeadRole,
-  profileHasPresidentRole
+  profileHasPresidentRole,
+  profileHasVicePresidentRole
 } from '@/lib/auth';
 
 function formatAuditTimestamp(value: string) {
@@ -54,11 +58,14 @@ function formatAuditTimestamp(value: string) {
 export default async function SettingsPage() {
   const admin = createAdminClient();
   const { currentRole } = await getViewerContext();
-  if (currentRole !== 'admin' && currentRole !== 'president') {
+  if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'vice_president') {
     redirect('/dashboard');
   }
 
   const canEdit = currentRole === 'admin';
+  // Presidents can edit the EOY report settings; admins can too. Vice presidents
+  // view Club Settings read-only and must NOT be able to edit anything here.
+  const canEditEoySettings = currentRole === 'admin' || currentRole === 'president';
   const siteHost = (() => {
     try {
       return new URL(env.siteUrl).host;
@@ -92,7 +99,7 @@ export default async function SettingsPage() {
       admin.from('audit_log_entries').select('id, actor_id, action, target_type, target_id, summary, created_at').order('created_at', { ascending: false }).limit(40),
       admin
         .from('profiles')
-        .select('id, full_name, email, slack_user_id, role, is_admin, is_president, is_financial_officer, active')
+        .select('id, full_name, email, slack_user_id, role, is_admin, is_president, is_vice_president, is_financial_officer, active')
         .eq('active', true)
         .order('full_name'),
       admin
@@ -179,6 +186,8 @@ export default async function SettingsPage() {
   const leadUserIds = new Set((leadMemberships || []).map((membership) => membership.user_id));
   const presidents = allProfiles.filter((profile) => profileHasPresidentRole(profile));
   const presidentCandidates = allProfiles.filter((profile) => !profileHasPresidentRole(profile));
+  const vicePresidents = allProfiles.filter((profile) => profileHasVicePresidentRole(profile));
+  const vicePresidentCandidates = allProfiles.filter((profile) => !profileHasVicePresidentRole(profile));
   const financialOfficers = allProfiles.filter((profile) => profileHasFinancialOfficerRole(profile));
   const financialOfficerCandidates = allProfiles.filter((profile) => !profileHasFinancialOfficerRole(profile));
   const slackRecipients = [
@@ -190,6 +199,7 @@ export default async function SettingsPage() {
       roles: [
         profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
         profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+        profileHasVicePresidentRole(profile) ? getRoleLabel('vice_president') : null,
         profileHasFinancialOfficerRole(profile) ? getRoleLabel('financial_officer') : null,
         profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
       ]
@@ -277,7 +287,7 @@ export default async function SettingsPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{canEdit ? 'Admin' : 'President'}</p>
+          <p className="hq-eyebrow">{canEdit ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : 'President'}</p>
           <h1 className="hq-page-title">Club settings</h1>
           <p className="hq-subtitle">
             {canEdit
@@ -315,7 +325,7 @@ export default async function SettingsPage() {
           </div>
           <div className="hq-setting-tile">
             <strong>Portal mode</strong>
-            <span>{canEdit ? 'Editable admin controls' : 'Read-only president view'}</span>
+            <span>{canEdit ? 'Editable admin controls' : currentRole === 'vice_president' ? 'Read-only vice president view' : 'Read-only president view'}</span>
           </div>
         </div>
       </section>
@@ -354,6 +364,32 @@ export default async function SettingsPage() {
               ) : (
                 <p className="empty-note">No presidents assigned yet.</p>
               )}
+                </section>
+                <section className="hq-lead-block">
+                  <div className="hq-block-head">
+                    <h3>Current vice presidents</h3>
+                  </div>
+
+                  {vicePresidents.length > 0 ? (
+                    <div className="hq-summary-list">
+                      {vicePresidents.map((profile) => (
+                        <div key={profile.id} className="hq-summary-row">
+                          <span>Read-only portal access</span>
+                          <strong>{profile.full_name || 'Unnamed user'}</strong>
+                          {canEdit ? (
+                            <form action={removeVicePresidentRoleAction}>
+                              <input type="hidden" name="profile_id" value={profile.id} />
+                              <button className="button-secondary" type="submit">
+                                Remove
+                              </button>
+                            </form>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="empty-note">No vice presidents assigned yet.</p>
+                  )}
                 </section>
                 <section className="hq-lead-block">
                   <div className="hq-block-head">
@@ -402,6 +438,7 @@ export default async function SettingsPage() {
                           <option key={profile.id} value={profile.id}>
                             {profile.full_name || profile.id.slice(0, 8)} · {[
                               profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
+                              profileHasVicePresidentRole(profile) ? getRoleLabel('vice_president') : null,
                               profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
                             ].filter(Boolean).join(', ') || 'Portal user'}
                           </option>
@@ -412,6 +449,40 @@ export default async function SettingsPage() {
                     <div className="button-row">
                       <button className="button" type="submit">
                         Assign president
+                      </button>
+                    </div>
+                  </form>
+                </section>
+
+                <section className="hq-lead-block">
+                  <div className="hq-block-head">
+                    <h3>Assign vice president</h3>
+                  </div>
+
+                  <form action={assignVicePresidentRoleAction} className="form-stack">
+                    <div className="field">
+                      <label className="label" htmlFor="vice-president-profile-id">
+                        Portal user
+                      </label>
+                      <select className="select" id="vice-president-profile-id" name="profile_id" defaultValue="">
+                        <option value="" disabled>
+                          Select a portal user
+                        </option>
+                        {vicePresidentCandidates.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.full_name || profile.id.slice(0, 8)} · {[
+                              profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
+                              profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+                              profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
+                            ].filter(Boolean).join(', ') || 'Portal user'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="button-row">
+                      <button className="button" type="submit">
+                        Assign vice president
                       </button>
                     </div>
                   </form>
@@ -436,6 +507,7 @@ export default async function SettingsPage() {
                             {profile.full_name || profile.id.slice(0, 8)} · {[
                               profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
                               profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+                              profileHasVicePresidentRole(profile) ? getRoleLabel('vice_president') : null,
                               profileHasLeadRole(profile, leadUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
                             ].filter(Boolean).join(', ') || 'Portal user'}
                           </option>
@@ -478,6 +550,39 @@ export default async function SettingsPage() {
                       <div className="button-row">
                         <button className="button-secondary" type="submit">
                           Invite president
+                        </button>
+                      </div>
+                    </form>
+                  </details>
+                </section>
+
+                <section className="hq-lead-block">
+                  <details className="hq-compact-disclosure">
+                    <summary className="hq-compact-disclosure-summary">
+                      <span>Invite new vice president</span>
+                      <span className="hq-user-caret" aria-hidden="true">
+                        ▾
+                      </span>
+                    </summary>
+
+                    <form action={inviteVicePresidentAction} className="form-stack hq-compact-disclosure-body">
+                      <div className="field">
+                        <label className="label" htmlFor="vice-president-full-name">
+                          Full name
+                        </label>
+                        <input className="input" id="vice-president-full-name" name="full_name" required />
+                      </div>
+
+                      <div className="field">
+                        <label className="label" htmlFor="vice-president-email">
+                          Stanford email
+                        </label>
+                        <input className="input" id="vice-president-email" name="email" type="email" required />
+                      </div>
+
+                      <div className="button-row">
+                        <button className="button-secondary" type="submit">
+                          Invite vice president
                         </button>
                       </div>
                     </form>
@@ -843,7 +948,7 @@ export default async function SettingsPage() {
                       <h3>Year-end report &amp; summer plans</h3>
                       <span className="hq-inline-note">Admins and presidents</span>
                     </div>
-                    <EoySettingsForm settings={eoyReportSettings} />
+                    <EoySettingsForm settings={eoyReportSettings} canEdit={canEditEoySettings} />
                   </section>
                 </div>
               )

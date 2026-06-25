@@ -30,7 +30,7 @@ export default async function QueuedRemindersPage() {
   const { currentRole } = await getViewerContext();
   const canTest = currentRole === 'admin';
 
-  if (currentRole !== 'admin' && currentRole !== 'president') {
+  if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'vice_president') {
     redirect('/dashboard');
   }
 

@@ -63,7 +63,12 @@ export default async function FinancesPage({
   const params = (await searchParams) || {};
   const admin = createAdminClient();
   const { currentRole, profile } = await getViewerContext();
-  if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'financial_officer') {
+  if (
+    currentRole !== 'admin' &&
+    currentRole !== 'president' &&
+    currentRole !== 'vice_president' &&
+    currentRole !== 'financial_officer'
+  ) {
     redirect('/dashboard');
   }
   const canEdit = currentRole === 'admin';
@@ -132,7 +137,10 @@ export default async function FinancesPage({
   );
   const leadershipRecent = (leadershipRecentData || []) as PurchaseLog[];
   const canLogLeadership =
-    currentRole === 'admin' || currentRole === 'president' || currentRole === 'financial_officer';
+    currentRole === 'admin' ||
+    currentRole === 'president' ||
+    currentRole === 'vice_president' ||
+    currentRole === 'financial_officer';
   const teamBudgets = new Map(
     ((teamBudgetsData || []) as TeamBudget[]).map((entry) => [entry.team_id, entry.annual_budget_cents])
   );
@@ -286,7 +294,7 @@ export default async function FinancesPage({
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{canEdit ? 'Admin' : currentRole === 'president' ? 'President' : 'Financial officer'}</p>
+          <p className="hq-eyebrow">{canEdit ? 'Admin' : currentRole === 'president' ? 'President' : currentRole === 'vice_president' ? 'Vice president' : 'Financial officer'}</p>
           <h1 className="hq-page-title">Manage finances</h1>
           <p className="hq-subtitle">
             {canEdit

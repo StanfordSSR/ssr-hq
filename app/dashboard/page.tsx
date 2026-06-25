@@ -167,9 +167,10 @@ export default async function DashboardPage() {
   const { user, profile: me, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
   const isPresident = currentRole === 'president';
+  const isVicePresident = currentRole === 'vice_president';
   const isFinancialOfficer = currentRole === 'financial_officer';
 
-  if (isAdmin || isPresident || isFinancialOfficer) {
+  if (isAdmin || isPresident || isVicePresident || isFinancialOfficer) {
     const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }, academicYear] = await Promise.all([
       admin
         .from('teams')
@@ -196,12 +197,12 @@ export default async function DashboardPage() {
       <div className="hq-page">
         <section className="hq-hero">
           <div>
-            <p className="hq-eyebrow">{isAdmin ? 'Admin portal' : isPresident ? 'President portal' : 'Financial officer portal'}</p>
+            <p className="hq-eyebrow">{isAdmin ? 'Admin portal' : isPresident ? 'President portal' : isVicePresident ? 'Vice president portal' : 'Financial officer portal'}</p>
             <h1 className="hq-title">Welcome back, {me.full_name || 'operator'}.</h1>
             <p className="hq-subtitle">
               {isAdmin
                 ? "Use HQ to manage teams, leads, members, and the club's operating structure."
-                : isPresident
+                : isPresident || isVicePresident
                   ? 'Use HQ to review teams, reports, finances, and member activity with read-only access.'
                   : 'Use HQ to review finances, purchases, receipts, and the shared expense log with read-only access.'}
             </p>
@@ -223,14 +224,14 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        {isAdmin || isPresident ? (
+        {isAdmin || isPresident || isVicePresident ? (
           <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} />
         ) : null}
 
-        {isAdmin || isPresident ? <VisitorLinkGenerator /> : null}
+        {isAdmin || isPresident || isVicePresident ? <VisitorLinkGenerator /> : null}
 
         <section className="hq-admin-grid">
-          {(isAdmin ? adminCards : isPresident ? presidentCards : financialOfficerCards).map((card) => (
+          {(isAdmin ? adminCards : isPresident || isVicePresident ? presidentCards : financialOfficerCards).map((card) => (
             <Link href={card.href} key={card.href} className="hq-admin-link">
               <strong>{card.title}</strong>
               <span>{card.description}</span>

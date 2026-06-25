@@ -9,7 +9,8 @@ import {
   profileHasAdminRole,
   profileHasFinancialOfficerRole,
   profileHasLeadRole,
-  profileHasPresidentRole
+  profileHasPresidentRole,
+  profileHasVicePresidentRole
 } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 
@@ -17,9 +18,10 @@ type Profile = {
   id: string;
   full_name: string | null;
   email?: string | null;
-  role: 'admin' | 'president' | 'financial_officer' | 'team_lead';
+  role: 'admin' | 'president' | 'vice_president' | 'financial_officer' | 'team_lead';
   is_admin?: boolean | null;
   is_president?: boolean | null;
+  is_vice_president?: boolean | null;
   is_financial_officer?: boolean | null;
   active: boolean;
 };
@@ -106,14 +108,14 @@ export default async function ManageMembersPage() {
   const admin = createAdminClient();
   const { user, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
-  const isPresident = currentRole === 'president';
+  const isPresident = currentRole === 'president' || currentRole === 'vice_president';
 
   if (isAdmin || isPresident) {
     const [{ data: profilesData }, { data: teamsData }, { data: membershipsData }, { data: rosterData }, { data: authUsers }, { data: signatureRows }] =
       await Promise.all([
         admin
           .from('profiles')
-          .select('id, full_name, email, role, is_admin, is_president, is_financial_officer, active')
+          .select('id, full_name, email, role, is_admin, is_president, is_vice_president, is_financial_officer, active')
           .order('role')
           .order('full_name'),
         admin.from('teams').select('id, name').order('name'),
@@ -161,12 +163,14 @@ export default async function ManageMembersPage() {
       const roleLabels = [
         profileHasAdminRole(profile) ? getRoleLabel('admin') : null,
         profileHasPresidentRole(profile) ? getRoleLabel('president') : null,
+        profileHasVicePresidentRole(profile) ? getRoleLabel('vice_president') : null,
         profileHasFinancialOfficerRole(profile) ? getRoleLabel('financial_officer') : null,
         profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)) ? getRoleLabel('team_lead') : null
       ].filter(Boolean) as string[];
       const permissionLabels = [
         profileHasAdminRole(profile) ? 'Full portal access' : null,
         profileHasPresidentRole(profile) ? 'Read-only club-wide access' : null,
+        profileHasVicePresidentRole(profile) ? 'Read-only club-wide access' : null,
         profileHasFinancialOfficerRole(profile) ? 'Read-only finance access' : null,
         profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)) ? 'Lead workspace, purchases, tasks' : null
       ].filter(Boolean) as string[];
@@ -186,6 +190,7 @@ export default async function ManageMembersPage() {
         isAdmin &&
         !profileHasAdminRole(profile) &&
         !profileHasPresidentRole(profile) &&
+        !profileHasVicePresidentRole(profile) &&
         !profileHasFinancialOfficerRole(profile) &&
         profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)),
       sortGroup: profileHasAdminRole(profile) ? 0 : profileHasPresidentRole(profile) ? 1 : profileHasFinancialOfficerRole(profile) ? 2 : 3,
@@ -221,7 +226,7 @@ export default async function ManageMembersPage() {
       <div className="hq-page">
         <section className="hq-page-head">
           <div className="hq-page-head-copy">
-            <p className="hq-eyebrow">{isAdmin ? 'Admin' : 'President'}</p>
+            <p className="hq-eyebrow">{isAdmin ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : 'President'}</p>
             <h1 className="hq-page-title">Manage members</h1>
             <p className="hq-subtitle">
               View all admins and leads, plus each person&apos;s role and associated team assignments.

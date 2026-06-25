@@ -41,7 +41,7 @@ export default async function ManageTeamsPage() {
   const admin = createAdminClient();
   const { currentRole } = await getViewerContext();
 
-  if (currentRole !== 'admin' && currentRole !== 'president') {
+  if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'vice_president') {
     redirect('/dashboard');
   }
   const canEdit = currentRole === 'admin';

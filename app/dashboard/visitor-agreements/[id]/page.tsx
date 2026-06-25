@@ -52,7 +52,7 @@ export default async function SignedVisitorAgreementPage({
   params: Promise<{ id: string }>;
 }) {
   const { currentRole } = await getViewerContext();
-  if (currentRole !== 'admin' && currentRole !== 'president') {
+  if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'vice_president') {
     redirect('/dashboard');
   }
 

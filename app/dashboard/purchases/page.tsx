@@ -45,8 +45,9 @@ export default async function PurchasesPage() {
   const { user, profile: me, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
   const isPresident = currentRole === 'president';
+  const isVicePresident = currentRole === 'vice_president';
   const isFinancialOfficer = currentRole === 'financial_officer';
-  const isPrivilegedViewer = isAdmin || isPresident || isFinancialOfficer;
+  const isPrivilegedViewer = isAdmin || isPresident || isVicePresident || isFinancialOfficer;
 
   const myTeamIds = isPrivilegedViewer ? [] : await getLeadTeamIds(user.id);
   const { data: teamsData } = isPrivilegedViewer
@@ -59,7 +60,7 @@ export default async function PurchasesPage() {
       <div className="hq-page">
         <section className="hq-page-head">
           <div className="hq-page-head-copy">
-            <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>
+            <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isVicePresident ? 'Vice president' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>
             <h1 className="hq-page-title">{isPrivilegedViewer ? 'Purchase log' : 'Log purchase'}</h1>
             <p className="hq-subtitle">
               {isPrivilegedViewer ? 'Create a team before viewing purchases.' : 'You need an active team before you can log purchases.'}
@@ -101,10 +102,10 @@ export default async function PurchasesPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>
+          <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isVicePresident ? 'Vice president' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>
           <h1 className="hq-page-title">{isPrivilegedViewer ? 'Purchase log' : 'Log purchase'}</h1>
           <p className="hq-subtitle">
-            {isPresident || isFinancialOfficer
+            {isPresident || isVicePresident || isFinancialOfficer
               ? 'Review spending across teams with read-only access.'
               : 'Track spending as it happens and import historical purchases when you need to backfill data.'}
           </p>
@@ -126,7 +127,7 @@ export default async function PurchasesPage() {
         </div>
       </section>
 
-      {!isPresident && !isFinancialOfficer ? <div className="hq-purchases-layout">
+      {!isPresident && !isVicePresident && !isFinancialOfficer ? <div className="hq-purchases-layout">
         <section className="hq-panel hq-surface-muted hq-purchase-panel">
           <div className="hq-block-head">
             <h3>New purchase</h3>

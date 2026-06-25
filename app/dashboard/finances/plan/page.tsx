@@ -16,10 +16,17 @@ import { BudgetPlanEditor, QuarterlyDeclarationPanel } from '@/components/budget
 export default async function BudgetPlanPage() {
   const admin = createAdminClient();
   const { user, currentRole, profile } = await getViewerContext();
-  if (currentRole !== 'admin' && currentRole !== 'president' && currentRole !== 'financial_officer') {
+  if (
+    currentRole !== 'admin' &&
+    currentRole !== 'president' &&
+    currentRole !== 'vice_president' &&
+    currentRole !== 'financial_officer'
+  ) {
     redirect('/dashboard');
   }
   const canEdit = currentRole === 'admin';
+  // NOTE: vice presidents can VIEW the budget plan but must NEVER sign it, so
+  // isPresident (which drives signing) stays false for them.
   const isPresident = currentRole === 'president' || profile.role === 'president' || Boolean(profile.is_president);
 
   const [setup, quarterState] = await Promise.all([getBudgetSetupState(), getQuarterDeclarationState()]);
@@ -109,7 +116,7 @@ export default async function BudgetPlanPage() {
     <div className="hq-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">{canEdit ? 'Admin' : isPresident ? 'President' : 'Financial officer'}</p>
+          <p className="hq-eyebrow">{canEdit ? 'Admin' : isPresident ? 'President' : currentRole === 'vice_president' ? 'Vice president' : 'Financial officer'}</p>
           <h1 className="hq-page-title">Budget plan</h1>
           <p className="hq-subtitle">{setup.message}</p>
         </div>

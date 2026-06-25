@@ -3,7 +3,7 @@ import { env } from '@/lib/env';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
-import { profileHasAdminRole, profileHasPresidentRole } from '@/lib/auth';
+import { profileHasAdminRole, profileHasPresidentRole, profileHasVicePresidentRole } from '@/lib/auth';
 import {
   generateToken,
   pacificDateKey,
@@ -28,13 +28,16 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from('profiles')
-    .select('id, full_name, role, is_admin, is_president, active')
+    .select('id, full_name, role, is_admin, is_president, is_vice_president, active')
     .eq('id', sub)
     .maybeSingle();
 
-  if (!profile?.active || !(profileHasPresidentRole(profile) || profileHasAdminRole(profile))) {
+  if (
+    !profile?.active ||
+    !(profileHasPresidentRole(profile) || profileHasVicePresidentRole(profile) || profileHasAdminRole(profile))
+  ) {
     return NextResponse.json(
-      { error: 'Only an active president or admin can issue visitor links.' },
+      { error: 'Only an active president, vice president, or admin can issue visitor links.' },
       { status: 403 }
     );
   }
