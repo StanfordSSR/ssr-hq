@@ -1,7 +1,19 @@
 'use client';
 
 import { useState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { logHighValueAssetAction } from '@/app/dashboard/actions';
+
+// Submit button that disables itself while the server action is in flight, so a
+// frustrated double-click can't log the asset twice.
+function LogSubmitButton({ disabled }: { disabled: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <button className="button" type="submit" disabled={disabled || pending} aria-busy={pending}>
+      {pending ? 'Logging…' : 'Log asset'}
+    </button>
+  );
+}
 import {
   LEADERSHIP_STEWARD_LABEL,
   LEADERSHIP_STEWARD_VALUE,
@@ -208,9 +220,7 @@ export function HighValueAssetLogger({
           </div>
 
           <div className="button-row">
-            <button className="button" type="submit" disabled={submitDisabled}>
-              Log asset
-            </button>
+            <LogSubmitButton disabled={submitDisabled} />
           </div>
         </form>
       ) : null}

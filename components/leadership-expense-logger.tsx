@@ -1,7 +1,18 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { logPurchaseAction } from '@/app/dashboard/actions';
+
+// Disables itself while the server action runs so a double-click can't log twice.
+function ExpenseSubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button className="button" type="submit" disabled={pending} aria-busy={pending}>
+      {pending ? 'Logging…' : 'Log expense'}
+    </button>
+  );
+}
 
 // Collapsible quick-logger for club leadership / operations expenses, surfaced
 // on the dashboard for admins and presidents. Posts to the shared
@@ -191,9 +202,7 @@ export function LeadershipExpenseLogger({
           ) : null}
 
           <div className="button-row">
-            <button className="button" type="submit">
-              Log expense
-            </button>
+            <ExpenseSubmitButton />
           </div>
         </form>
       ) : null}

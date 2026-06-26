@@ -1072,6 +1072,50 @@ export async function logPurchaseAction(formData: FormData) {
   });
 }
 
+export async function deleteHighValueAssetAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard',
+    successMessage: 'Removed the high value asset.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const assetId = String(formData.get('asset_id') || '').trim();
+      if (!assetId) {
+        throw new Error('Missing asset id.');
+      }
+
+      const admin = createAdminClient();
+      const { data: asset } = await admin
+        .from('high_value_assets')
+        .select('id, item_name, team_id, steward_scope, amount_cents')
+        .eq('id', assetId)
+        .maybeSingle();
+      if (!asset) {
+        throw new Error('That high value asset no longer exists.');
+      }
+
+      const { error } = await admin.from('high_value_assets').delete().eq('id', assetId);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'high_value_asset.removed',
+        targetType: 'high_value_asset',
+        targetId: assetId,
+        summary: `Removed high value asset "${asset.item_name}".`,
+        details: {
+          teamId: asset.team_id,
+          stewardScope: asset.steward_scope,
+          amountCents: asset.amount_cents
+        }
+      });
+
+      revalidatePaths(['/dashboard']);
+    }
+  });
+}
+
 export async function logHighValueAssetAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard',
@@ -1150,6 +1194,24 @@ export async function logHighValueAssetAction(formData: FormData) {
         }
         stewardScope = 'team';
         teamId = steward;
+      }
+
+      // Guard against accidental double-submits (the dashboard re-render is slow,
+      // so an impatient double-click could otherwise log the same item twice):
+      // skip if this user logged an identical asset in the last minute.
+      const recentCutoff = new Date(Date.now() - 60_000).toISOString();
+      const { data: recentDuplicate } = await admin
+        .from('high_value_assets')
+        .select('id')
+        .eq('logged_by', user.id)
+        .eq('item_name', itemName)
+        .eq('amount_cents', amountCents)
+        .gte('created_at', recentCutoff)
+        .limit(1)
+        .maybeSingle();
+      if (recentDuplicate) {
+        revalidatePaths(['/dashboard']);
+        return;
       }
 
       const { data: inserted, error } = await admin

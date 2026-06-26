@@ -1,7 +1,24 @@
 'use client';
 
 import { useState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { formatDateLabel } from '@/lib/academic-calendar';
+import { deleteHighValueAssetAction } from '@/app/dashboard/actions';
+
+// Remove button that disables while the delete is in flight (no double-submit).
+function RemoveAssetButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      className="hq-inline-link hq-inline-link-danger"
+      disabled={pending}
+      aria-busy={pending}
+    >
+      {pending ? 'Removing…' : 'Remove'}
+    </button>
+  );
+}
 
 export type HighValueAssetView = {
   id: string;
@@ -28,11 +45,13 @@ function formatCurrency(cents: number) {
 export function HighValueAssetList({
   title,
   assets,
-  showTeam = false
+  showTeam = false,
+  canManage = false
 }: {
   title: string;
   assets: HighValueAssetView[];
   showTeam?: boolean;
+  canManage?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -80,6 +99,7 @@ export function HighValueAssetList({
                   <th>Amount</th>
                   <th>Storage</th>
                   <th>Logged by</th>
+                  {canManage ? <th></th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -94,6 +114,21 @@ export function HighValueAssetList({
                     <td>{formatCurrency(asset.amountCents)}</td>
                     <td>{asset.locationLabel}</td>
                     <td>{asset.loggedByName}</td>
+                    {canManage ? (
+                      <td>
+                        <form
+                          action={deleteHighValueAssetAction}
+                          onSubmit={(event) => {
+                            if (!window.confirm(`Remove "${asset.itemName}" from the asset register?`)) {
+                              event.preventDefault();
+                            }
+                          }}
+                        >
+                          <input type="hidden" name="asset_id" value={asset.id} />
+                          <RemoveAssetButton />
+                        </form>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
