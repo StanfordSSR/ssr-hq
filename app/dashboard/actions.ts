@@ -1072,6 +1072,125 @@ export async function logPurchaseAction(formData: FormData) {
   });
 }
 
+export async function logHighValueAssetAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard',
+    successMessage: 'Logged the high value asset.',
+    action: async () => {
+      const steward = String(formData.get('steward') || '').trim();
+      const itemName = String(formData.get('item_name') || '').trim();
+      const amount = parsePurchaseAmount(formData.get('amount'));
+      const storageLocation = String(formData.get('storage_location') || '').trim();
+      const storageLocationOther = String(formData.get('storage_location_other') || '').trim();
+      const stewardshipNote = String(formData.get('stewardship_note') || '').trim();
+
+      if (!itemName) {
+        throw new Error('An item / equipment name is required.');
+      }
+
+      const amountCents = Math.round(amount * 100);
+      if (!Number.isFinite(amount) || amountCents <= 100000) {
+        throw new Error('High value asset logging is for single items over $1,000.');
+      }
+
+      if (
+        storageLocation !== 'robotics_room' &&
+        storageLocation !== 'lab64' &&
+        storageLocation !== 'chip' &&
+        storageLocation !== 'other'
+      ) {
+        throw new Error('Choose a valid storage location.');
+      }
+
+      if (storageLocation === 'other') {
+        if (!storageLocationOther) {
+          throw new Error('Describe where the equipment is stored.');
+        }
+        if (storageLocationOther.length > 50) {
+          throw new Error('Keep the storage location under 50 characters.');
+        }
+      }
+
+      if (!stewardshipNote) {
+        throw new Error('A stewardship note is required.');
+      }
+
+      if (countWords(stewardshipNote) > 30) {
+        throw new Error('Keep the stewardship note under 30 words.');
+      }
+
+      // Steward = a team, or "leadership" (club-wide, no team). Team leads can
+      // only steward to their own team; presidents/VPs/admins can steward to any
+      // team or to Robotics Club leadership.
+      const { user, currentRole } = await requireActiveProfile();
+      const canStewardLeadership =
+        currentRole === 'admin' || currentRole === 'president' || currentRole === 'vice_president';
+
+      let teamId: string | null = null;
+      let stewardScope: 'team' | 'leadership' = 'team';
+      const admin = createAdminClient();
+
+      if (steward === 'leadership') {
+        if (!canStewardLeadership) {
+          throw new Error('Only presidents, vice presidents, or admins can add club leadership assets.');
+        }
+        stewardScope = 'leadership';
+        teamId = null;
+      } else {
+        if (!steward) {
+          throw new Error('Choose which team stewards this asset.');
+        }
+        if (canStewardLeadership) {
+          const { data: team } = await admin.from('teams').select('id').eq('id', steward).maybeSingle();
+          if (!team) {
+            throw new Error('Choose a valid team.');
+          }
+        } else {
+          await requireLeadTeam(steward);
+        }
+        stewardScope = 'team';
+        teamId = steward;
+      }
+
+      const { data: inserted, error } = await admin
+        .from('high_value_assets')
+        .insert({
+          team_id: teamId,
+          steward_scope: stewardScope,
+          logged_by: user.id,
+          item_name: itemName,
+          amount_cents: amountCents,
+          storage_location: storageLocation,
+          storage_location_other: storageLocation === 'other' ? storageLocationOther : null,
+          stewardship_note: stewardshipNote
+        })
+        .select('id')
+        .single();
+
+      if (error || !inserted) {
+        throw new Error(error?.message || 'Failed to log the high value asset.');
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'high_value_asset.logged',
+        targetType: 'high_value_asset',
+        targetId: inserted.id,
+        summary: `Logged high value asset "${itemName}" (${stewardScope === 'leadership' ? 'Robotics Club leadership' : 'team'}).`,
+        details: {
+          teamId,
+          stewardScope,
+          amountCents,
+          storageLocation,
+          storageLocationOther: storageLocation === 'other' ? storageLocationOther : null
+        }
+      });
+
+      revalidatePaths(['/dashboard']);
+    }
+  });
+}
+
 export async function importPurchasesAction(
   _prevState: {
     message?: string;
