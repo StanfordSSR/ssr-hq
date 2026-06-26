@@ -11,8 +11,8 @@ import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel, LEADERSHIP_STEWARD_LABEL } from '@/lib/high-value-assets';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
-import { HighValueAssetLogger } from '@/components/high-value-asset-logger';
-import { HighValueAssetList, type HighValueAssetView } from '@/components/high-value-asset-list';
+import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
+import { type HighValueAssetView } from '@/components/high-value-asset-list';
 import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
 
 type Team = {
@@ -264,10 +264,6 @@ export default async function DashboardPage() {
 
         {isAdmin || isPresident || isVicePresident ? <VisitorLinkGenerator /> : null}
 
-        {isAdmin || isPresident || isVicePresident ? (
-          <HighValueAssetLogger teams={teams.map((team) => ({ id: team.id, name: team.name }))} canStewardLeadership />
-        ) : null}
-
         <section className="hq-admin-grid">
           {(isAdmin ? adminCards : isPresident || isVicePresident ? presidentCards : financialOfficerCards).map((card) => (
             <Link href={card.href} key={card.href} className="hq-admin-link">
@@ -277,7 +273,16 @@ export default async function DashboardPage() {
           ))}
         </section>
 
-        <HighValueAssetList title="High value equipment" assets={allAssetViews} showTeam canManage={isAdmin} />
+        <HighValueAssetPanel
+          teams={teams.map((team) => ({ id: team.id, name: team.name }))}
+          canStewardLeadership={isAdmin || isPresident || isVicePresident}
+          loggedByName={me.full_name || ''}
+          initialAssets={allAssetViews}
+          showTeam
+          canManage={isAdmin}
+          canLog={isAdmin || isPresident || isVicePresident}
+          listTitle="High value equipment"
+        />
       </div>
     );
   }
@@ -424,38 +429,46 @@ export default async function DashboardPage() {
   });
   const pendingReceipts = (pendingReceiptsData || []) as PendingReceipt[];
   const spentPercent = annualBudget > 0 ? Math.min(100, Math.round((spent / annualBudget) * 100)) : 0;
-  const { data: reportRecord } = await admin
-    .from('team_reports')
-    .select('id, status')
-    .eq('team_id', team.id)
-    .eq('academic_year', reportState.academicYear)
-    .eq('quarter', reportState.targetQuarter)
-    .maybeSingle();
 
-  const eoyState = await getEoyReportState();
-  const { data: eoyRecord } = await admin
-    .from('eoy_reports')
-    .select('id, status')
-    .eq('team_id', team.id)
-    .eq('academic_year', eoyState.academicYear)
-    .maybeSingle();
-  const showEoyCard = eoyState.reportState !== 'closed' || eoyRecord?.status === 'submitted';
-
-  const [{ data: myTeamsData }, leadAssets] = await Promise.all([
+  // These queries only depend on values already known here (team.id, myTeamIds,
+  // reportState), so fold them into a single round-trip block instead of
+  // awaiting each sequentially.
+  const [{ data: reportRecord }, eoyState, { data: myTeamsData }, leadAssets] = await Promise.all([
+    admin
+      .from('team_reports')
+      .select('id, status')
+      .eq('team_id', team.id)
+      .eq('academic_year', reportState.academicYear)
+      .eq('quarter', reportState.targetQuarter)
+      .maybeSingle(),
+    getEoyReportState(),
     admin.from('teams').select('id, name').in('id', myTeamIds),
     getHighValueAssetsForTeams(myTeamIds)
   ]);
+
+  // eoyRecord depends on eoyState (resolved above); the lead asset logger
+  // profiles depend on leadAssets (resolved above). Both inputs are now known,
+  // so run these two together.
+  const leadAssetLoggerIds = Array.from(
+    new Set(leadAssets.map((asset) => asset.logged_by).filter((id): id is string => Boolean(id)))
+  );
+  const [{ data: eoyRecord }, { data: leadAssetLoggerProfilesData }] = await Promise.all([
+    admin
+      .from('eoy_reports')
+      .select('id, status')
+      .eq('team_id', team.id)
+      .eq('academic_year', eoyState.academicYear)
+      .maybeSingle(),
+    leadAssetLoggerIds.length > 0
+      ? admin.from('profiles').select('id, full_name').in('id', leadAssetLoggerIds)
+      : Promise.resolve({ data: [] as { id: string; full_name: string | null }[] })
+  ]);
+  const showEoyCard = eoyState.reportState !== 'closed' || eoyRecord?.status === 'submitted';
+
   const myTeams = ((myTeamsData || []) as { id: string; name: string }[]).sort((a, b) =>
     a.name.localeCompare(b.name)
   );
   const leadAssetTeamNames = new Map(myTeams.map((teamRecord) => [teamRecord.id, teamRecord.name]));
-  const leadAssetLoggerIds = Array.from(
-    new Set(leadAssets.map((asset) => asset.logged_by).filter((id): id is string => Boolean(id)))
-  );
-  const { data: leadAssetLoggerProfilesData } =
-    leadAssetLoggerIds.length > 0
-      ? await admin.from('profiles').select('id, full_name').in('id', leadAssetLoggerIds)
-      : { data: [] as { id: string; full_name: string | null }[] };
   const leadAssetLoggerNames = new Map(
     (leadAssetLoggerProfilesData || []).map((profileRecord) => [profileRecord.id, profileRecord.full_name])
   );
@@ -797,8 +810,12 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          <HighValueAssetLogger teams={myTeams} />
-          <HighValueAssetList title="Your team's high value equipment" assets={leadAssetViews} />
+          <HighValueAssetPanel
+            teams={myTeams}
+            loggedByName={me.full_name || ''}
+            initialAssets={leadAssetViews}
+            listTitle="Your team's high value equipment"
+          />
         </section>
       </div>
     </div>

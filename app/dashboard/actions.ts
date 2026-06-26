@@ -104,6 +104,7 @@ import {
   getPlanBundle,
   getQuarterDeclarationState
 } from '@/lib/budget-plan';
+import { LEADERSHIP_STEWARD_LABEL, storageLocationLabel } from '@/lib/high-value-assets';
 
 const REVALIDATE_PATHS = {
   dashboard: ['/dashboard'],
@@ -1072,48 +1073,223 @@ export async function logPurchaseAction(formData: FormData) {
   });
 }
 
+// Shared core for removing a high value asset (admin-only). Returns the removed
+// asset id so inline callers can drop the row from the on-page list without a
+// full dashboard revalidate. The redirecting and inline actions both call this.
+async function removeHighValueAsset(formData: FormData): Promise<{ id: string }> {
+  const { user } = await requireAdmin();
+  const assetId = String(formData.get('asset_id') || '').trim();
+  if (!assetId) {
+    throw new Error('Missing asset id.');
+  }
+
+  const admin = createAdminClient();
+  const { data: asset } = await admin
+    .from('high_value_assets')
+    .select('id, item_name, team_id, steward_scope, amount_cents')
+    .eq('id', assetId)
+    .maybeSingle();
+  if (!asset) {
+    throw new Error('That high value asset no longer exists.');
+  }
+
+  const { error } = await admin.from('high_value_assets').delete().eq('id', assetId);
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'high_value_asset.removed',
+    targetType: 'high_value_asset',
+    targetId: assetId,
+    summary: `Removed high value asset "${asset.item_name}".`,
+    details: {
+      teamId: asset.team_id,
+      stewardScope: asset.steward_scope,
+      amountCents: asset.amount_cents
+    }
+  });
+
+  return { id: assetId };
+}
+
 export async function deleteHighValueAssetAction(formData: FormData) {
   await runRedirectingAction({
     fallbackPath: '/dashboard',
     successMessage: 'Removed the high value asset.',
     action: async () => {
-      const { user } = await requireAdmin();
-      const assetId = String(formData.get('asset_id') || '').trim();
-      if (!assetId) {
-        throw new Error('Missing asset id.');
-      }
-
-      const admin = createAdminClient();
-      const { data: asset } = await admin
-        .from('high_value_assets')
-        .select('id, item_name, team_id, steward_scope, amount_cents')
-        .eq('id', assetId)
-        .maybeSingle();
-      if (!asset) {
-        throw new Error('That high value asset no longer exists.');
-      }
-
-      const { error } = await admin.from('high_value_assets').delete().eq('id', assetId);
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'high_value_asset.removed',
-        targetType: 'high_value_asset',
-        targetId: assetId,
-        summary: `Removed high value asset "${asset.item_name}".`,
-        details: {
-          teamId: asset.team_id,
-          stewardScope: asset.steward_scope,
-          amountCents: asset.amount_cents
-        }
-      });
-
+      await removeHighValueAsset(formData);
       revalidatePaths(['/dashboard']);
     }
   });
+}
+
+// Inline (non-redirecting) variant of deleteHighValueAssetAction. Returns the
+// removed id so the panel can filter it out of state in place.
+export async function removeHighValueAssetInline(_prev: unknown, formData: FormData) {
+  return runInlineAction(() => removeHighValueAsset(formData), 'Removed the high value asset.');
+}
+
+// Resolved, list-ready view of a logged asset, matching HighValueAssetView in
+// components/high-value-asset-list.tsx. The inline logging action returns this
+// so the panel can prepend the new row without re-fetching the dashboard.
+type HighValueAssetViewResult = {
+  id: string;
+  teamName: string;
+  itemName: string;
+  amountCents: number;
+  locationLabel: string;
+  loggedByName: string;
+  createdAt: string;
+  stewardshipNote: string;
+};
+
+// Shared core for logging a high value asset. Runs validation, authorization,
+// dedupe, and insert, then returns a fully-resolved view object. Both the
+// redirecting and inline actions call this so the logic can't diverge.
+async function createHighValueAsset(formData: FormData): Promise<HighValueAssetViewResult> {
+  const steward = String(formData.get('steward') || '').trim();
+  const itemName = String(formData.get('item_name') || '').trim();
+  const amount = parsePurchaseAmount(formData.get('amount'));
+  const storageLocation = String(formData.get('storage_location') || '').trim();
+  const storageLocationOther = String(formData.get('storage_location_other') || '').trim();
+  const stewardshipNote = String(formData.get('stewardship_note') || '').trim();
+
+  if (!itemName) {
+    throw new Error('An item / equipment name is required.');
+  }
+
+  const amountCents = Math.round(amount * 100);
+  if (!Number.isFinite(amount) || amountCents <= 100000) {
+    throw new Error('High value asset logging is for single items over $1,000.');
+  }
+
+  if (
+    storageLocation !== 'robotics_room' &&
+    storageLocation !== 'lab64' &&
+    storageLocation !== 'chip' &&
+    storageLocation !== 'other'
+  ) {
+    throw new Error('Choose a valid storage location.');
+  }
+
+  if (storageLocation === 'other') {
+    if (!storageLocationOther) {
+      throw new Error('Describe where the equipment is stored.');
+    }
+    if (storageLocationOther.length > 50) {
+      throw new Error('Keep the storage location under 50 characters.');
+    }
+  }
+
+  if (!stewardshipNote) {
+    throw new Error('A stewardship note is required.');
+  }
+
+  if (countWords(stewardshipNote) > 30) {
+    throw new Error('Keep the stewardship note under 30 words.');
+  }
+
+  // Steward = a team, or "leadership" (club-wide, no team). Team leads can
+  // only steward to their own team; presidents/VPs/admins can steward to any
+  // team or to Robotics Club leadership.
+  const { user, profile, currentRole } = await requireActiveProfile();
+  const canStewardLeadership =
+    currentRole === 'admin' || currentRole === 'president' || currentRole === 'vice_president';
+
+  let teamId: string | null = null;
+  let stewardScope: 'team' | 'leadership' = 'team';
+  let teamName: string = LEADERSHIP_STEWARD_LABEL;
+  const admin = createAdminClient();
+
+  if (steward === 'leadership') {
+    if (!canStewardLeadership) {
+      throw new Error('Only presidents, vice presidents, or admins can add club leadership assets.');
+    }
+    stewardScope = 'leadership';
+    teamId = null;
+    teamName = LEADERSHIP_STEWARD_LABEL;
+  } else {
+    if (!steward) {
+      throw new Error('Choose which team stewards this asset.');
+    }
+    const { data: team } = await admin.from('teams').select('id, name').eq('id', steward).maybeSingle();
+    if (!team) {
+      throw new Error('Choose a valid team.');
+    }
+    if (!canStewardLeadership) {
+      await requireLeadTeam(steward);
+    }
+    stewardScope = 'team';
+    teamId = steward;
+    teamName = team.name;
+  }
+
+  // Guard against accidental double-submits (the dashboard re-render is slow,
+  // so an impatient double-click could otherwise log the same item twice):
+  // skip if this user logged an identical asset in the last minute.
+  const recentCutoff = new Date(Date.now() - 60_000).toISOString();
+  const { data: recentDuplicate } = await admin
+    .from('high_value_assets')
+    .select('id, created_at')
+    .eq('logged_by', user.id)
+    .eq('item_name', itemName)
+    .eq('amount_cents', amountCents)
+    .gte('created_at', recentCutoff)
+    .limit(1)
+    .maybeSingle();
+
+  const buildView = (id: string, createdAt: string): HighValueAssetViewResult => ({
+    id,
+    teamName,
+    itemName,
+    amountCents,
+    locationLabel: storageLocationLabel(storageLocation, storageLocation === 'other' ? storageLocationOther : null),
+    loggedByName: profile.full_name || 'Unknown',
+    createdAt,
+    stewardshipNote
+  });
+
+  if (recentDuplicate) {
+    return buildView(recentDuplicate.id, recentDuplicate.created_at);
+  }
+
+  const { data: inserted, error } = await admin
+    .from('high_value_assets')
+    .insert({
+      team_id: teamId,
+      steward_scope: stewardScope,
+      logged_by: user.id,
+      item_name: itemName,
+      amount_cents: amountCents,
+      storage_location: storageLocation,
+      storage_location_other: storageLocation === 'other' ? storageLocationOther : null,
+      stewardship_note: stewardshipNote
+    })
+    .select('id, created_at')
+    .single();
+
+  if (error || !inserted) {
+    throw new Error(error?.message || 'Failed to log the high value asset.');
+  }
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'high_value_asset.logged',
+    targetType: 'high_value_asset',
+    targetId: inserted.id,
+    summary: `Logged high value asset "${itemName}" (${stewardScope === 'leadership' ? 'Robotics Club leadership' : 'team'}).`,
+    details: {
+      teamId,
+      stewardScope,
+      amountCents,
+      storageLocation,
+      storageLocationOther: storageLocation === 'other' ? storageLocationOther : null
+    }
+  });
+
+  return buildView(inserted.id, inserted.created_at);
 }
 
 export async function logHighValueAssetAction(formData: FormData) {
@@ -1121,136 +1297,16 @@ export async function logHighValueAssetAction(formData: FormData) {
     fallbackPath: '/dashboard',
     successMessage: 'Logged the high value asset.',
     action: async () => {
-      const steward = String(formData.get('steward') || '').trim();
-      const itemName = String(formData.get('item_name') || '').trim();
-      const amount = parsePurchaseAmount(formData.get('amount'));
-      const storageLocation = String(formData.get('storage_location') || '').trim();
-      const storageLocationOther = String(formData.get('storage_location_other') || '').trim();
-      const stewardshipNote = String(formData.get('stewardship_note') || '').trim();
-
-      if (!itemName) {
-        throw new Error('An item / equipment name is required.');
-      }
-
-      const amountCents = Math.round(amount * 100);
-      if (!Number.isFinite(amount) || amountCents <= 100000) {
-        throw new Error('High value asset logging is for single items over $1,000.');
-      }
-
-      if (
-        storageLocation !== 'robotics_room' &&
-        storageLocation !== 'lab64' &&
-        storageLocation !== 'chip' &&
-        storageLocation !== 'other'
-      ) {
-        throw new Error('Choose a valid storage location.');
-      }
-
-      if (storageLocation === 'other') {
-        if (!storageLocationOther) {
-          throw new Error('Describe where the equipment is stored.');
-        }
-        if (storageLocationOther.length > 50) {
-          throw new Error('Keep the storage location under 50 characters.');
-        }
-      }
-
-      if (!stewardshipNote) {
-        throw new Error('A stewardship note is required.');
-      }
-
-      if (countWords(stewardshipNote) > 30) {
-        throw new Error('Keep the stewardship note under 30 words.');
-      }
-
-      // Steward = a team, or "leadership" (club-wide, no team). Team leads can
-      // only steward to their own team; presidents/VPs/admins can steward to any
-      // team or to Robotics Club leadership.
-      const { user, currentRole } = await requireActiveProfile();
-      const canStewardLeadership =
-        currentRole === 'admin' || currentRole === 'president' || currentRole === 'vice_president';
-
-      let teamId: string | null = null;
-      let stewardScope: 'team' | 'leadership' = 'team';
-      const admin = createAdminClient();
-
-      if (steward === 'leadership') {
-        if (!canStewardLeadership) {
-          throw new Error('Only presidents, vice presidents, or admins can add club leadership assets.');
-        }
-        stewardScope = 'leadership';
-        teamId = null;
-      } else {
-        if (!steward) {
-          throw new Error('Choose which team stewards this asset.');
-        }
-        if (canStewardLeadership) {
-          const { data: team } = await admin.from('teams').select('id').eq('id', steward).maybeSingle();
-          if (!team) {
-            throw new Error('Choose a valid team.');
-          }
-        } else {
-          await requireLeadTeam(steward);
-        }
-        stewardScope = 'team';
-        teamId = steward;
-      }
-
-      // Guard against accidental double-submits (the dashboard re-render is slow,
-      // so an impatient double-click could otherwise log the same item twice):
-      // skip if this user logged an identical asset in the last minute.
-      const recentCutoff = new Date(Date.now() - 60_000).toISOString();
-      const { data: recentDuplicate } = await admin
-        .from('high_value_assets')
-        .select('id')
-        .eq('logged_by', user.id)
-        .eq('item_name', itemName)
-        .eq('amount_cents', amountCents)
-        .gte('created_at', recentCutoff)
-        .limit(1)
-        .maybeSingle();
-      if (recentDuplicate) {
-        revalidatePaths(['/dashboard']);
-        return;
-      }
-
-      const { data: inserted, error } = await admin
-        .from('high_value_assets')
-        .insert({
-          team_id: teamId,
-          steward_scope: stewardScope,
-          logged_by: user.id,
-          item_name: itemName,
-          amount_cents: amountCents,
-          storage_location: storageLocation,
-          storage_location_other: storageLocation === 'other' ? storageLocationOther : null,
-          stewardship_note: stewardshipNote
-        })
-        .select('id')
-        .single();
-
-      if (error || !inserted) {
-        throw new Error(error?.message || 'Failed to log the high value asset.');
-      }
-
-      await recordAuditEvent({
-        actorId: user.id,
-        action: 'high_value_asset.logged',
-        targetType: 'high_value_asset',
-        targetId: inserted.id,
-        summary: `Logged high value asset "${itemName}" (${stewardScope === 'leadership' ? 'Robotics Club leadership' : 'team'}).`,
-        details: {
-          teamId,
-          stewardScope,
-          amountCents,
-          storageLocation,
-          storageLocationOther: storageLocation === 'other' ? storageLocationOther : null
-        }
-      });
-
+      await createHighValueAsset(formData);
       revalidatePaths(['/dashboard']);
     }
   });
+}
+
+// Inline (non-redirecting) variant of logHighValueAssetAction. Returns the
+// resolved asset view so the panel can prepend it to the on-page list.
+export async function logHighValueAssetInline(_prev: unknown, formData: FormData) {
+  return runInlineAction(() => createHighValueAsset(formData), 'Logged the high value asset.');
 }
 
 export async function importPurchasesAction(
