@@ -14,6 +14,13 @@ export const STORAGE_LOCATIONS = [
 
 export type StorageLocation = 'robotics_room' | 'lab64' | 'chip' | 'other';
 
+export type StewardScope = 'team' | 'leadership';
+
+// Steward option for assets not tied to a single team (club-wide equipment
+// added by presidents/VPs/admins). The select value below is reserved.
+export const LEADERSHIP_STEWARD_VALUE = 'leadership';
+export const LEADERSHIP_STEWARD_LABEL = 'Robotics Club Leadership';
+
 export function storageLocationLabel(value: string, other?: string | null): string {
   if (value === 'other') {
     return (other || '').trim() || 'Other';
@@ -25,7 +32,8 @@ export function storageLocationLabel(value: string, other?: string | null): stri
 
 export type HighValueAsset = {
   id: string;
-  team_id: string;
+  team_id: string | null;
+  steward_scope: StewardScope;
   logged_by: string | null;
   item_name: string;
   amount_cents: number;
@@ -36,7 +44,7 @@ export type HighValueAsset = {
 };
 
 const HIGH_VALUE_ASSET_COLUMNS =
-  'id, team_id, logged_by, item_name, amount_cents, storage_location, storage_location_other, stewardship_note, created_at';
+  'id, team_id, steward_scope, logged_by, item_name, amount_cents, storage_location, storage_location_other, stewardship_note, created_at';
 
 export async function getHighValueAssetsForTeams(teamIds: string[]): Promise<HighValueAsset[]> {
   if (teamIds.length === 0) {

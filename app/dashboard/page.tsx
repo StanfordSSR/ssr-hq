@@ -9,7 +9,7 @@ import { formatQuarterReportTitle } from '@/lib/reports';
 import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
-import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel } from '@/lib/high-value-assets';
+import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel, LEADERSHIP_STEWARD_LABEL } from '@/lib/high-value-assets';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
 import { HighValueAssetLogger } from '@/components/high-value-asset-logger';
 import { HighValueAssetList, type HighValueAssetView } from '@/components/high-value-asset-list';
@@ -200,7 +200,9 @@ export default async function DashboardPage() {
     const assetLoggerIds = Array.from(
       new Set(allAssets.map((asset) => asset.logged_by).filter((id): id is string => Boolean(id)))
     );
-    const assetTeamIds = Array.from(new Set(allAssets.map((asset) => asset.team_id)));
+    const assetTeamIds = Array.from(
+      new Set(allAssets.map((asset) => asset.team_id).filter((id): id is string => Boolean(id)))
+    );
     const [{ data: assetTeamsData }, { data: assetLoggerProfilesData }] = await Promise.all([
       assetTeamIds.length > 0
         ? admin.from('teams').select('id, name').in('id', assetTeamIds)
@@ -213,7 +215,10 @@ export default async function DashboardPage() {
     const assetLoggerNames = new Map((assetLoggerProfilesData || []).map((profile) => [profile.id, profile.full_name]));
     const allAssetViews: HighValueAssetView[] = allAssets.map((asset) => ({
       id: asset.id,
-      teamName: assetTeamNames.get(asset.team_id) || 'Unknown team',
+      teamName:
+        asset.steward_scope === 'leadership'
+          ? LEADERSHIP_STEWARD_LABEL
+          : assetTeamNames.get(asset.team_id ?? '') || 'Unknown team',
       itemName: asset.item_name,
       amountCents: asset.amount_cents,
       locationLabel: storageLocationLabel(asset.storage_location, asset.storage_location_other),
@@ -258,6 +263,10 @@ export default async function DashboardPage() {
         ) : null}
 
         {isAdmin || isPresident || isVicePresident ? <VisitorLinkGenerator /> : null}
+
+        {isAdmin || isPresident || isVicePresident ? (
+          <HighValueAssetLogger teams={teams.map((team) => ({ id: team.id, name: team.name }))} canStewardLeadership />
+        ) : null}
 
         <section className="hq-admin-grid">
           {(isAdmin ? adminCards : isPresident || isVicePresident ? presidentCards : financialOfficerCards).map((card) => (
@@ -452,7 +461,7 @@ export default async function DashboardPage() {
   );
   const leadAssetViews: HighValueAssetView[] = leadAssets.map((asset) => ({
     id: asset.id,
-    teamName: leadAssetTeamNames.get(asset.team_id) || team.name,
+    teamName: (asset.team_id ? leadAssetTeamNames.get(asset.team_id) : null) || team.name,
     itemName: asset.item_name,
     amountCents: asset.amount_cents,
     locationLabel: storageLocationLabel(asset.storage_location, asset.storage_location_other),

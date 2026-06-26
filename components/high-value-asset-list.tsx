@@ -75,7 +75,7 @@ export function HighValueAssetList({
               <thead>
                 <tr>
                   <th>Date</th>
-                  {showTeam ? <th>Team</th> : null}
+                  {showTeam ? <th>Steward</th> : null}
                   <th>Item</th>
                   <th>Amount</th>
                   <th>Storage</th>

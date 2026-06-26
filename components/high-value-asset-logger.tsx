@@ -2,13 +2,24 @@
 
 import { useState } from 'react';
 import { logHighValueAssetAction } from '@/app/dashboard/actions';
-import { STORAGE_LOCATIONS, type StorageLocation } from '@/lib/high-value-assets';
+import {
+  LEADERSHIP_STEWARD_LABEL,
+  LEADERSHIP_STEWARD_VALUE,
+  STORAGE_LOCATIONS,
+  type StorageLocation
+} from '@/lib/high-value-assets';
 
 // Collapsible dashboard logger for capital equipment over $1,000. Everything the
 // club buys is the property of Stanford University, so each high value item must
 // be tracked for stewardship. Posts to logHighValueAssetAction, which authorizes
 // the acting team lead (or an admin) for the chosen team.
-export function HighValueAssetLogger({ teams }: { teams: { id: string; name: string }[] }) {
+export function HighValueAssetLogger({
+  teams,
+  canStewardLeadership = false
+}: {
+  teams: { id: string; name: string }[];
+  canStewardLeadership?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [itemName, setItemName] = useState('');
   const [amount, setAmount] = useState('');
@@ -78,21 +89,31 @@ export function HighValueAssetLogger({ teams }: { teams: { id: string; name: str
             </p>
           </div>
 
-          {teams.length > 1 ? (
+          {teams.length > 1 || canStewardLeadership ? (
             <div className="field">
               <label className="label" htmlFor="hva-team">
-                Team
+                Stewarded by
               </label>
-              <select className="select" id="hva-team" name="team_id" defaultValue={teams[0]?.id || ''} required>
+              <select
+                className="select"
+                id="hva-team"
+                name="steward"
+                defaultValue={canStewardLeadership ? LEADERSHIP_STEWARD_VALUE : teams[0]?.id || ''}
+                required
+              >
+                {canStewardLeadership ? (
+                  <option value={LEADERSHIP_STEWARD_VALUE}>{LEADERSHIP_STEWARD_LABEL}</option>
+                ) : null}
                 {teams.map((team) => (
                   <option key={team.id} value={team.id}>
                     {team.name}
                   </option>
                 ))}
               </select>
+              <span className="helper">Which team (or club leadership) stewards this asset.</span>
             </div>
           ) : (
-            <input type="hidden" name="team_id" value={singleTeamId} />
+            <input type="hidden" name="steward" value={singleTeamId} />
           )}
 
           <div className="field">
