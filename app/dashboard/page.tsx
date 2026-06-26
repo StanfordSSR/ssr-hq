@@ -277,7 +277,7 @@ export default async function DashboardPage() {
           ))}
         </section>
 
-        <HighValueAssetList title="High value equipment" assets={allAssetViews} showTeam />
+        <HighValueAssetList title="High value equipment" assets={allAssetViews} showTeam canManage={isAdmin} />
       </div>
     );
   }
