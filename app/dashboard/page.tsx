@@ -9,7 +9,10 @@ import { formatQuarterReportTitle } from '@/lib/reports';
 import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
+import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel } from '@/lib/high-value-assets';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
+import { HighValueAssetLogger } from '@/components/high-value-asset-logger';
+import { HighValueAssetList, type HighValueAssetView } from '@/components/high-value-asset-list';
 import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
 
 type Team = {
@@ -171,7 +174,7 @@ export default async function DashboardPage() {
   const isFinancialOfficer = currentRole === 'financial_officer';
 
   if (isAdmin || isPresident || isVicePresident || isFinancialOfficer) {
-    const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }, academicYear] = await Promise.all([
+    const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }, academicYear, allAssets] = await Promise.all([
       admin
         .from('teams')
         .select('id, name, description, logo_url, is_active, created_at')
@@ -186,12 +189,38 @@ export default async function DashboardPage() {
         .select('id', { count: 'exact', head: true })
         .eq('active', true),
       admin.from('team_roster_members').select('id'),
-      getCurrentAcademicYear()
+      getCurrentAcademicYear(),
+      getAllHighValueAssets()
     ]);
     const teams = (teamsData || []) as Team[];
     const memberships = (membershipsData || []) as Membership[];
     const activeLeadMemberships = memberships.filter((membership) => membership.team_role === 'lead');
     const totalMembers = (count || 0) + (rosterMembersData || []).length;
+
+    const assetLoggerIds = Array.from(
+      new Set(allAssets.map((asset) => asset.logged_by).filter((id): id is string => Boolean(id)))
+    );
+    const assetTeamIds = Array.from(new Set(allAssets.map((asset) => asset.team_id)));
+    const [{ data: assetTeamsData }, { data: assetLoggerProfilesData }] = await Promise.all([
+      assetTeamIds.length > 0
+        ? admin.from('teams').select('id, name').in('id', assetTeamIds)
+        : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+      assetLoggerIds.length > 0
+        ? admin.from('profiles').select('id, full_name').in('id', assetLoggerIds)
+        : Promise.resolve({ data: [] as { id: string; full_name: string | null }[] })
+    ]);
+    const assetTeamNames = new Map((assetTeamsData || []).map((team) => [team.id, team.name]));
+    const assetLoggerNames = new Map((assetLoggerProfilesData || []).map((profile) => [profile.id, profile.full_name]));
+    const allAssetViews: HighValueAssetView[] = allAssets.map((asset) => ({
+      id: asset.id,
+      teamName: assetTeamNames.get(asset.team_id) || 'Unknown team',
+      itemName: asset.item_name,
+      amountCents: asset.amount_cents,
+      locationLabel: storageLocationLabel(asset.storage_location, asset.storage_location_other),
+      loggedByName: (asset.logged_by && assetLoggerNames.get(asset.logged_by)) || 'Unknown',
+      createdAt: asset.created_at,
+      stewardshipNote: asset.stewardship_note
+    }));
 
     return (
       <div className="hq-page">
@@ -238,6 +267,8 @@ export default async function DashboardPage() {
             </Link>
           ))}
         </section>
+
+        <HighValueAssetList title="High value equipment" assets={allAssetViews} showTeam />
       </div>
     );
   }
@@ -400,6 +431,35 @@ export default async function DashboardPage() {
     .eq('academic_year', eoyState.academicYear)
     .maybeSingle();
   const showEoyCard = eoyState.reportState !== 'closed' || eoyRecord?.status === 'submitted';
+
+  const [{ data: myTeamsData }, leadAssets] = await Promise.all([
+    admin.from('teams').select('id, name').in('id', myTeamIds),
+    getHighValueAssetsForTeams(myTeamIds)
+  ]);
+  const myTeams = ((myTeamsData || []) as { id: string; name: string }[]).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+  const leadAssetTeamNames = new Map(myTeams.map((teamRecord) => [teamRecord.id, teamRecord.name]));
+  const leadAssetLoggerIds = Array.from(
+    new Set(leadAssets.map((asset) => asset.logged_by).filter((id): id is string => Boolean(id)))
+  );
+  const { data: leadAssetLoggerProfilesData } =
+    leadAssetLoggerIds.length > 0
+      ? await admin.from('profiles').select('id, full_name').in('id', leadAssetLoggerIds)
+      : { data: [] as { id: string; full_name: string | null }[] };
+  const leadAssetLoggerNames = new Map(
+    (leadAssetLoggerProfilesData || []).map((profileRecord) => [profileRecord.id, profileRecord.full_name])
+  );
+  const leadAssetViews: HighValueAssetView[] = leadAssets.map((asset) => ({
+    id: asset.id,
+    teamName: leadAssetTeamNames.get(asset.team_id) || team.name,
+    itemName: asset.item_name,
+    amountCents: asset.amount_cents,
+    locationLabel: storageLocationLabel(asset.storage_location, asset.storage_location_other),
+    loggedByName: (asset.logged_by && leadAssetLoggerNames.get(asset.logged_by)) || 'Unknown',
+    createdAt: asset.created_at,
+    stewardshipNote: asset.stewardship_note
+  }));
 
   return (
     <div className="hq-page">
@@ -727,6 +787,9 @@ export default async function DashboardPage() {
               })}
             </div>
           </section>
+
+          <HighValueAssetLogger teams={myTeams} />
+          <HighValueAssetList title="Your team's high value equipment" assets={leadAssetViews} />
         </section>
       </div>
     </div>

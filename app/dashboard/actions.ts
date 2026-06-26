@@ -1072,6 +1072,92 @@ export async function logPurchaseAction(formData: FormData) {
   });
 }
 
+export async function logHighValueAssetAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard',
+    successMessage: 'Logged the high value asset.',
+    action: async () => {
+      const teamId = String(formData.get('team_id') || '').trim();
+      const itemName = String(formData.get('item_name') || '').trim();
+      const amount = parsePurchaseAmount(formData.get('amount'));
+      const storageLocation = String(formData.get('storage_location') || '').trim();
+      const storageLocationOther = String(formData.get('storage_location_other') || '').trim();
+      const stewardshipNote = String(formData.get('stewardship_note') || '').trim();
+
+      if (!itemName) {
+        throw new Error('An item / equipment name is required.');
+      }
+
+      const amountCents = Math.round(amount * 100);
+      if (!Number.isFinite(amount) || amountCents <= 100000) {
+        throw new Error('High value asset logging is for single items over $1,000.');
+      }
+
+      if (
+        storageLocation !== 'robotics_room' &&
+        storageLocation !== 'lab64' &&
+        storageLocation !== 'chip' &&
+        storageLocation !== 'other'
+      ) {
+        throw new Error('Choose a valid storage location.');
+      }
+
+      if (storageLocation === 'other') {
+        if (!storageLocationOther) {
+          throw new Error('Describe where the equipment is stored.');
+        }
+        if (storageLocationOther.length > 50) {
+          throw new Error('Keep the storage location under 50 characters.');
+        }
+      }
+
+      if (!stewardshipNote) {
+        throw new Error('A stewardship note is required.');
+      }
+
+      if (countWords(stewardshipNote) > 30) {
+        throw new Error('Keep the stewardship note under 30 words.');
+      }
+
+      const { user } = await requireLeadTeam(teamId);
+      const admin = createAdminClient();
+      const { data: inserted, error } = await admin
+        .from('high_value_assets')
+        .insert({
+          team_id: teamId,
+          logged_by: user.id,
+          item_name: itemName,
+          amount_cents: amountCents,
+          storage_location: storageLocation,
+          storage_location_other: storageLocation === 'other' ? storageLocationOther : null,
+          stewardship_note: stewardshipNote
+        })
+        .select('id')
+        .single();
+
+      if (error || !inserted) {
+        throw new Error(error?.message || 'Failed to log the high value asset.');
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'high_value_asset.logged',
+        targetType: 'high_value_asset',
+        targetId: inserted.id,
+        summary: `Logged high value asset "${itemName}".`,
+        details: {
+          teamId,
+          amountCents,
+          storageLocation,
+          storageLocationOther: storageLocation === 'other' ? storageLocationOther : null
+        }
+      });
+
+      revalidatePaths(['/dashboard']);
+    }
+  });
+}
+
 export async function importPurchasesAction(
   _prevState: {
     message?: string;
