@@ -1,36 +1,29 @@
 'use client';
 
 import { useState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { logHighValueAssetAction } from '@/app/dashboard/actions';
-
-// Submit button that disables itself while the server action is in flight, so a
-// frustrated double-click can't log the asset twice.
-function LogSubmitButton({ disabled }: { disabled: boolean }) {
-  const { pending } = useFormStatus();
-  return (
-    <button className="button" type="submit" disabled={disabled || pending} aria-busy={pending}>
-      {pending ? 'Logging…' : 'Log asset'}
-    </button>
-  );
-}
+import { logHighValueAssetInline } from '@/app/dashboard/actions';
 import {
   LEADERSHIP_STEWARD_LABEL,
   LEADERSHIP_STEWARD_VALUE,
   STORAGE_LOCATIONS,
   type StorageLocation
 } from '@/lib/high-value-assets';
+import type { HighValueAssetView } from '@/components/high-value-asset-list';
 
 // Collapsible dashboard logger for capital equipment over $1,000. Everything the
 // club buys is the property of Stanford University, so each high value item must
-// be tracked for stewardship. Posts to logHighValueAssetAction, which authorizes
-// the acting team lead (or an admin) for the chosen team.
+// be tracked for stewardship. Submits to the inline server action and reports
+// the resolved asset to the panel through onLogged, so the list updates in place
+// with no navigation or full dashboard revalidate. The form action processes the
+// result inline (no effect) so it can both notify the parent and reset fields.
 export function HighValueAssetLogger({
   teams,
-  canStewardLeadership = false
+  canStewardLeadership = false,
+  onLogged
 }: {
   teams: { id: string; name: string }[];
   canStewardLeadership?: boolean;
+  onLogged: (asset: HighValueAssetView) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [itemName, setItemName] = useState('');
@@ -38,6 +31,30 @@ export function HighValueAssetLogger({
   const [storageLocation, setStorageLocation] = useState<StorageLocation>('robotics_room');
   const [storageLocationOther, setStorageLocationOther] = useState('');
   const [stewardshipNote, setStewardshipNote] = useState('');
+  const [pending, setPending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Disables itself while in flight so an impatient double-click can't log twice.
+  // Drives the inline action, then resets fields / notifies the panel on success.
+  async function handleSubmit(formData: FormData) {
+    setPending(true);
+    setErrorMessage('');
+    try {
+      const result = await logHighValueAssetInline(undefined, formData);
+      if (result.ok && result.data) {
+        onLogged(result.data);
+        setItemName('');
+        setAmount('');
+        setStorageLocation('robotics_room');
+        setStorageLocationOther('');
+        setStewardshipNote('');
+      } else {
+        setErrorMessage(result.message || 'Failed to log the high value asset.');
+      }
+    } finally {
+      setPending(false);
+    }
+  }
 
   const noteWordCount = stewardshipNote.trim().split(/\s+/).filter(Boolean).length;
   const amountValue = Number(amount);
@@ -83,7 +100,7 @@ export function HighValueAssetLogger({
       </button>
 
       {open ? (
-        <form action={logHighValueAssetAction} className="form-stack" style={{ marginTop: '1rem' }}>
+        <form action={handleSubmit} className="form-stack" style={{ marginTop: '1rem' }}>
           <div
             style={{
               border: '1.5px solid #8c1515',
@@ -219,8 +236,16 @@ export function HighValueAssetLogger({
             </span>
           </div>
 
+          {errorMessage ? (
+            <span className="helper" style={{ color: '#8c1515' }}>
+              {errorMessage}
+            </span>
+          ) : null}
+
           <div className="button-row">
-            <LogSubmitButton disabled={submitDisabled} />
+            <button className="button" type="submit" disabled={submitDisabled || pending} aria-busy={pending}>
+              {pending ? 'Logging…' : 'Log asset'}
+            </button>
           </div>
         </form>
       ) : null}

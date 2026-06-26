@@ -1,24 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useFormStatus } from 'react-dom';
 import { formatDateLabel } from '@/lib/academic-calendar';
-import { deleteHighValueAssetAction } from '@/app/dashboard/actions';
-
-// Remove button that disables while the delete is in flight (no double-submit).
-function RemoveAssetButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      className="hq-inline-link hq-inline-link-danger"
-      disabled={pending}
-      aria-busy={pending}
-    >
-      {pending ? 'Removing…' : 'Remove'}
-    </button>
-  );
-}
+import { removeHighValueAssetInline } from '@/app/dashboard/actions';
 
 export type HighValueAssetView = {
   id: string;
@@ -31,6 +15,62 @@ export type HighValueAssetView = {
   stewardshipNote: string;
 };
 
+// Remove button + form for a single asset row. Drives the inline removal action
+// and, on success, asks the panel to drop the row from state (no navigation).
+// The form action processes the result inline (no effect), so it can both notify
+// the parent and surface any error without cascading renders.
+function RemoveAssetForm({
+  asset,
+  onRemoved
+}: {
+  asset: HighValueAssetView;
+  onRemoved: (id: string) => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  async function handleRemove(formData: FormData) {
+    setPending(true);
+    setErrorMessage('');
+    try {
+      const result = await removeHighValueAssetInline(undefined, formData);
+      if (result.ok && result.data) {
+        onRemoved(result.data.id);
+      } else {
+        setErrorMessage(result.message || 'Failed to remove the asset.');
+      }
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form
+      action={handleRemove}
+      onSubmit={(event) => {
+        if (!window.confirm(`Remove "${asset.itemName}" from the asset register?`)) {
+          event.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="asset_id" value={asset.id} />
+      <button
+        type="submit"
+        className="hq-inline-link hq-inline-link-danger"
+        disabled={pending}
+        aria-busy={pending}
+      >
+        {pending ? 'Removing…' : 'Remove'}
+      </button>
+      {errorMessage ? (
+        <span className="helper" style={{ color: '#8c1515', display: 'block' }}>
+          {errorMessage}
+        </span>
+      ) : null}
+    </form>
+  );
+}
+
 function formatCurrency(cents: number) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -41,17 +81,20 @@ function formatCurrency(cents: number) {
 
 // Collapsible read-only table of logged high value capital equipment. Shown on
 // the lead dashboard (their own team) and on the privileged dashboard (every
-// team, with the Team column enabled via showTeam).
+// team, with the Team column enabled via showTeam). When canManage is set, each
+// row gets an inline Remove control that drops it via onRemoved with no reload.
 export function HighValueAssetList({
   title,
   assets,
   showTeam = false,
-  canManage = false
+  canManage = false,
+  onRemoved
 }: {
   title: string;
   assets: HighValueAssetView[];
   showTeam?: boolean;
   canManage?: boolean;
+  onRemoved?: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -116,17 +159,7 @@ export function HighValueAssetList({
                     <td>{asset.loggedByName}</td>
                     {canManage ? (
                       <td>
-                        <form
-                          action={deleteHighValueAssetAction}
-                          onSubmit={(event) => {
-                            if (!window.confirm(`Remove "${asset.itemName}" from the asset register?`)) {
-                              event.preventDefault();
-                            }
-                          }}
-                        >
-                          <input type="hidden" name="asset_id" value={asset.id} />
-                          <RemoveAssetButton />
-                        </form>
+                        <RemoveAssetForm asset={asset} onRemoved={onRemoved ?? (() => {})} />
                       </td>
                     ) : null}
                   </tr>
