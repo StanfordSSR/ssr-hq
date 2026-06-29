@@ -10,6 +10,7 @@ import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel, LEADERSHIP_STEWARD_LABEL } from '@/lib/high-value-assets';
+import { getPendingCardAgreements } from '@/lib/credit-card';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
@@ -173,8 +174,12 @@ export default async function DashboardPage() {
   const isVicePresident = currentRole === 'vice_president';
   const isFinancialOfficer = currentRole === 'financial_officer';
 
+  // Only Financial Officers and admins act on credit card access requests, so
+  // only fetch the pending count for them.
+  const showCardApprovalBanner = isAdmin || isFinancialOfficer;
+
   if (isAdmin || isPresident || isVicePresident || isFinancialOfficer) {
-    const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }, academicYear, allAssets] = await Promise.all([
+    const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }, academicYear, allAssets, pendingCardAgreements] = await Promise.all([
       admin
         .from('teams')
         .select('id, name, description, logo_url, is_active, created_at')
@@ -190,8 +195,10 @@ export default async function DashboardPage() {
         .eq('active', true),
       admin.from('team_roster_members').select('id'),
       getCurrentAcademicYear(),
-      getAllHighValueAssets()
+      getAllHighValueAssets(),
+      showCardApprovalBanner ? getPendingCardAgreements() : Promise.resolve([])
     ]);
+    const pendingCardCount = pendingCardAgreements.length;
     const teams = (teamsData || []) as Team[];
     const memberships = (membershipsData || []) as Membership[];
     const activeLeadMemberships = memberships.filter((membership) => membership.team_role === 'lead');
@@ -257,6 +264,24 @@ export default async function DashboardPage() {
             </div>
           </div>
         </section>
+
+        {showCardApprovalBanner && pendingCardCount > 0 ? (
+          <Link
+            href="/dashboard/credit-card/approvals"
+            className="hq-panel hq-surface-muted"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', textDecoration: 'none' }}
+          >
+            <span>
+              <strong>
+                {pendingCardCount} credit card access request{pendingCardCount === 1 ? '' : 's'} pending review
+              </strong>
+              <span className="helper" style={{ display: 'block' }}>
+                A member signed the credit card agreement and is waiting for approval.
+              </span>
+            </span>
+            <span className="hq-inline-link">Review →</span>
+          </Link>
+        ) : null}
 
         {isAdmin || isPresident || isVicePresident ? (
           <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} />
