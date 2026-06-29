@@ -17,6 +17,13 @@ const sectionHeadingStyle: React.CSSProperties = {
   color: '#171414'
 };
 
+const subHeadingStyle: React.CSSProperties = {
+  fontSize: '0.95rem',
+  fontWeight: 700,
+  margin: '1.1rem 0 0.45rem',
+  color: '#171414'
+};
+
 const listStyle: React.CSSProperties = {
   margin: '0 0 0.6rem',
   paddingLeft: '1.2rem',
@@ -207,6 +214,59 @@ export function CreditCardAgreementBody() {
       </ul>
       <p style={paragraphStyle}>
         A cardholder may not mix personal and club items in the same order.
+      </p>
+
+      <h3 style={subHeadingStyle}>Prohibited Vendors, Services, and Payment Methods</h3>
+      <p style={paragraphStyle}>
+        The club credit card may not be used for any of the following vendors, services, merchant
+        categories, or payment methods: Venmo, Cash App, Zelle, Apple Cash, Google Pay
+        person-to-person transfers, PayPal Friends and Family, Wise transfers to individuals, Western
+        Union, MoneyGram, wire transfers to individuals, cryptocurrency exchanges, cryptocurrency
+        purchases, cash advances, ATM withdrawals, money orders, traveler&rsquo;s checks, prepaid
+        debit cards, reloadable payment cards, gift cards, Amazon gift cards, Apple gift cards, Google
+        Play gift cards, Visa gift cards, Mastercard gift cards, restaurant gift cards, retail gift
+        cards, store credit purchased for later use, gaming currency, virtual currency, cash-equivalent
+        products, liquor stores, bars, nightclubs, alcohol-delivery services, cannabis dispensaries,
+        vape shops, tobacco retailers, controlled-substance vendors, gambling websites, casinos,
+        sportsbooks, online betting platforms, fantasy-sports wagering services, lottery vendors,
+        monetary prediction markets, political campaigns, political parties, political action
+        committees, candidate committees, charitable-donation platforms, crowdfunding donations,
+        GoFundMe, ActBlue, WinRed, personal fundraisers, dating services, adult-entertainment
+        services, pornographic-content vendors, escort services, personal grooming services, personal
+        fitness memberships, personal medical expenses, academic-cheating services, impersonation
+        services, counterfeit-goods vendors, stolen-property vendors, pirated-software vendors,
+        unauthorized media vendors, vendors attempting to evade taxes, customs requirements,
+        sanctions, export controls, or applicable law, firearms vendors, ammunition vendors, weapons
+        vendors, explosive vendors, fireworks vendors, vendors selling products primarily intended as
+        personal-defense weapons, individual students, club members, team leads, friends, family
+        members, personal bank accounts, personal payment accounts, sellers who cannot provide an
+        itemized invoice, sellers who cannot provide a verifiable identity or delivery record, vendors
+        requesting payment outside their normal checkout system, and any vendor or service used
+        primarily for personal benefit rather than an authorized Robotics Club purpose.
+      </p>
+      <p style={paragraphStyle}>
+        The club credit card also may not be used for non-essential software, artificial-intelligence
+        services, productivity tools, chatbots, generative-AI products, premium consumer
+        applications, or similar online services, including Claude, ChatGPT, Gemini, DeepSeek,
+        Perplexity, Grok, Copilot, Midjourney, Runway, Character.AI, Poe, Notion AI, Grammarly
+        Premium, Canva Pro, Adobe consumer subscriptions, individual cloud-storage upgrades,
+        individual coding-assistant subscriptions, or any substantially similar service, unless all of
+        the following conditions are met: the service is necessary for a documented club project, no
+        adequate Stanford-provided or free alternative exists, the purchase has received prior written
+        approval from the Club Financial Officer, and the charge is paid entirely from sponsored,
+        externally restricted, or otherwise specifically designated funding whose terms expressly
+        permit that expense.
+      </p>
+      <p style={paragraphStyle}>
+        The existence of sponsored funding does not by itself authorize a purchase. The purchase must
+        remain within the sponsor&rsquo;s written funding restrictions, applicable Stanford policies,
+        and the approved project budget. General ASSU, student-fee, or unrestricted club funds may not
+        be used for non-essential software or artificial-intelligence subscriptions.
+      </p>
+      <p style={paragraphStyle}>
+        This list is non-exhaustive. A transaction remains prohibited when its underlying purpose
+        falls within a prohibited category, even if the specific vendor, payment processor, merchant
+        name, or service is not listed above.
       </p>
 
       <h2 style={sectionHeadingStyle}>8. No Transaction Splitting</h2>
