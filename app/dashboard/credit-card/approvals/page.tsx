@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getViewerContext, profileHasFinancialOfficerRole } from '@/lib/auth';
 import { formatDateLabel } from '@/lib/academic-calendar';
-import { getPendingCardAgreements, getPendingRegionApprovals } from '@/lib/credit-card';
+import { getPendingCardAgreements, getPendingRegionApprovals, getCardAccessOverview } from '@/lib/credit-card';
 import { ApproveCardRegionButton } from '@/components/approve-card-region-button';
+import { CreditCardAccessTable } from '@/components/credit-card-access-table';
 
 function formatRegion(country: string | null, region: string | null, regionKey: string) {
   if (country && region) return `${region}, ${country}`;
@@ -21,9 +22,10 @@ export default async function CreditCardApprovalsPage() {
     redirect('/dashboard');
   }
 
-  const [pending, pendingRegions] = await Promise.all([
+  const [pending, pendingRegions, accessOverview] = await Promise.all([
     getPendingCardAgreements(),
-    getPendingRegionApprovals()
+    getPendingRegionApprovals(),
+    getCardAccessOverview()
   ]);
 
   return (
@@ -113,6 +115,17 @@ export default async function CreditCardApprovalsPage() {
             </table>
           </div>
         )}
+      </section>
+
+      <section className="hq-panel hq-surface-muted">
+        <div className="hq-block-head">
+          <h2>Card access overview</h2>
+        </div>
+        <p className="helper">
+          Everyone granted access, whether they signed the agreement, whether the financial officer approved
+          it, and when they last viewed the card.
+        </p>
+        <CreditCardAccessTable rows={accessOverview} />
       </section>
     </div>
   );

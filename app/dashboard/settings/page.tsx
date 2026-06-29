@@ -36,11 +36,12 @@ import { StatementReconciliation } from '@/components/statement-reconciliation';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { SettingsTabs } from '@/components/settings-tabs';
 import { formatAgreementDateRange } from '@/lib/visitor-agreements';
-import { getCreditCardMeta, getCardGrants, getEligibleCardUsers } from '@/lib/credit-card';
+import { getCreditCardMeta, getCardGrants, getEligibleCardUsers, getCardAccessOverview } from '@/lib/credit-card';
 import { cardConfigured } from '@/lib/card-crypto';
 import { setCreditCardAction } from '@/app/dashboard/actions';
 import { CreditCardGrantToggle } from '@/components/credit-card-grant-toggle';
 import { CreditCardDeleteButton } from '@/components/credit-card-delete-button';
+import { CreditCardAccessTable } from '@/components/credit-card-access-table';
 import {
   getRoleLabel,
   getViewerContext,
@@ -94,7 +95,8 @@ export default async function SettingsPage() {
     visitorAgreementsResponse,
     creditCardMeta,
     creditCardGrants,
-    eligibleCardUsers
+    eligibleCardUsers,
+    cardAccessOverview
   ] =
     await Promise.all([
       getAcademicCalendarSettings(),
@@ -126,7 +128,8 @@ export default async function SettingsPage() {
         .limit(200),
       getCreditCardMeta(),
       getCardGrants(),
-      getEligibleCardUsers()
+      getEligibleCardUsers(),
+      getCardAccessOverview()
     ]);
   const cardIsConfigured = cardConfigured();
   const cardGrantMap = new Map(creditCardGrants.map((grant) => [grant.user_id, grant.enabled]));
@@ -1287,8 +1290,21 @@ export default async function SettingsPage() {
                       )}
                       <p className="helper">
                         Granting access lets a user start the credit-card agreement; they still must sign and be
-                        approved before viewing (set up in the next update).
+                        approved before viewing.
                       </p>
+                    </section>
+                  ) : null}
+
+                  {currentRole === 'admin' || currentRole === 'president' ? (
+                    <section className="hq-lead-block">
+                      <div className="hq-block-head">
+                        <h3>Access overview</h3>
+                      </div>
+                      <p className="helper">
+                        Everyone granted access, whether they signed the agreement, whether the financial officer
+                        approved it, and when they last viewed the card.
+                      </p>
+                      <CreditCardAccessTable rows={cardAccessOverview} />
                     </section>
                   ) : null}
                 </div>

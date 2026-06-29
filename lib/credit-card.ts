@@ -625,3 +625,73 @@ export async function approveCardRegion(
     throw new Error(error.message);
   }
 }
+
+export type CardAccessRow = {
+  userId: string;
+  fullName: string;
+  agreementSigned: boolean;
+  agreementSignedAt: string | null;
+  foApproved: boolean;
+  foSignedAt: string | null;
+  overridden: boolean;
+  overriddenAt: string | null;
+  lastAccessAt: string | null;
+};
+
+// Overview of everyone whose access slider is on: whether they signed the
+// agreement, whether the FO signed it (or an admin overrode), and when they last
+// accessed the card. Used by the admin/president settings view and the FO
+// approvals page. Reads no card data.
+export async function getCardAccessOverview(): Promise<CardAccessRow[]> {
+  const admin = createAdminClient();
+  const { data: grants } = await admin
+    .from('credit_card_grants')
+    .select('user_id')
+    .eq('enabled', true);
+  const userIds = Array.from(new Set((grants || []).map((g) => g.user_id)));
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  const [{ data: profiles }, { data: agreements }, { data: accessEvents }] = await Promise.all([
+    admin.from('profiles').select('id, full_name').in('id', userIds),
+    admin
+      .from('credit_card_agreements')
+      .select('user_id, user_signed_at, status, fo_signed_at, override_at')
+      .in('user_id', userIds),
+    admin
+      .from('audit_log_entries')
+      .select('actor_id, created_at')
+      .in('actor_id', userIds)
+      .in('action', ['credit_card.revealed', 'credit_card.view_signed'])
+      .order('created_at', { ascending: false })
+      .limit(2000)
+  ]);
+
+  const nameMap = new Map((profiles || []).map((p) => [p.id, p.full_name as string | null]));
+  const agreementMap = new Map((agreements || []).map((a) => [a.user_id, a]));
+  // The query is newest-first, so the first time we see an actor is their latest.
+  const lastAccess = new Map<string, string>();
+  for (const event of accessEvents || []) {
+    if (event.actor_id && !lastAccess.has(event.actor_id)) {
+      lastAccess.set(event.actor_id, event.created_at as string);
+    }
+  }
+
+  return userIds
+    .map((id) => {
+      const agreement = agreementMap.get(id);
+      return {
+        userId: id,
+        fullName: nameMap.get(id) || 'Unknown user',
+        agreementSigned: Boolean(agreement),
+        agreementSignedAt: agreement?.user_signed_at ?? null,
+        foApproved: agreement?.status === 'approved',
+        foSignedAt: agreement?.fo_signed_at ?? null,
+        overridden: agreement?.status === 'overridden',
+        overriddenAt: agreement?.override_at ?? null,
+        lastAccessAt: lastAccess.get(id) ?? null
+      } satisfies CardAccessRow;
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
