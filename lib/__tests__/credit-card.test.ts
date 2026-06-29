@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { resolveCardGeo, cardViewNeedsSign } from '@/lib/credit-card';
+import {
+  resolveCardGeo,
+  cardViewNeedsSign,
+  issueCardReadToken,
+  cardReadTokenSatisfied,
+  CARD_AGREEMENT_MIN_READ_SECONDS
+} from '@/lib/credit-card';
 
 function headersWith(country?: string, region?: string): Headers {
   const h = new Headers();
@@ -81,5 +87,34 @@ describe('cardViewNeedsSign', () => {
     expect(
       cardViewNeedsSign({ last_signed_at: augustPacific, last_region: 'US-NY' }, region, augustPacific)
     ).toBe(true);
+  });
+});
+
+describe('card agreement read-time token', () => {
+  const minMs = CARD_AGREEMENT_MIN_READ_SECONDS * 1000;
+
+  it('rejects a freshly issued token (reading time not elapsed)', () => {
+    const token = issueCardReadToken();
+    expect(cardReadTokenSatisfied(token, Date.now())).toBe(false);
+  });
+
+  it('accepts a token once the minimum reading time has elapsed', () => {
+    const token = issueCardReadToken();
+    expect(cardReadTokenSatisfied(token, Date.now() + minMs + 1000)).toBe(true);
+  });
+
+  it('rejects a missing or malformed token', () => {
+    expect(cardReadTokenSatisfied('', Date.now() + minMs)).toBe(false);
+    expect(cardReadTokenSatisfied(null, Date.now() + minMs)).toBe(false);
+    expect(cardReadTokenSatisfied('not-a-token', Date.now() + minMs)).toBe(false);
+  });
+
+  it('rejects a tampered timestamp (forged to look old)', () => {
+    const token = issueCardReadToken();
+    const mac = token.slice(token.indexOf('.') + 1);
+    // Backdate the issued-at by an hour while keeping the original signature.
+    const forgedIssuedAt = (Math.floor(Date.now() / 1000) - 3600).toString();
+    const forged = `${forgedIssuedAt}.${mac}`;
+    expect(cardReadTokenSatisfied(forged, Date.now())).toBe(false);
   });
 });

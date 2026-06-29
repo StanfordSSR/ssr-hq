@@ -108,6 +108,7 @@ import {
 import { LEADERSHIP_STEWARD_LABEL, storageLocationLabel } from '@/lib/high-value-assets';
 import {
   approveCardRegion,
+  cardReadTokenSatisfied,
   deleteCreditCard,
   evaluateCardViewGate,
   getCardAgreement,
@@ -625,6 +626,15 @@ export async function signCreditCardAgreementAction(formData: FormData) {
       const strokes = formData.get('strokes');
       if (!signature) {
         throw new Error('Draw your signature to sign the agreement.');
+      }
+
+      // Enforce the minimum reading time server-side too, so the requirement
+      // can't be bypassed by editing the page or disabling JavaScript.
+      const readToken = String(formData.get('read_token') || '');
+      if (!cardReadTokenSatisfied(readToken, Date.now())) {
+        throw new Error(
+          'Please take at least two minutes to read the agreement before signing, then try again.'
+        );
       }
 
       const { score } = await verifyUserSignature(user.id, strokes);
