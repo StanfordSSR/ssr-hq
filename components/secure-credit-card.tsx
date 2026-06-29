@@ -8,16 +8,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 //     actual digits are fetched ON DEMAND, one window at a time, from
 //     /api/credit-card/reveal, which re-checks the full view gate every call and
 //     returns at most ONE 4-digit number group OR ONE CVV digit OR the expiry.
-//   - Progressive reveal: only ONE thing is ever visible at a time, and every
-//     reveal auto-hides after ~4 seconds. So a single screenshot can capture at
-//     most 4 number digits, or 1 CVV digit, or the expiry — never the whole card.
-//   - A live moving watermark (viewer name + email + live clock) stamps any
-//     capture and makes it obviously live.
+//   - PRESS-AND-HOLD reveal: a value is only visible while the pointer/finger is
+//     physically held down on it, and hides the instant the press is released
+//     (also on tab-away, scroll, or a safety timeout). Only ONE thing is ever
+//     visible at a time. This is the key deterrent against an OS screenshot that
+//     the browser cannot see (e.g. macOS Shift+Cmd+4): that shortcut needs a
+//     click-and-drag with the same pointer that must stay held on the digit, so
+//     it can't frame a selection while a digit is shown. A full-screen grab can
+//     still catch ONE held window — but never the whole card, and never without
+//     the identity watermark stamped across it.
+//   - A bold live watermark (viewer name + email + live clock) is tiled across
+//     the card ABOVE the digits, so any capture is legibly traceable to the
+//     viewer and obviously live.
 //   - Tab-away / window-blur heavily blurs the card and clears any reveal.
-//   - PrintScreen / copy while revealed fires a best-effort screenshot signal to
-//     the server and shows a full-screen red warning. NOTE: browser-based
-//     screenshot detection is best-effort only — OS capture tools can bypass the
-//     page entirely; this is a deterrent + audit trail, not a guarantee.
+//   - PrintScreen / copy while revealed fires a best-effort signal to the server
+//     and shows a full-screen warning. NOTE: browser-based screenshot detection
+//     is best-effort only — native OS capture tools bypass the page entirely.
+//     The press-and-hold + watermark above are what actually limit the damage;
+//     detection is just an extra deterrent + audit trail, not a guarantee.
 
 type RevealKind = 'number' | 'cvv' | 'expiry';
 
@@ -29,7 +37,9 @@ type Revealed =
   | { kind: 'expiry'; value: string }
   | null;
 
-const AUTO_HIDE_MS = 4000;
+// Safety cap: even while held, a value force-hides after this long so a digit
+// can't be pinned open indefinitely (e.g. by wedging the mouse button).
+const MAX_HOLD_MS = 6000;
 
 export function SecureCreditCard({
   cardholder,
@@ -54,6 +64,13 @@ export function SecureCreditCard({
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
 
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True only while a press is physically held down. Reveals are gated on this so
+  // a value never appears after the user has already released (e.g. if the fetch
+  // resolves late), and so a release during loading is honored.
+  const holdingRef = useRef(false);
+  // Remembers which CVV digit to show next, so each fresh press steps forward
+  // through the CVV one digit at a time.
+  const cvvIndexRef = useRef(-1);
   // Mirror of `revealed` for use inside long-lived event listeners without
   // re-binding them (avoids stale closures and keeps those effects
   // dependency-free). Synced in an effect — never written during render.
@@ -69,8 +86,13 @@ export function SecureCreditCard({
     }
   }, []);
 
+  // Single canonical "hide": ends any active hold, stops a pending fetch from
+  // rendering, and clears the displayed value. Used on release, tab-away, blur,
+  // scroll, screenshot signal, and the safety timeout.
   const hideReveal = useCallback(() => {
+    holdingRef.current = false;
     clearHideTimer();
+    setLoadingKey(null);
     setRevealed(null);
   }, [clearHideTimer]);
 
@@ -114,14 +136,21 @@ export function SecureCreditCard({
       hideReveal();
     };
     const onFocus = () => setObscured(false);
+    // Any scroll releases a held reveal — prevents holding a digit and scrolling
+    // the page to reposition it for a capture.
+    const onScroll = () => {
+      if (revealedRef.current) hideReveal();
+    };
 
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('blur', onBlur);
     window.addEventListener('focus', onFocus);
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('scroll', onScroll);
     };
   }, [fireScreenshotSignal, hideReveal]);
 
@@ -153,34 +182,40 @@ export function SecureCreditCard({
 
   useEffect(() => () => clearHideTimer(), [clearHideTimer]);
 
-  const scheduleAutoHide = useCallback(() => {
-    clearHideTimer();
-    hideTimerRef.current = setTimeout(() => {
-      setRevealed(null);
-      hideTimerRef.current = null;
-    }, AUTO_HIDE_MS);
-  }, [clearHideTimer]);
-
-  // Fetch and reveal exactly one window. Clears any previous reveal first, so at
-  // most one thing is ever visible; schedules the ~4s auto-hide.
-  const reveal = useCallback(
+  // Begin a press-and-hold reveal of exactly one window. Fetches the value and
+  // only shows it if the press is STILL held when the response arrives; arms the
+  // safety auto-hide so a held value can't stay up past MAX_HOLD_MS.
+  const startHold = useCallback(
     async (kind: RevealKind, index: number) => {
       const key = `${kind}:${index}`;
+      holdingRef.current = true;
       clearHideTimer();
       setRevealed(null);
       setLoadingKey(key);
+      hideTimerRef.current = setTimeout(() => {
+        hideReveal();
+      }, MAX_HOLD_MS);
       try {
         const response = await fetch('/api/credit-card/reveal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ field: kind, index })
         });
-        if (!response.ok) {
+        // Released (or timed out) before the value came back → never show it.
+        if (!holdingRef.current) {
           setLoadingKey(null);
+          return;
+        }
+        if (!response.ok) {
+          hideReveal();
           return;
         }
         const data = (await response.json()) as { value?: string };
         const value = typeof data.value === 'string' ? data.value : '';
+        if (!holdingRef.current) {
+          setLoadingKey(null);
+          return;
+        }
         setLoadingKey(null);
         if (kind === 'expiry') {
           setRevealed({ kind: 'expiry', value });
@@ -189,12 +224,11 @@ export function SecureCreditCard({
         } else {
           setRevealed({ kind: 'number', index, value });
         }
-        scheduleAutoHide();
       } catch {
-        setLoadingKey(null);
+        hideReveal();
       }
     },
-    [clearHideTimer, scheduleAutoHide]
+    [clearHideTimer, hideReveal]
   );
 
   const dismissReminder = useCallback(() => {
@@ -204,14 +238,14 @@ export function SecureCreditCard({
     });
   }, []);
 
-  // Step the CVV: each tap shows the NEXT single digit (cycling), so only one
-  // digit is ever on screen at a time.
-  const stepCvv = useCallback(() => {
+  // Hold the CVV button: each fresh press shows the NEXT single digit (cycling)
+  // for as long as it's held, so only one digit is ever on screen at a time.
+  const startCvvHold = useCallback(() => {
     if (cvvLength <= 0) return;
-    const current = revealed?.kind === 'cvv' ? revealed.index : -1;
-    const next = (current + 1) % cvvLength;
-    void reveal('cvv', next);
-  }, [cvvLength, revealed, reveal]);
+    const next = (cvvIndexRef.current + 1) % cvvLength;
+    cvvIndexRef.current = next;
+    void startHold('cvv', next);
+  }, [cvvLength, startHold]);
 
   const clock = now
     ? now.toLocaleTimeString('en-US', {
@@ -229,6 +263,9 @@ export function SecureCreditCard({
   const numberRevealed = revealed?.kind === 'number' ? revealed : null;
   const cvvRevealed = revealed?.kind === 'cvv' ? revealed : null;
   const expiryRevealed = revealed?.kind === 'expiry' ? revealed : null;
+  // The watermark is always present but ramps up over the digits the moment
+  // anything is revealed, so a capture of a held value is always clearly stamped.
+  const watermarkOpacity = revealed ? 0.42 : 0.22;
 
   const blockContextMenu = (event: React.MouseEvent) => event.preventDefault();
 
@@ -302,20 +339,23 @@ export function SecureCreditCard({
             overflow: 'hidden',
             pointerEvents: 'none',
             zIndex: 4,
-            opacity: 0.16,
+            opacity: watermarkOpacity,
+            transition: 'opacity 120ms ease',
             transform: 'rotate(-24deg)'
           }}
         >
           <div style={{ animation: 'secure-card-wm 9s linear infinite' }}>
-            {Array.from({ length: 10 }).map((_, row) => (
+            {Array.from({ length: 12 }).map((_, row) => (
               <div
                 key={row}
                 style={{
                   whiteSpace: 'nowrap',
-                  fontSize: '0.62rem',
+                  fontSize: '0.66rem',
+                  fontWeight: 700,
                   letterSpacing: '0.04em',
-                  lineHeight: '1.9rem',
+                  lineHeight: '1.8rem',
                   color: '#ffffff',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
                   fontFamily: 'monospace'
                 }}
               >
@@ -382,8 +422,12 @@ export function SecureCreditCard({
                 <button
                   key={group}
                   type="button"
-                  onClick={() => void reveal('number', group)}
-                  title="Tap to reveal these 4 digits"
+                  onPointerDown={() => void startHold('number', group)}
+                  onPointerUp={hideReveal}
+                  onPointerLeave={hideReveal}
+                  onPointerCancel={hideReveal}
+                  onContextMenu={blockContextMenu}
+                  title="Press and hold to reveal these 4 digits"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -392,6 +436,7 @@ export function SecureCreditCard({
                     letterSpacing: 'inherit',
                     cursor: 'pointer',
                     padding: 0,
+                    touchAction: 'none',
                     textShadow: '0 1px 8px rgba(0,0,0,0.4)'
                   }}
                 >
@@ -458,8 +503,12 @@ export function SecureCreditCard({
                 <div style={{ fontSize: '0.5rem', letterSpacing: '0.12em', color: '#aebfd4' }}>EXP</div>
                 <button
                   type="button"
-                  onClick={() => void reveal('expiry', 0)}
-                  title="Tap to reveal the expiry"
+                  onPointerDown={() => void startHold('expiry', 0)}
+                  onPointerUp={hideReveal}
+                  onPointerLeave={hideReveal}
+                  onPointerCancel={hideReveal}
+                  onContextMenu={blockContextMenu}
+                  title="Press and hold to reveal the expiry"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -467,7 +516,8 @@ export function SecureCreditCard({
                     fontFamily: 'monospace',
                     fontSize: '0.95rem',
                     cursor: 'pointer',
-                    padding: 0
+                    padding: 0,
+                    touchAction: 'none'
                   }}
                 >
                   {loadingKey === 'expiry:0' ? '··/··' : expiryRevealed ? expiryRevealed.value : '••/••'}
@@ -479,8 +529,12 @@ export function SecureCreditCard({
                   <div style={{ fontSize: '0.5rem', letterSpacing: '0.12em', color: '#aebfd4' }}>CVV</div>
                   <button
                     type="button"
-                    onClick={() => stepCvv()}
-                    title="Tap to step through the CVV one digit at a time"
+                    onPointerDown={() => startCvvHold()}
+                    onPointerUp={hideReveal}
+                    onPointerLeave={hideReveal}
+                    onPointerCancel={hideReveal}
+                    onContextMenu={blockContextMenu}
+                    title="Press and hold to reveal the next CVV digit"
                     style={{
                       background: 'transparent',
                       border: 'none',
@@ -489,6 +543,7 @@ export function SecureCreditCard({
                       fontSize: '0.95rem',
                       cursor: 'pointer',
                       padding: 0,
+                      touchAction: 'none',
                       letterSpacing: '0.3em'
                     }}
                   >
@@ -523,9 +578,10 @@ export function SecureCreditCard({
           </span>
         </div>
         <p className="helper" style={{ margin: 0 }}>
-          Tap a group of digits, the expiry, or the CVV to reveal it. For security only one piece is shown
-          at a time and it hides itself after a few seconds. Screenshotting or copying is detected, logged,
-          and reported.
+          <strong>Press and hold</strong> a group of digits, the expiry, or the CVV to reveal it — it
+          shows only while held and hides the instant you let go. Only one piece is ever shown at a time.
+          Your name, email, and the current time are watermarked across the card, so any screenshot is
+          traceable to you. Capturing or copying card details is a bannable misuse of club funds.
         </p>
       </div>
 
