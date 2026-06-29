@@ -5,13 +5,17 @@ import { evaluateCardViewGate, getDecryptedCard } from '@/lib/credit-card';
 
 export const runtime = 'nodejs';
 
-// Progressive reveal endpoint for the secure card view. CRITICAL: this never
-// returns the whole card number or all CVV digits in one response — at most one
-// 4-digit number group OR one CVV digit OR the expiry per request. It re-runs
-// evaluateCardViewGate on EVERY call, so a page that went stale (left North
-// America, lost region approval, or crossed into a new month) can't keep
-// revealing. The decrypted card lives only in this server process for the
-// duration of the request and is never logged.
+// Reveal endpoint for the secure card view. It re-runs evaluateCardViewGate on
+// EVERY call, so a stale page (left North America, lost region approval, crossed
+// into a new month) can't read the card. The decrypted card lives only in this
+// server process for the duration of the request and is never logged.
+//
+// field === 'all' returns the full card in one response (number groups, expiry,
+// and the whole CVV) so the client can warm a cache and reveal instantly with no
+// per-hold latency. The on-screen protections (press-and-hold, one window shown
+// at a time, identity watermark) are what limit screenshot exposure — not the
+// transport. Single-field requests ('number' | 'cvv' | 'expiry') are also still
+// supported.
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
@@ -35,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   const field = body.field;
-  if (field !== 'number' && field !== 'cvv' && field !== 'expiry') {
+  if (field !== 'number' && field !== 'cvv' && field !== 'expiry' && field !== 'all') {
     return NextResponse.json({ error: 'Unknown field.' }, { status: 400 });
   }
 
@@ -46,15 +50,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No card is on file.' }, { status: 404 });
   }
 
-  // Audit every reveal with ONLY the field + index — never the value itself.
+  // Audit the access with ONLY the field (+ index for single windows) — never the
+  // value itself. 'all' is logged as opening the card for viewing.
   await recordAuditEvent({
     actorId: sub,
     action: 'credit_card.revealed',
     targetType: 'credit_card',
     targetId: '1',
-    summary: `Revealed a ${field} window of the shared card.`,
-    details: { field, index }
+    summary:
+      field === 'all'
+        ? 'Opened the shared card for viewing.'
+        : `Revealed a ${field} window of the shared card.`,
+    details: field === 'all' ? { field } : { field, index }
   });
+
+  if (field === 'all') {
+    const digits = card.number.replace(/\D/g, '');
+    const groupCount = Math.ceil(digits.length / 4);
+    const numberGroups = Array.from({ length: groupCount }, (_, i) =>
+      digits.slice(i * 4, i * 4 + 4)
+    );
+    return NextResponse.json({
+      numberGroups,
+      expiry: card.expiry,
+      cvv: card.cvv.replace(/\D/g, '')
+    });
+  }
 
   if (field === 'number') {
     const digits = card.number.replace(/\D/g, '');
