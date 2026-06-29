@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // The interactive secure card view. SECURITY MODEL (defense in depth):
-//   - The page never sends the real card digits to this component — it only
-//     passes counts (how many 4-digit number groups, how many CVV digits). The
-//     actual digits are fetched ON DEMAND, one window at a time, from
-//     /api/credit-card/reveal, which re-checks the full view gate every call and
-//     returns at most ONE 4-digit number group OR ONE CVV digit OR the expiry.
+//   - The page never sends the real card digits in its HTML — it only passes
+//     counts (how many 4-digit number groups, how many CVV digits). On mount the
+//     component fetches the card once from /api/credit-card/reveal (which enforces
+//     the full view gate) and caches it in memory so reveals are instant. The
+//     cache lives only in this component's ref and is never rendered except as the
+//     single window the user is actively holding.
 //   - PRESS-AND-HOLD reveal: a value is only visible while the pointer/finger is
 //     physically held down on it, and hides the instant the press is released
 //     (also on tab-away, scroll, or a safety timeout). Only ONE thing is ever
@@ -65,12 +66,13 @@ export function SecureCreditCard({
 
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // True only while a press is physically held down. Reveals are gated on this so
-  // a value never appears after the user has already released (e.g. if the fetch
-  // resolves late), and so a release during loading is honored.
+  // a value never appears after the user has already released, and so a release
+  // during the (cold-start) load is honored.
   const holdingRef = useRef(false);
-  // Remembers which CVV digit to show next, so each fresh press steps forward
-  // through the CVV one digit at a time.
-  const cvvIndexRef = useRef(-1);
+  // Card values fetched once on load and cached client-side so press-and-hold is
+  // instant (no per-hold network round-trip). Kept in a ref, not state, so it is
+  // never written into render output. `ready` just flips the placeholders live.
+  const cacheRef = useRef<{ numberGroups: string[]; expiry: string; cvv: string } | null>(null);
   // Mirror of `revealed` for use inside long-lived event listeners without
   // re-binding them (avoids stale closures and keeps those effects
   // dependency-free). Synced in an effect — never written during render.
@@ -182,53 +184,84 @@ export function SecureCreditCard({
 
   useEffect(() => () => clearHideTimer(), [clearHideTimer]);
 
-  // Begin a press-and-hold reveal of exactly one window. Fetches the value and
-  // only shows it if the press is STILL held when the response arrives; arms the
-  // safety auto-hide so a held value can't stay up past MAX_HOLD_MS.
+  // Fetch the whole card once and cache it. Runs on mount (warm-up) and as a
+  // fallback if a hold happens before the warm-up finished. Audited server-side
+  // as "opened the card for viewing". Returns the cache (or null on failure).
+  const loadCache = useCallback(async () => {
+    if (cacheRef.current) return cacheRef.current;
+    try {
+      const response = await fetch('/api/credit-card/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field: 'all' })
+      });
+      if (!response.ok) return null;
+      const data = (await response.json()) as {
+        numberGroups?: string[];
+        expiry?: string;
+        cvv?: string;
+      };
+      cacheRef.current = {
+        numberGroups: Array.isArray(data.numberGroups) ? data.numberGroups : [],
+        expiry: typeof data.expiry === 'string' ? data.expiry : '',
+        cvv: typeof data.cvv === 'string' ? data.cvv : ''
+      };
+      return cacheRef.current;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Warm the cache as soon as the view mounts so the first hold is instant.
+  useEffect(() => {
+    void loadCache();
+  }, [loadCache]);
+
+  const valueFromCache = useCallback(
+    (cache: { numberGroups: string[]; expiry: string; cvv: string }, kind: RevealKind, index: number) => {
+      if (kind === 'number') return cache.numberGroups[index] ?? '';
+      if (kind === 'cvv') return cache.cvv;
+      return cache.expiry;
+    },
+    []
+  );
+
+  const showRevealed = useCallback(
+    (kind: RevealKind, index: number, value: string) => {
+      if (kind === 'expiry') setRevealed({ kind: 'expiry', value });
+      else if (kind === 'cvv') setRevealed({ kind: 'cvv', index, value });
+      else setRevealed({ kind: 'number', index, value });
+      clearHideTimer();
+      hideTimerRef.current = setTimeout(() => hideReveal(), MAX_HOLD_MS);
+    },
+    [clearHideTimer, hideReveal]
+  );
+
+  // Begin a press-and-hold reveal of exactly one window. Reads from the warmed
+  // cache for an INSTANT reveal; if the cache isn't ready yet, loads it once and
+  // then shows, but only if the press is still held.
   const startHold = useCallback(
-    async (kind: RevealKind, index: number) => {
-      const key = `${kind}:${index}`;
+    (kind: RevealKind, index: number) => {
       holdingRef.current = true;
       clearHideTimer();
       setRevealed(null);
-      setLoadingKey(key);
-      hideTimerRef.current = setTimeout(() => {
-        hideReveal();
-      }, MAX_HOLD_MS);
-      try {
-        const response = await fetch('/api/credit-card/reveal', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ field: kind, index })
-        });
-        // Released (or timed out) before the value came back → never show it.
-        if (!holdingRef.current) {
-          setLoadingKey(null);
-          return;
-        }
-        if (!response.ok) {
-          hideReveal();
-          return;
-        }
-        const data = (await response.json()) as { value?: string };
-        const value = typeof data.value === 'string' ? data.value : '';
-        if (!holdingRef.current) {
-          setLoadingKey(null);
-          return;
-        }
+
+      const cache = cacheRef.current;
+      if (cache) {
         setLoadingKey(null);
-        if (kind === 'expiry') {
-          setRevealed({ kind: 'expiry', value });
-        } else if (kind === 'cvv') {
-          setRevealed({ kind: 'cvv', index, value });
-        } else {
-          setRevealed({ kind: 'number', index, value });
-        }
-      } catch {
-        hideReveal();
+        showRevealed(kind, index, valueFromCache(cache, kind, index));
+        return;
       }
+
+      // Cold start: warm the cache, then show if still held.
+      setLoadingKey(`${kind}:${index}`);
+      void loadCache().then((loaded) => {
+        setLoadingKey(null);
+        if (!loaded || !holdingRef.current) return;
+        showRevealed(kind, index, valueFromCache(loaded, kind, index));
+      });
     },
-    [clearHideTimer, hideReveal]
+    [clearHideTimer, loadCache, showRevealed, valueFromCache]
   );
 
   const dismissReminder = useCallback(() => {
@@ -238,13 +271,10 @@ export function SecureCreditCard({
     });
   }, []);
 
-  // Hold the CVV button: each fresh press shows the NEXT single digit (cycling)
-  // for as long as it's held, so only one digit is ever on screen at a time.
+  // Hold the CVV button to reveal the full CVV for as long as it's held.
   const startCvvHold = useCallback(() => {
     if (cvvLength <= 0) return;
-    const next = (cvvIndexRef.current + 1) % cvvLength;
-    cvvIndexRef.current = next;
-    void startHold('cvv', next);
+    startHold('cvv', 0);
   }, [cvvLength, startHold]);
 
   const clock = now
@@ -534,7 +564,7 @@ export function SecureCreditCard({
                     onPointerLeave={hideReveal}
                     onPointerCancel={hideReveal}
                     onContextMenu={blockContextMenu}
-                    title="Press and hold to reveal the next CVV digit"
+                    title="Press and hold to reveal the CVV"
                     style={{
                       background: 'transparent',
                       border: 'none',
@@ -547,9 +577,7 @@ export function SecureCreditCard({
                       letterSpacing: '0.3em'
                     }}
                   >
-                    {cvvRevealed
-                      ? `${cvvRevealed.value} (${cvvRevealed.index + 1}/${cvvLength})`
-                      : '•'.repeat(cvvLength)}
+                    {cvvRevealed ? cvvRevealed.value : '•'.repeat(cvvLength)}
                   </button>
                 </div>
               ) : null}
