@@ -36,6 +36,15 @@ For production, set:
 NEXT_PUBLIC_SITE_URL=https://hq.stanfordssr.org
 ```
 
+The shared credit-card feature also requires an encryption key (base64 of 32
+random bytes, e.g. `openssl rand -base64 32`). Set it in the environment before
+deploying, and prefer pushing to `main` (GitHub auto-deploy) over `vercel --prod`
+from a local folder so the deploy always reflects the merged code:
+
+```bash
+CARD_ENCRYPTION_KEY=...
+```
+
 ## 2. Run the SQL migrations
 
 In Supabase SQL Editor, run:
