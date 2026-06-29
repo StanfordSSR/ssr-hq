@@ -1,5 +1,7 @@
+import { createHmac, timingSafeEqual } from 'crypto';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { encryptCard, decryptCard } from '@/lib/card-crypto';
+import { env } from '@/lib/env';
 import {
   getRoleLabel,
   profileHasFinancialOfficerRole,
@@ -16,6 +18,44 @@ import {
   verifySignature,
   type SignatureProfile
 } from '@/lib/signature-verify';
+
+// Minimum seconds a user must spend on the agreement page before signing is
+// accepted. Enforced client-side (countdown) and server-side (signed token).
+export const CARD_AGREEMENT_MIN_READ_SECONDS = 120;
+
+// HMAC-signed "issued at" token embedded in the agreement form. The server can
+// then verify how long ago the page was rendered without trusting a client clock
+// or a tamperable hidden field. Secret is the service-role key (server-only).
+function readTokenSecret(): string {
+  return env.serviceRoleKey || 'card-agreement-read-token';
+}
+
+export function issueCardReadToken(): string {
+  const issuedAt = Math.floor(Date.now() / 1000).toString();
+  const mac = createHmac('sha256', readTokenSecret()).update(issuedAt).digest('hex');
+  return `${issuedAt}.${mac}`;
+}
+
+// Returns true only when the token is authentic AND at least
+// CARD_AGREEMENT_MIN_READ_SECONDS have elapsed since it was issued.
+export function cardReadTokenSatisfied(token: string | null | undefined, nowMs: number): boolean {
+  if (!token) return false;
+  const dot = token.indexOf('.');
+  if (dot < 1) return false;
+  const issuedAt = token.slice(0, dot);
+  const mac = token.slice(dot + 1);
+  if (!/^\d+$/.test(issuedAt)) return false;
+
+  const expected = createHmac('sha256', readTokenSecret()).update(issuedAt).digest('hex');
+  const macBuf = Buffer.from(mac, 'hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  if (macBuf.length !== expectedBuf.length || !timingSafeEqual(macBuf, expectedBuf)) {
+    return false;
+  }
+
+  const elapsedSeconds = Math.floor(nowMs / 1000) - Number(issuedAt);
+  return elapsedSeconds >= CARD_AGREEMENT_MIN_READ_SECONDS;
+}
 
 // The default "team label" snapshot when a signer leads no active team — they're
 // signing in a club-wide leadership capacity (president / VP / financial officer).

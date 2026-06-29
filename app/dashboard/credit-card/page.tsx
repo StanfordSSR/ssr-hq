@@ -8,6 +8,7 @@ import {
   getCreditCardApproverEmails,
   getDecryptedCard,
   isCardGrantEnabled,
+  issueCardReadToken,
   resolveCardAgreementTeamLabel
 } from '@/lib/credit-card';
 import { env } from '@/lib/env';
@@ -92,7 +93,7 @@ export default async function CreditCardPage() {
 
           <CreditCardAgreementBody />
 
-          <CreditCardAgreementForm />
+          <CreditCardAgreementForm readToken={issueCardReadToken()} />
         </section>
       </div>
     );
