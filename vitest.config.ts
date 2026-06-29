@@ -17,7 +17,9 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321',
       NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
       SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
-      NEXT_PUBLIC_SITE_URL: 'http://localhost:3000'
+      NEXT_PUBLIC_SITE_URL: 'http://localhost:3000',
+      // 32-byte base64 key so lib/card-crypto can encrypt/decrypt in tests.
+      CARD_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64')
     }
   }
 });

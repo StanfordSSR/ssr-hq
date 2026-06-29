@@ -30,5 +30,7 @@ export const env = {
   resendSenderName: process.env.RESEND_SENDER_NAME || 'SSR HQ',
   openaiApiKey: process.env.OPENAI_API_KEY,
   // Vision model used to read pasted receipt screenshots on the public intake.
-  openaiReceiptModel: process.env.OPENAI_RECEIPT_MODEL || 'gpt-4o'
+  openaiReceiptModel: process.env.OPENAI_RECEIPT_MODEL || 'gpt-4o',
+  // Base64 of 32 random bytes; used to AES-256-GCM encrypt the shared credit card.
+  cardEncryptionKey: process.env.CARD_ENCRYPTION_KEY
 };
