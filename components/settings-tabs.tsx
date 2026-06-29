@@ -10,7 +10,8 @@ type SettingsTabId =
   | 'reconciliation'
   | 'slack'
   | 'audit'
-  | 'visitors';
+  | 'visitors'
+  | 'credit-card';
 
 export function SettingsTabs({
   initialTab,

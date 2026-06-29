@@ -105,6 +105,12 @@ import {
   getQuarterDeclarationState
 } from '@/lib/budget-plan';
 import { LEADERSHIP_STEWARD_LABEL, storageLocationLabel } from '@/lib/high-value-assets';
+import {
+  deleteCreditCard,
+  setCardGrant,
+  setCreditCard,
+  type CreditCardFields
+} from '@/lib/credit-card';
 
 const REVALIDATE_PATHS = {
   dashboard: ['/dashboard'],
@@ -457,6 +463,113 @@ export async function sendManualSlackPushAction(formData: FormData) {
           recipientEmail: recipient.email,
           teamContext: teamContext.teamName
         }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.settings);
+    }
+  });
+}
+
+// --- Shared credit card (admin-only) ---------------------------------------
+// One-time encrypted card entry the admin can never re-view (delete-only) plus
+// per-user access switches. No card data is ever logged, audited, or returned
+// to the client: only inside the encrypted `cipher` column.
+
+function normalizeCardDigits(value: string) {
+  return value.replace(/[\s-]/g, '');
+}
+
+export async function setCreditCardAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Saved the card securely.',
+    action: async () => {
+      const { user } = await requireAdmin();
+
+      const number = normalizeCardDigits(String(formData.get('card_number') || '').trim());
+      const expiry = String(formData.get('expiry') || '').trim();
+      const cvv = String(formData.get('cvv') || '').trim();
+      const cardholder = String(formData.get('cardholder') || '').trim();
+      const label = String(formData.get('label') || '').trim();
+
+      if (!/^\d{12,19}$/.test(number)) {
+        throw new Error('Card number must be 12 to 19 digits.');
+      }
+
+      if (!/^(0[1-9]|1[0-2])\/(\d{2}|\d{4})$/.test(expiry)) {
+        throw new Error('Expiry must be in MM/YY or MM/YYYY format.');
+      }
+
+      if (!/^\d{3,4}$/.test(cvv)) {
+        throw new Error('CVV must be 3 or 4 digits.');
+      }
+
+      if (!cardholder) {
+        throw new Error('Cardholder name is required.');
+      }
+
+      const fields: CreditCardFields = { number, expiry, cvv, cardholder };
+      await setCreditCard(fields, label, user.id);
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'credit_card.set',
+        targetType: 'credit_card',
+        targetId: '1',
+        summary: 'Saved the shared club credit card.',
+        // Never include any card data here — only the (non-sensitive) label.
+        details: { label: label || null }
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.settings);
+    }
+  });
+}
+
+export async function deleteCreditCardAction(_formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Deleted the card.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      await deleteCreditCard();
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'credit_card.deleted',
+        targetType: 'credit_card',
+        targetId: '1',
+        summary: 'Deleted the shared club credit card.'
+      });
+
+      revalidatePaths(REVALIDATE_PATHS.settings);
+    }
+  });
+}
+
+export async function setCreditCardGrantAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/settings',
+    successMessage: 'Updated card access.',
+    action: async () => {
+      const { user } = await requireAdmin();
+      const userId = String(formData.get('user_id') || '').trim();
+      const rawEnabled = String(formData.get('enabled') || '').trim().toLowerCase();
+      const enabled = rawEnabled === 'on' || rawEnabled === 'true';
+
+      if (!userId) {
+        throw new Error('Missing user.');
+      }
+
+      await setCardGrant(userId, enabled, user.id);
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'credit_card.grant_updated',
+        targetType: 'credit_card_grant',
+        targetId: userId,
+        summary: `${enabled ? 'Granted' : 'Revoked'} credit-card access for a user.`,
+        details: { userId, enabled }
       });
 
       revalidatePaths(REVALIDATE_PATHS.settings);

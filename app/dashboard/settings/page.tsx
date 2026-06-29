@@ -36,6 +36,11 @@ import { StatementReconciliation } from '@/components/statement-reconciliation';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { SettingsTabs } from '@/components/settings-tabs';
 import { formatAgreementDateRange } from '@/lib/visitor-agreements';
+import { getCreditCardMeta, getCardGrants, getEligibleCardUsers } from '@/lib/credit-card';
+import { cardConfigured } from '@/lib/card-crypto';
+import { setCreditCardAction } from '@/app/dashboard/actions';
+import { CreditCardGrantToggle } from '@/components/credit-card-grant-toggle';
+import { CreditCardDeleteButton } from '@/components/credit-card-delete-button';
 import {
   getRoleLabel,
   getViewerContext,
@@ -86,7 +91,10 @@ export default async function SettingsPage() {
     rosterMembersResponse,
     eoyReportSettings,
     reimbursementSettings,
-    visitorAgreementsResponse
+    visitorAgreementsResponse,
+    creditCardMeta,
+    creditCardGrants,
+    eligibleCardUsers
   ] =
     await Promise.all([
       getAcademicCalendarSettings(),
@@ -115,8 +123,13 @@ export default async function SettingsPage() {
         )
         .eq('status', 'signed')
         .order('signed_at', { ascending: false })
-        .limit(200)
+        .limit(200),
+      getCreditCardMeta(),
+      getCardGrants(),
+      getEligibleCardUsers()
     ]);
+  const cardIsConfigured = cardConfigured();
+  const cardGrantMap = new Map(creditCardGrants.map((grant) => [grant.user_id, grant.enabled]));
   const currentAcademicYear = calendarSettings.effectiveAcademicYear;
   const nextAcademicYear = calendarSettings.nextAcademicYear;
   const [
@@ -1138,6 +1151,147 @@ export default async function SettingsPage() {
                     <p className="empty-note">No signed visitor agreements yet.</p>
                   )}
                 </section>
+              )
+            },
+            {
+              id: 'credit-card',
+              label: 'Credit card',
+              content: (
+                <div className="hq-lead-grid">
+                  <section className="hq-lead-block">
+                    <div className="hq-block-head">
+                      <h3>Shared club credit card</h3>
+                    </div>
+                    {!canEdit ? (
+                      <p className="empty-note">Admin only.</p>
+                    ) : !cardIsConfigured ? (
+                      <p className="helper">
+                        Card storage is not configured yet. Set <strong>CARD_ENCRYPTION_KEY</strong> (base64 of 32
+                        random bytes, e.g. <code>openssl rand -base64 32</code>) in the environment before a card can be
+                        saved.
+                      </p>
+                    ) : !creditCardMeta.exists ? (
+                      <form action={setCreditCardAction} className="form-stack">
+                        <div className="hq-callout hq-callout-warning">
+                          <strong>Enter this once.</strong> For security, it is encrypted and can never be viewed or
+                          edited here again — only deleted. Make sure it&apos;s correct.
+                        </div>
+                        <div className="field">
+                          <label className="label" htmlFor="card-label">
+                            Label (optional)
+                          </label>
+                          <input className="input" id="card-label" name="label" placeholder="SSE Visa" />
+                        </div>
+                        <div className="field">
+                          <label className="label" htmlFor="card-number">
+                            Card number
+                          </label>
+                          <input
+                            className="input"
+                            id="card-number"
+                            name="card_number"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            required
+                          />
+                        </div>
+                        <div className="hq-inline-grid">
+                          <div className="field">
+                            <label className="label" htmlFor="card-expiry">
+                              Expiry (MM/YY)
+                            </label>
+                            <input
+                              className="input"
+                              id="card-expiry"
+                              name="expiry"
+                              placeholder="08/29"
+                              autoComplete="off"
+                              required
+                            />
+                          </div>
+                          <div className="field">
+                            <label className="label" htmlFor="card-cvv">
+                              CVV
+                            </label>
+                            <input
+                              className="input"
+                              id="card-cvv"
+                              name="cvv"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label className="label" htmlFor="card-cardholder">
+                            Cardholder name
+                          </label>
+                          <input className="input" id="card-cardholder" name="cardholder" autoComplete="off" required />
+                        </div>
+                        <div className="button-row">
+                          <button className="button" type="submit">
+                            Save card securely
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="form-stack">
+                        <div className="hq-summary-list">
+                          <div className="hq-summary-row">
+                            <span>Status</span>
+                            <strong>A card is on file</strong>
+                          </div>
+                          <div className="hq-summary-row">
+                            <span>Label</span>
+                            <strong>{creditCardMeta.label || 'No label'}</strong>
+                          </div>
+                          <div className="hq-summary-row">
+                            <span>Added</span>
+                            <strong>
+                              {creditCardMeta.createdAt ? formatAuditTimestamp(creditCardMeta.createdAt) : '—'}
+                            </strong>
+                          </div>
+                        </div>
+                        <p className="helper">
+                          For security, the card details are encrypted and cannot be viewed or edited here — only
+                          deleted. Card viewing for granted users is set up in the next update.
+                        </p>
+                        <CreditCardDeleteButton />
+                      </div>
+                    )}
+                  </section>
+
+                  {canEdit && cardIsConfigured ? (
+                    <section className="hq-lead-block">
+                      <div className="hq-block-head">
+                        <h3>Card access</h3>
+                      </div>
+                      {eligibleCardUsers.length > 0 ? (
+                        <div className="form-stack">
+                          {eligibleCardUsers.map((user) => (
+                            <CreditCardGrantToggle
+                              key={user.id}
+                              userId={user.id}
+                              name={user.full_name || 'Unnamed user'}
+                              roleLabel={user.roleLabel}
+                              email={user.email}
+                              enabled={cardGrantMap.get(user.id) ?? false}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="empty-note">
+                          No team leads, financial officers, presidents, or vice presidents to grant access to yet.
+                        </p>
+                      )}
+                      <p className="helper">
+                        Granting access lets a user start the credit-card agreement; they still must sign and be
+                        approved before viewing (set up in the next update).
+                      </p>
+                    </section>
+                  ) : null}
+                </div>
               )
             }
           ]}

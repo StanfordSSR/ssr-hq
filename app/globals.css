@@ -2271,6 +2271,20 @@ tr:last-child td {
   background: #fff7f7;
 }
 
+.hq-callout {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted, #f7f7f8);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.hq-callout-warning {
+  border-color: #ead6d6;
+  background: #fff7f7;
+}
+
 .hq-category-form {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto;
