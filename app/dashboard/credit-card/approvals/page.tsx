@@ -2,7 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getViewerContext, profileHasFinancialOfficerRole } from '@/lib/auth';
 import { formatDateLabel } from '@/lib/academic-calendar';
-import { getPendingCardAgreements } from '@/lib/credit-card';
+import { getPendingCardAgreements, getPendingRegionApprovals } from '@/lib/credit-card';
+import { ApproveCardRegionButton } from '@/components/approve-card-region-button';
+
+function formatRegion(country: string | null, region: string | null, regionKey: string) {
+  if (country && region) return `${region}, ${country}`;
+  if (country) return country;
+  return regionKey;
+}
 
 export default async function CreditCardApprovalsPage() {
   const { profile, currentRole } = await getViewerContext();
@@ -14,7 +21,10 @@ export default async function CreditCardApprovalsPage() {
     redirect('/dashboard');
   }
 
-  const pending = await getPendingCardAgreements();
+  const [pending, pendingRegions] = await Promise.all([
+    getPendingCardAgreements(),
+    getPendingRegionApprovals()
+  ]);
 
   return (
     <div className="hq-page">
@@ -58,6 +68,44 @@ export default async function CreditCardApprovalsPage() {
                       >
                         Review &amp; approve
                       </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="hq-panel hq-surface-muted">
+        <div className="hq-block-head">
+          <h2>Location approvals ({pendingRegions.length})</h2>
+        </div>
+        <p className="helper">
+          The card is only viewable from California by default. These users tried to view it from a new
+          location and need a Financial Officer to approve that location.
+        </p>
+        {pendingRegions.length === 0 ? (
+          <p className="empty-note">No pending location approvals.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Location</th>
+                  <th>Requested</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingRegions.map((request) => (
+                  <tr key={`${request.userId}-${request.regionKey}`}>
+                    <td style={{ fontWeight: 700 }}>{request.fullName || 'Unknown'}</td>
+                    <td>{formatRegion(request.country, request.region, request.regionKey)}</td>
+                    <td>{formatDateLabel(new Date(request.requestedAt))}</td>
+                    <td>
+                      <ApproveCardRegionButton userId={request.userId} regionKey={request.regionKey} />
                     </td>
                   </tr>
                 ))}

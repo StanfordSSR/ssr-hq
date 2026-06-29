@@ -8,6 +8,8 @@ import {
   type Profile
 } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
+import { extractSubmissionFootprint } from '@/lib/reimbursements';
+import { pacificYearMonth } from '@/lib/receipt-month';
 import {
   extractSignatureFeatures,
   parseStrokes,
@@ -336,4 +338,290 @@ export async function resolveCardAgreementTeamLabel(userId: string): Promise<str
     if (match?.name) return match.name;
   }
   return CREDIT_CARD_DEFAULT_TEAM_LABEL;
+}
+
+// --- Phase 3: the gated secure card VIEW -----------------------------------
+// The card is only ever viewable inside North America, and inside North America
+// only from California by default — any other region needs a Financial Officer
+// to approve that location first. On top of that, a viewer must re-sign their
+// agreement monthly (Pacific calendar month) and again whenever they appear from
+// a new region. evaluateCardViewGate is the single source of truth for all of
+// this and is re-checked on every reveal/sign so a stale page can never bypass
+// it.
+
+// The only countries from which the card may ever be viewed.
+const NA_COUNTRIES = ['US', 'CA', 'MX'];
+
+export type CardViewGate =
+  // The grant/agreement gate from Phase 2 isn't satisfied (no slider, or not
+  // approved/overridden). The page already handles these states itself.
+  | { state: 'no_access' }
+  // Outside North America (or we can't confirm the country). Never viewable.
+  | { state: 'blocked_na' }
+  // Inside North America but from a non-California region that a Financial
+  // Officer hasn't approved yet. justRequested marks the first time we inserted
+  // the pending row (so the page can notify the FOs once).
+  | {
+      state: 'blocked_region';
+      regionKey: string;
+      country: string;
+      region: string | null;
+      justRequested?: boolean;
+    }
+  // Region is OK but the viewer must (re-)sign before the card is shown — either
+  // a new Pacific month, a new region since last view, or they've never signed.
+  | { state: 'require_sign'; regionKey: string; country: string; firstView: boolean }
+  // Fully cleared — render the interactive secure card view.
+  | { state: 'ok'; regionKey: string; country: string; firstView: boolean };
+
+type CardViewStateRow = {
+  user_id: string;
+  last_signed_at: string | null;
+  last_region: string | null;
+  last_country: string | null;
+  first_viewed_at: string | null;
+};
+
+// The coarse geo the gate keys off, resolved from request headers. Kept pure and
+// exported so the country/region/regionKey/California logic is unit-testable.
+export type CardGeo = {
+  country: string | null;
+  region: string | null;
+  rawRegion: string | null;
+  regionKey: string;
+  inCalifornia: boolean;
+  inNorthAmerica: boolean;
+};
+
+export function resolveCardGeo(headers: Headers): CardGeo {
+  const geo = extractSubmissionFootprint(headers).geo;
+  const country = geo.country ? geo.country.toUpperCase() : null;
+  const region = geo.region ? geo.region.toUpperCase() : null;
+  return {
+    country,
+    region,
+    rawRegion: geo.region,
+    regionKey: `${country}-${region}`,
+    inCalifornia: country === 'US' && region === 'CA',
+    // Unknown country is deliberately NOT North America — we can't confirm it.
+    inNorthAmerica: country !== null && NA_COUNTRIES.includes(country)
+  };
+}
+
+// Whether a viewer must (re-)sign before the card is shown: they've never
+// signed, the last signature was in a different Pacific month (monthly re-sign),
+// or they're viewing from a different region than last time. Pure for testing.
+export function cardViewNeedsSign(
+  state: { last_signed_at: string | null; last_region: string | null } | null,
+  regionKey: string,
+  nowIso: string
+): boolean {
+  if (!state?.last_signed_at) return true;
+  if (pacificYearMonth(state.last_signed_at) !== pacificYearMonth(nowIso)) return true;
+  return state.last_region !== regionKey;
+}
+
+async function getCardViewState(userId: string): Promise<CardViewStateRow | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('credit_card_view_state')
+    .select('user_id, last_signed_at, last_region, last_country, first_viewed_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return (data as CardViewStateRow | null) ?? null;
+}
+
+// The central view-time gate. Resolves the viewer's coarse geo from the request
+// headers (Vercel edge geo, reused from the reimbursement footprint extractor),
+// then applies the access → North America → region → re-sign rules in order.
+export async function evaluateCardViewGate(userId: string, headers: Headers): Promise<CardViewGate> {
+  const { country, rawRegion, regionKey, inCalifornia, inNorthAmerica } = resolveCardGeo(headers);
+
+  // 1. Phase-2 gate: admin slider on AND agreement approved/overridden.
+  if (!(await canAccessCard(userId))) {
+    return { state: 'no_access' };
+  }
+
+  // 2 + 3. Unknown country → be SAFE and treat as outside North America (we
+  //    can't confirm it); and anywhere actually outside North America → never
+  //    viewable. resolveCardGeo folds both into inNorthAmerica.
+  if (!country || !inNorthAmerica) {
+    return { state: 'blocked_na' };
+  }
+
+  // 4. Inside North America but not California → needs an FO-approved location.
+  if (!inCalifornia) {
+    const admin = createAdminClient();
+    const { data: approval } = await admin
+      .from('credit_card_region_approvals')
+      .select('status')
+      .eq('user_id', userId)
+      .eq('region_key', regionKey)
+      .maybeSingle();
+
+    if (!approval) {
+      // First time from this region → record a pending request for an FO.
+      await admin
+        .from('credit_card_region_approvals')
+        .insert({ user_id: userId, region_key: regionKey, country, region: rawRegion });
+      return { state: 'blocked_region', regionKey, country, region: rawRegion, justRequested: true };
+    }
+
+    if (approval.status === 'pending') {
+      return { state: 'blocked_region', regionKey, country, region: rawRegion };
+    }
+    // status === 'approved' → fall through to the re-sign check.
+  }
+
+  // 5. Region is OK (California or an approved location). Decide whether the
+  //    viewer must (re-)sign before the card is shown.
+  const viewState = await getCardViewState(userId);
+  const needsSign = cardViewNeedsSign(viewState, regionKey, new Date().toISOString());
+  const firstView = !viewState?.first_viewed_at;
+
+  if (needsSign) {
+    return { state: 'require_sign', regionKey, country, firstView };
+  }
+
+  return { state: 'ok', regionKey, country, firstView };
+}
+
+// Records a successful monthly / new-location verification: stamps last_signed_at
+// = now and the region/country the viewer signed from, and sets first_viewed_at
+// the first time. Never stores any card data.
+export async function recordCardViewSignature(
+  userId: string,
+  regionKey: string,
+  country: string
+): Promise<void> {
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const existing = await getCardViewState(userId);
+  const { error } = await admin.from('credit_card_view_state').upsert(
+    {
+      user_id: userId,
+      last_signed_at: now,
+      last_region: regionKey,
+      last_country: country,
+      first_viewed_at: existing?.first_viewed_at ?? now,
+      updated_at: now
+    },
+    { onConflict: 'user_id' }
+  );
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+// Marks that the viewer has opened the card at least once, so the one-time
+// first-view reminder doesn't show again. No-op if already set.
+export async function markCardFirstViewed(userId: string): Promise<void> {
+  const admin = createAdminClient();
+  const existing = await getCardViewState(userId);
+  if (existing?.first_viewed_at) {
+    return;
+  }
+  const now = new Date().toISOString();
+  const { error } = await admin.from('credit_card_view_state').upsert(
+    {
+      user_id: userId,
+      first_viewed_at: now,
+      updated_at: now
+    },
+    { onConflict: 'user_id' }
+  );
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export type PendingRegionApproval = {
+  userId: string;
+  regionKey: string;
+  country: string | null;
+  region: string | null;
+  fullName: string | null;
+  requestedAt: string;
+};
+
+// Location-approval requests awaiting a Financial Officer, newest first, with
+// the requesting user's name resolved from profiles.
+export async function getPendingRegionApprovals(): Promise<PendingRegionApproval[]> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('credit_card_region_approvals')
+    .select('user_id, region_key, country, region, requested_at')
+    .eq('status', 'pending')
+    .order('requested_at', { ascending: false });
+
+  const rows = (data || []) as Array<{
+    user_id: string;
+    region_key: string;
+    country: string | null;
+    region: string | null;
+    requested_at: string;
+  }>;
+  if (rows.length === 0) return [];
+
+  const userIds = Array.from(new Set(rows.map((row) => row.user_id)));
+  const { data: profilesData } = await admin
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', userIds);
+  const nameById = new Map(
+    ((profilesData || []) as Array<{ id: string; full_name: string | null; email: string | null }>).map((p) => [
+      p.id,
+      p.full_name || p.email
+    ])
+  );
+
+  return rows.map((row) => ({
+    userId: row.user_id,
+    regionKey: row.region_key,
+    country: row.country,
+    region: row.region,
+    fullName: nameById.get(row.user_id) ?? null,
+    requestedAt: row.requested_at
+  }));
+}
+
+// Lowercased emails of every active Financial Officer AND admin — the people who
+// approve card access, location requests, and who should hear about a suspected
+// screenshot. Mirrors the approver set used by the Phase-2 agreement actions.
+export async function getCreditCardApproverEmails(): Promise<string[]> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('profiles')
+    .select('email')
+    .eq('active', true)
+    .or('role.eq.admin,role.eq.financial_officer,is_admin.eq.true,is_financial_officer.eq.true');
+  return Array.from(
+    new Set(
+      ((data || []) as Array<{ email: string | null }>)
+        .map((row) => (row.email || '').toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+// A Financial Officer approves a specific viewer's specific location. Idempotent
+// on the (user_id, region_key) row; flips it from pending to approved.
+export async function approveCardRegion(
+  userId: string,
+  regionKey: string,
+  approverId: string
+): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('credit_card_region_approvals')
+    .update({
+      status: 'approved',
+      approved_by: approverId,
+      approved_at: new Date().toISOString()
+    })
+    .eq('user_id', userId)
+    .eq('region_key', regionKey);
+  if (error) {
+    throw new Error(error.message);
+  }
 }

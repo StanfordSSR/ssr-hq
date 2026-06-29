@@ -107,9 +107,13 @@ import {
 } from '@/lib/budget-plan';
 import { LEADERSHIP_STEWARD_LABEL, storageLocationLabel } from '@/lib/high-value-assets';
 import {
+  approveCardRegion,
   deleteCreditCard,
+  evaluateCardViewGate,
   getCardAgreement,
+  getCreditCardApproverEmails,
   isCardGrantEnabled,
+  recordCardViewSignature,
   resolveCardAgreementTeamLabel,
   setCardGrant,
   setCreditCard,
@@ -589,24 +593,10 @@ export async function setCreditCardGrantAction(formData: FormData) {
 // signature). Slack pushes are best-effort and never block the action.
 
 const CREDIT_CARD_APPROVALS_PATH = '/dashboard/credit-card/approvals';
+const CREDIT_CARD_PATH = '/dashboard/credit-card';
 
-// Lowercased emails of every active Financial Officer AND admin — the people who
-// can approve (or override) a credit card access request.
-async function getCreditCardApproverEmails(): Promise<string[]> {
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from('profiles')
-    .select('email')
-    .eq('active', true)
-    .or('role.eq.admin,role.eq.financial_officer,is_admin.eq.true,is_financial_officer.eq.true');
-  return Array.from(
-    new Set(
-      ((data || []) as Array<{ email: string | null }>)
-        .map((row) => (row.email || '').toLowerCase())
-        .filter(Boolean)
-    )
-  );
-}
+// getCreditCardApproverEmails (active Financial Officers + admins) now lives in
+// lib/credit-card.ts so the screenshot-signal API can reuse it too.
 
 async function getProfileEmail(userId: string): Promise<string | null> {
   const admin = createAdminClient();
@@ -836,6 +826,101 @@ export async function overrideCreditCardAgreementAction(formData: FormData) {
       });
 
       revalidatePaths(['/dashboard', '/dashboard/credit-card', CREDIT_CARD_APPROVALS_PATH]);
+    }
+  });
+}
+
+// --- Phase 3: secure card view gate actions --------------------------------
+
+// The monthly / new-location re-verification: an approved viewer signs (their
+// drawn signature is verified against their enrolled profile) to unlock the
+// secure card view. The gate is recomputed server-side so a stale page can't
+// sign from a location/state that isn't actually allowed.
+export async function signCardViewAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: CREDIT_CARD_PATH,
+    successMessage: 'Verified — you can view the card.',
+    action: async () => {
+      const { user } = await requireActiveProfile();
+
+      const gate = await evaluateCardViewGate(user.id, await headers());
+      // Only a viewer who is otherwise cleared (just needs to sign) or already
+      // OK may sign. Any blocked/no-access state means signing isn't valid here.
+      if (gate.state !== 'require_sign' && gate.state !== 'ok') {
+        throw new Error('You are not able to view the card from here right now.');
+      }
+
+      const strokes = formData.get('strokes');
+      await verifyUserSignature(user.id, strokes);
+      await recordCardViewSignature(user.id, gate.regionKey, gate.country);
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'credit_card.view_signed',
+        targetType: 'credit_card',
+        targetId: '1',
+        summary: 'Signed the monthly / new-location verification to view the shared card.',
+        details: { regionKey: gate.regionKey, country: gate.country }
+      });
+
+      revalidatePaths([CREDIT_CARD_PATH]);
+    }
+  });
+}
+
+// A Financial Officer approves a viewer's new location so they can view the card
+// from there. Notifies the viewer (best-effort) and audits the approval.
+export async function approveCardRegionAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: CREDIT_CARD_APPROVALS_PATH,
+    successMessage: 'Approved this location.',
+    action: async () => {
+      const { user, profile, currentRole } = await requireActiveProfile();
+      const isFinancialOfficer =
+        currentRole === 'financial_officer' || profileHasFinancialOfficerRole(profile);
+      if (!isFinancialOfficer) {
+        throw new Error('Only a financial officer can approve a location.');
+      }
+
+      const targetUserId = String(formData.get('user_id') || '').trim();
+      const regionKey = String(formData.get('region_key') || '').trim();
+      if (!targetUserId || !regionKey) {
+        throw new Error('Missing the request to approve.');
+      }
+
+      await approveCardRegion(targetUserId, regionKey, user.id);
+
+      // Notify the requesting user (best-effort).
+      try {
+        const email = await getProfileEmail(targetUserId);
+        if (email) {
+          await sendSlackbotNotification({
+            idempotency_key: `credit_card_region_approved:${targetUserId}:${regionKey}`,
+            type: 'manual_message',
+            team_id: SLACKBOT_SYSTEM_TEAM_ID,
+            team_name: SLACKBOT_SYSTEM_TEAM_NAME,
+            recipient_emails: [email],
+            title: 'Credit card location approved',
+            message: `${profile.full_name || 'The Financial Officer'} approved viewing the credit card from your new location.`,
+            cta_label: 'Open credit card',
+            cta_url: `${env.siteUrl}${CREDIT_CARD_PATH}`,
+            metadata: { user_id: targetUserId, region_key: regionKey }
+          });
+        }
+      } catch (error) {
+        console.error('Credit card region approval Slack push failed:', error);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'credit_card.region_approved',
+        targetType: 'credit_card_region_approval',
+        targetId: targetUserId,
+        summary: 'Approved a credit card viewing location.',
+        details: { requestingUserId: targetUserId, regionKey }
+      });
+
+      revalidatePaths([CREDIT_CARD_PATH, CREDIT_CARD_APPROVALS_PATH]);
     }
   });
 }
