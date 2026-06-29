@@ -9,6 +9,7 @@ import {
   ACTIVE_ROLE_COOKIE,
   getViewerContext,
   profileHasAdminRole,
+  profileHasFinancialOfficerRole,
   profileHasPresidentRole,
   profileHasVicePresidentRole,
   requireAdmin,
@@ -107,8 +108,12 @@ import {
 import { LEADERSHIP_STEWARD_LABEL, storageLocationLabel } from '@/lib/high-value-assets';
 import {
   deleteCreditCard,
+  getCardAgreement,
+  isCardGrantEnabled,
+  resolveCardAgreementTeamLabel,
   setCardGrant,
   setCreditCard,
+  verifyUserSignature,
   type CreditCardFields
 } from '@/lib/credit-card';
 
@@ -573,6 +578,264 @@ export async function setCreditCardGrantAction(formData: FormData) {
       });
 
       revalidatePaths(REVALIDATE_PATHS.settings);
+    }
+  });
+}
+
+// --- Credit card access agreement + approval state machine -----------------
+// A granted user signs the agreement (their drawn signature is verified) → it
+// goes to the Financial Officer to approve (FO signs) → access becomes
+// effective. Admins are notified and can OVERRIDE (grant without an FO
+// signature). Slack pushes are best-effort and never block the action.
+
+const CREDIT_CARD_APPROVALS_PATH = '/dashboard/credit-card/approvals';
+
+// Lowercased emails of every active Financial Officer AND admin — the people who
+// can approve (or override) a credit card access request.
+async function getCreditCardApproverEmails(): Promise<string[]> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('profiles')
+    .select('email')
+    .eq('active', true)
+    .or('role.eq.admin,role.eq.financial_officer,is_admin.eq.true,is_financial_officer.eq.true');
+  return Array.from(
+    new Set(
+      ((data || []) as Array<{ email: string | null }>)
+        .map((row) => (row.email || '').toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+async function getProfileEmail(userId: string): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin.from('profiles').select('email').eq('id', userId).maybeSingle();
+  return data?.email ? data.email.toLowerCase() : null;
+}
+
+export async function signCreditCardAgreementAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: '/dashboard/credit-card',
+    successMessage: 'Signed — sent to the Financial Officer for approval.',
+    action: async () => {
+      const { user, profile } = await requireActiveProfile();
+
+      if (!(await isCardGrantEnabled(user.id))) {
+        throw new Error("You don't have credit card access.");
+      }
+
+      // Idempotent: if they've already signed, just bounce back to the page.
+      const existing = await getCardAgreement(user.id);
+      if (existing) {
+        return;
+      }
+
+      const signature = String(formData.get('signature') || '').trim();
+      const strokes = formData.get('strokes');
+      if (!signature) {
+        throw new Error('Draw your signature to sign the agreement.');
+      }
+
+      const { score } = await verifyUserSignature(user.id, strokes);
+      const teamLabel = await resolveCardAgreementTeamLabel(user.id);
+
+      const admin = createAdminClient();
+      const { error } = await admin.from('credit_card_agreements').insert({
+        user_id: user.id,
+        status: 'pending_fo',
+        user_team_name: teamLabel,
+        user_signature: signature,
+        user_signature_score: score
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Notify all active Financial Officers + admins (best-effort).
+      try {
+        const emails = await getCreditCardApproverEmails();
+        if (emails.length > 0) {
+          await sendSlackbotNotification({
+            idempotency_key: `credit_card_agreement_signed:${user.id}`,
+            type: 'manual_message',
+            team_id: SLACKBOT_SYSTEM_TEAM_ID,
+            team_name: SLACKBOT_SYSTEM_TEAM_NAME,
+            recipient_emails: emails,
+            title: 'Credit card access request',
+            message: `${profile.full_name || 'A team lead'} signed the credit card agreement and needs approval.`,
+            cta_label: 'Review request',
+            cta_url: `${env.siteUrl}${CREDIT_CARD_APPROVALS_PATH}`,
+            metadata: { user_id: user.id }
+          });
+        }
+      } catch (error) {
+        console.error('Credit card agreement Slack push failed:', error);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'credit_card.agreement_signed',
+        targetType: 'credit_card_agreement',
+        targetId: user.id,
+        summary: 'Signed the credit card access agreement.',
+        details: { teamLabel }
+      });
+
+      revalidatePaths(['/dashboard', '/dashboard/credit-card', CREDIT_CARD_APPROVALS_PATH]);
+    }
+  });
+}
+
+export async function approveCreditCardAgreementAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: CREDIT_CARD_APPROVALS_PATH,
+    successMessage: 'Approved — access granted.',
+    action: async () => {
+      const { user, profile, currentRole } = await requireActiveProfile();
+      const isFinancialOfficer =
+        currentRole === 'financial_officer' || profileHasFinancialOfficerRole(profile);
+      if (!isFinancialOfficer) {
+        throw new Error('Only a financial officer can approve.');
+      }
+
+      const targetUserId = String(formData.get('user_id') || '').trim();
+      if (!targetUserId) {
+        throw new Error('Missing the requesting user.');
+      }
+
+      const signature = String(formData.get('signature') || '').trim();
+      const strokes = formData.get('strokes');
+      if (!signature) {
+        throw new Error('Draw your signature to approve access.');
+      }
+
+      // The FO signs with their OWN enrolled signature.
+      await verifyUserSignature(user.id, strokes);
+
+      const agreement = await getCardAgreement(targetUserId);
+      if (!agreement) {
+        throw new Error('That request no longer exists.');
+      }
+      if (agreement.status !== 'pending_fo') {
+        throw new Error('That request has already been decided.');
+      }
+
+      const admin = createAdminClient();
+      const { error } = await admin
+        .from('credit_card_agreements')
+        .update({
+          status: 'approved',
+          fo_user_id: user.id,
+          fo_signed_at: new Date().toISOString(),
+          fo_signature: signature
+        })
+        .eq('user_id', targetUserId)
+        .eq('status', 'pending_fo');
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Notify the requesting user (best-effort).
+      try {
+        const email = await getProfileEmail(targetUserId);
+        if (email) {
+          await sendSlackbotNotification({
+            idempotency_key: `credit_card_agreement_approved:${targetUserId}`,
+            type: 'manual_message',
+            team_id: SLACKBOT_SYSTEM_TEAM_ID,
+            team_name: SLACKBOT_SYSTEM_TEAM_NAME,
+            recipient_emails: [email],
+            title: 'Credit card access approved',
+            message: `${profile.full_name || 'The Financial Officer'} approved your credit card access.`,
+            cta_label: 'Open credit card',
+            cta_url: `${env.siteUrl}/dashboard/credit-card`,
+            metadata: { user_id: targetUserId }
+          });
+        }
+      } catch (error) {
+        console.error('Credit card approval Slack push failed:', error);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'credit_card.agreement_approved',
+        targetType: 'credit_card_agreement',
+        targetId: targetUserId,
+        summary: 'Approved a credit card access request.',
+        details: { requestingUserId: targetUserId }
+      });
+
+      revalidatePaths(['/dashboard', '/dashboard/credit-card', CREDIT_CARD_APPROVALS_PATH]);
+    }
+  });
+}
+
+export async function overrideCreditCardAgreementAction(formData: FormData) {
+  await runRedirectingAction({
+    fallbackPath: CREDIT_CARD_APPROVALS_PATH,
+    successMessage: 'Override applied — access granted.',
+    action: async () => {
+      const { user } = await requireAdmin();
+
+      const targetUserId = String(formData.get('user_id') || '').trim();
+      if (!targetUserId) {
+        throw new Error('Missing the requesting user.');
+      }
+
+      const agreement = await getCardAgreement(targetUserId);
+      if (!agreement) {
+        throw new Error('That request no longer exists.');
+      }
+      if (agreement.status !== 'pending_fo') {
+        throw new Error('That request has already been decided.');
+      }
+
+      const admin = createAdminClient();
+      const { error } = await admin
+        .from('credit_card_agreements')
+        .update({
+          status: 'overridden',
+          override_by: user.id,
+          override_at: new Date().toISOString()
+        })
+        .eq('user_id', targetUserId)
+        .eq('status', 'pending_fo');
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Notify the requesting user (best-effort).
+      try {
+        const email = await getProfileEmail(targetUserId);
+        if (email) {
+          await sendSlackbotNotification({
+            idempotency_key: `credit_card_agreement_overridden:${targetUserId}`,
+            type: 'manual_message',
+            team_id: SLACKBOT_SYSTEM_TEAM_ID,
+            team_name: SLACKBOT_SYSTEM_TEAM_NAME,
+            recipient_emails: [email],
+            title: 'Credit card access granted',
+            message: 'An admin granted your credit card access.',
+            cta_label: 'Open credit card',
+            cta_url: `${env.siteUrl}/dashboard/credit-card`,
+            metadata: { user_id: targetUserId }
+          });
+        }
+      } catch (error) {
+        console.error('Credit card override Slack push failed:', error);
+      }
+
+      await recordAuditEvent({
+        actorId: user.id,
+        action: 'credit_card.agreement_overridden',
+        targetType: 'credit_card_agreement',
+        targetId: targetUserId,
+        summary: 'Overrode a credit card access request (granted without FO signature).',
+        details: { requestingUserId: targetUserId }
+      });
+
+      revalidatePaths(['/dashboard', '/dashboard/credit-card', CREDIT_CARD_APPROVALS_PATH]);
     }
   });
 }

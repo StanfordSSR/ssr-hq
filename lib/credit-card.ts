@@ -7,6 +7,17 @@ import {
   profileHasVicePresidentRole,
   type Profile
 } from '@/lib/auth';
+import { getLeadTeamIds } from '@/lib/lead-state';
+import {
+  extractSignatureFeatures,
+  parseStrokes,
+  verifySignature,
+  type SignatureProfile
+} from '@/lib/signature-verify';
+
+// The default "team label" snapshot when a signer leads no active team — they're
+// signing in a club-wide leadership capacity (president / VP / financial officer).
+export const CREDIT_CARD_DEFAULT_TEAM_LABEL = 'Robotics Club Leadership';
 
 // The decrypted shape of the shared club card. This plaintext only ever lives
 // in memory or inside the encrypted `cipher` column — never in plaintext at
@@ -180,4 +191,149 @@ export async function getEligibleCardUsers(): Promise<EligibleCardUser[]> {
       roleLabel: roleLabelFor(profile)
     }))
     .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+}
+
+// --- Phase 2: access agreement + approval state machine --------------------
+
+export type CreditCardAgreementStatus = 'pending_fo' | 'approved' | 'overridden';
+
+export type CreditCardAgreement = {
+  user_id: string;
+  status: CreditCardAgreementStatus;
+  user_team_name: string | null;
+  user_signed_at: string;
+  user_signature: string | null;
+  user_signature_score: number | null;
+  fo_user_id: string | null;
+  fo_signed_at: string | null;
+  fo_signature: string | null;
+  override_by: string | null;
+  override_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const CREDIT_CARD_AGREEMENT_COLUMNS =
+  'user_id, status, user_team_name, user_signed_at, user_signature, user_signature_score, fo_user_id, fo_signed_at, fo_signature, override_by, override_at, created_at, updated_at';
+
+// The single agreement row for a user, or null if they have not signed yet.
+export async function getCardAgreement(userId: string): Promise<CreditCardAgreement | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('credit_card_agreements')
+    .select(CREDIT_CARD_AGREEMENT_COLUMNS)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return (data as CreditCardAgreement | null) ?? null;
+}
+
+// Whether the admin's per-user access switch ("slider") is on for this user.
+export async function isCardGrantEnabled(userId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('credit_card_grants')
+    .select('enabled')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return Boolean(data?.enabled);
+}
+
+// The Phase 3 gate: a user can actually view the card only when the admin's
+// grant is on AND their agreement has cleared approval (FO-signed or overridden).
+export async function canAccessCard(userId: string): Promise<boolean> {
+  const [enabled, agreement] = await Promise.all([isCardGrantEnabled(userId), getCardAgreement(userId)]);
+  if (!enabled || !agreement) return false;
+  return agreement.status === 'approved' || agreement.status === 'overridden';
+}
+
+export type PendingCardAgreement = {
+  userId: string;
+  fullName: string | null;
+  teamName: string | null;
+  signedAt: string;
+};
+
+// Agreements awaiting Financial Officer approval, newest first, with the
+// requesting user's name resolved from profiles.
+export async function getPendingCardAgreements(): Promise<PendingCardAgreement[]> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('credit_card_agreements')
+    .select('user_id, user_team_name, user_signed_at')
+    .eq('status', 'pending_fo')
+    .order('user_signed_at', { ascending: false });
+
+  const rows = (data || []) as Array<{ user_id: string; user_team_name: string | null; user_signed_at: string }>;
+  if (rows.length === 0) return [];
+
+  const userIds = Array.from(new Set(rows.map((row) => row.user_id)));
+  const { data: profilesData } = await admin
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', userIds);
+  const nameById = new Map(
+    ((profilesData || []) as Array<{ id: string; full_name: string | null; email: string | null }>).map((p) => [
+      p.id,
+      p.full_name || p.email
+    ])
+  );
+
+  return rows.map((row) => ({
+    userId: row.user_id,
+    fullName: nameById.get(row.user_id) ?? null,
+    teamName: row.user_team_name,
+    signedAt: row.user_signed_at
+  }));
+}
+
+// Verify a drawn signature against ONE specific user's enrolled signature
+// profile. Mirrors verifyReimbursementSignature, but scoped to a single user:
+// the signer (a granted user signing the agreement, or the FO signing to
+// approve) signs with their own enrolled signature. Throws a user-facing error
+// when not enrolled or when the signature doesn't match.
+export async function verifyUserSignature(
+  userId: string,
+  rawStrokes: unknown
+): Promise<{ score: number; threshold: number }> {
+  const features = extractSignatureFeatures(parseStrokes(rawStrokes));
+  if (!features) {
+    throw new Error('That signature was too brief to verify — please sign again.');
+  }
+
+  const admin = createAdminClient();
+  const { data: profileRow } = await admin
+    .from('signature_profiles')
+    .select('profile')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!profileRow?.profile) {
+    throw new Error('You must enroll your signature in Personal settings first.');
+  }
+
+  const result = verifySignature(profileRow.profile as SignatureProfile, features);
+  if (!result.ok) {
+    throw new Error("Signature didn't match your enrolled signature.");
+  }
+
+  return { score: result.score, threshold: result.threshold };
+}
+
+// The "team label" snapshot stored on an agreement: the signer's first active
+// lead team name, or the club-wide leadership label when they lead no team.
+export async function resolveCardAgreementTeamLabel(userId: string): Promise<string> {
+  const leadTeamIds = await getLeadTeamIds(userId);
+  if (leadTeamIds.length === 0) {
+    return CREDIT_CARD_DEFAULT_TEAM_LABEL;
+  }
+
+  const admin = createAdminClient();
+  const { data } = await admin.from('teams').select('id, name').in('id', leadTeamIds);
+  const teams = (data || []) as Array<{ id: string; name: string }>;
+  // Preserve the lead-membership order so "first active lead team" is stable.
+  for (const teamId of leadTeamIds) {
+    const match = teams.find((team) => team.id === teamId);
+    if (match?.name) return match.name;
+  }
+  return CREDIT_CARD_DEFAULT_TEAM_LABEL;
 }
