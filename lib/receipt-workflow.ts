@@ -27,14 +27,18 @@ export async function getReceiptLinks(paths: Array<string | null | undefined>) {
   }
 
   const admin = createAdminClient();
-  const results = await Promise.all(
-    receiptPaths.map(async (path) => {
-      const { data } = await admin.storage.from(RECEIPT_BUCKET).createSignedUrl(path, 60 * 60);
-      return [path, data?.signedUrl || ''] as const;
-    })
-  );
+  // Sign every receipt in a single storage call instead of one round-trip per
+  // receipt — much faster for months with many receipts.
+  const { data } = await admin.storage.from(RECEIPT_BUCKET).createSignedUrls(receiptPaths, 60 * 60);
 
-  return new Map(results);
+  const links = new Map<string, string>();
+  for (const entry of data || []) {
+    if (entry.path && entry.signedUrl) {
+      links.set(entry.path, entry.signedUrl);
+    }
+  }
+
+  return links;
 }
 
 export async function processDueReceiptReminders() {

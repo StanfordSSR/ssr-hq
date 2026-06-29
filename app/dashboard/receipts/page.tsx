@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { formatDateLabel } from '@/lib/academic-calendar';
 import { getViewerContext } from '@/lib/auth';
+import { defaultReceiptMonthValue, pacificYearMonth } from '@/lib/receipt-month';
 import { AutoSubmitFilters } from '@/components/auto-submit-filters';
 
 type Team = {
@@ -22,27 +23,6 @@ type ReceiptPurchase = {
 
 function readSingle(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] || '' : value || '';
-}
-
-function getPacificNow() {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Los_Angeles',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  const parts = formatter.formatToParts(new Date());
-  const year = Number(parts.find((part) => part.type === 'year')?.value || '0');
-  const month = Number(parts.find((part) => part.type === 'month')?.value || '1');
-  const day = Number(parts.find((part) => part.type === 'day')?.value || '1');
-  return { year, month, day };
-}
-
-function getLastCompleteMonthValue() {
-  const now = getPacificNow();
-  const month = now.month === 1 ? 12 : now.month - 1;
-  const year = now.month === 1 ? now.year - 1 : now.year;
-  return `${year}-${String(month).padStart(2, '0')}`;
 }
 
 function shiftMonth(monthValue: string, offset: number) {
@@ -126,7 +106,7 @@ export default async function ReceiptsPage({
     redirect('/dashboard');
   }
 
-  const selectedMonth = readSingle(params.month) || getLastCompleteMonthValue();
+  const selectedMonth = readSingle(params.month) || defaultReceiptMonthValue();
   const selectedSort = readSingle(params.sort) === 'amount' ? 'amount' : 'chronological';
   const monthRange = getMonthRange(selectedMonth);
 
@@ -134,20 +114,25 @@ export default async function ReceiptsPage({
     redirect('/dashboard/receipts');
   }
 
+  // Query a UTC window padded by 2 days on each side so no purchase whose Pacific
+  // month is the selected month is missed (Pacific is up to 8h off UTC); then
+  // bucket precisely by Pacific month below.
+  const queryStart = new Date(monthRange.start.getTime() - 2 * 24 * 60 * 60 * 1000);
+  const queryEnd = new Date(monthRange.end.getTime() + 2 * 24 * 60 * 60 * 1000);
   const [{ data: teamsData }, { data: purchasesData }] = await Promise.all([
     admin.from('teams').select('id, name').eq('is_active', true).order('name'),
     admin
       .from('purchase_logs')
       .select('id, team_id, description, amount_cents, purchased_at, receipt_path')
       .not('receipt_path', 'is', null)
-      .gte('purchased_at', monthRange.start.toISOString())
-      .lte('purchased_at', monthRange.end.toISOString())
+      .gte('purchased_at', queryStart.toISOString())
+      .lte('purchased_at', queryEnd.toISOString())
   ]);
 
   const teams = (teamsData || []) as Team[];
   const teamNameMap = new Map(teams.map((team) => [team.id, team.name]));
   const purchases = ((purchasesData || []) as ReceiptPurchase[])
-    .filter((purchase) => Boolean(purchase.receipt_path))
+    .filter((purchase) => Boolean(purchase.receipt_path) && pacificYearMonth(purchase.purchased_at) === selectedMonth)
     .sort((a, b) => {
       if (selectedSort === 'amount') {
         return b.amount_cents - a.amount_cents;
@@ -172,7 +157,7 @@ export default async function ReceiptsPage({
           </p>
           <h1 className="hq-page-title">Receipts</h1>
           <p className="hq-subtitle">
-            Review receipt-backed purchases from the most recently completed month, or switch months and sorting below.
+            Review receipt-backed purchases by month (purchases are grouped by their Pacific-time date), or switch months and sorting below.
           </p>
         </div>
       </section>
@@ -247,8 +232,8 @@ export default async function ReceiptsPage({
         )}
 
         <div className="hq-pagination hq-receipts-jump">
-          <Link href={`/dashboard/receipts?${buildQueryString(currentParams, { month: getLastCompleteMonthValue() })}`}>
-            Jump to last completed month
+          <Link href={`/dashboard/receipts?${buildQueryString(currentParams, { month: defaultReceiptMonthValue() })}`}>
+            Jump to current month
           </Link>
         </div>
       </section>
