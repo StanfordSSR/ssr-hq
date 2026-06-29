@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { headers } from 'next/headers';
 import { getViewerContext } from '@/lib/auth';
 import { formatDateLabel } from '@/lib/academic-calendar';
@@ -23,7 +24,8 @@ import { SignCardViewForm } from '@/components/sign-card-view-form';
 export const dynamic = 'force-dynamic';
 
 export default async function CreditCardPage() {
-  const { user, profile: me } = await getViewerContext();
+  const { user, profile: me, currentRole } = await getViewerContext();
+  const canGovernCard = currentRole === 'admin' || currentRole === 'financial_officer';
 
   const [grantEnabled, agreement] = await Promise.all([
     isCardGrantEnabled(user.id),
@@ -126,6 +128,13 @@ export default async function CreditCardPage() {
         <p className="hq-eyebrow">Finances</p>
         <h1 className="hq-page-title">Shared club credit card</h1>
       </div>
+      {canGovernCard ? (
+        <div className="hq-page-head-action">
+          <Link href="/dashboard/credit-card/approvals" className="button-secondary">
+            Access &amp; approvals
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
 
