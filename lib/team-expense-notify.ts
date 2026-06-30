@@ -38,13 +38,17 @@ type NotifyArgs = {
   purchaseId: string;
   loggedById: string;
   loggedByName: string;
+  loggedAsRole: string;
   loggedAmountCents: number;
   description: string;
 };
 
-// When someone who is NOT a lead of the team logs an expense to it (a president,
-// financial officer, or admin), Slack-message the team's active leads with the
-// amount logged and how much budget they have left.
+// When an expense is logged to a team from an OFFICER profile (president,
+// financial officer, admin, or vice president) — i.e. not while acting as that
+// team's lead — Slack-message the team's active leads with the amount logged and
+// how much budget they have left. This fires even when the person is also a lead
+// of the team, as long as they did it from their officer profile, not their lead
+// profile.
 //
 // Remaining budget:
 //   - During Summer Quarter: the team's predicted summer spend (from their
@@ -54,8 +58,20 @@ type NotifyArgs = {
 //
 // Best-effort: any failure is swallowed so it never blocks the expense log.
 export async function notifyTeamLeadsOfExpense(args: NotifyArgs): Promise<void> {
-  const { teamId, academicYear, purchaseId, loggedById, loggedByName, loggedAmountCents, description } =
-    args;
+  const {
+    teamId,
+    academicYear,
+    purchaseId,
+    loggedById,
+    loggedByName,
+    loggedAsRole,
+    loggedAmountCents,
+    description
+  } = args;
+
+  // Logged while acting AS a team lead → the lead did it themselves, no notice.
+  if (loggedAsRole === 'team_lead') return;
+
   const admin = createAdminClient();
 
   // Active leads of this team.
@@ -67,16 +83,15 @@ export async function notifyTeamLeadsOfExpense(args: NotifyArgs): Promise<void> 
     .eq('is_active', true);
 
   const leadIds = Array.from(new Set((leadRows || []).map((row) => row.user_id as string)));
-  if (leadIds.length === 0) return;
-
-  // If the person who logged it is themselves a lead of this team, they already
-  // know — don't notify.
-  if (leadIds.includes(loggedById)) return;
+  // Notify the other leads — exclude the person who logged it (even if they're
+  // also a lead) so they don't get a message about their own action.
+  const recipientIds = leadIds.filter((id) => id !== loggedById);
+  if (recipientIds.length === 0) return;
 
   const { data: leadProfiles } = await admin
     .from('profiles')
     .select('id, email, active')
-    .in('id', leadIds);
+    .in('id', recipientIds);
 
   const emails = ((leadProfiles || []) as Array<{ email: string | null; active: boolean | null }>)
     .filter((p) => p.active && p.email)
