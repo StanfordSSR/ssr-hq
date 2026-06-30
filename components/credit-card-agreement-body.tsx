@@ -41,6 +41,32 @@ export function CreditCardAgreementBody() {
         Robotics Club Credit Card Access and Usage Agreement
       </h1>
 
+      <div
+        role="alert"
+        style={{
+          border: '2px solid #8c1515',
+          background: '#fbeaea',
+          borderRadius: 10,
+          padding: '1rem 1.1rem',
+          margin: '0 0 1.25rem',
+          color: '#8c1515'
+        }}
+      >
+        <p style={{ margin: '0 0 0.6rem', fontWeight: 800, fontSize: '1.02rem', lineHeight: 1.55 }}>
+          By accepting access to the Robotics Club credit card, you are assuming significant
+          responsibility for club, ASSU, and student funds. Unauthorized, personal, prohibited,
+          fraudulent, or materially undocumented purchases may result in suspension or permanent
+          revocation of purchasing access, removal from a leadership position, referral to Stanford or
+          ASSU authorities, and personal responsibility for repayment to the extent permitted by
+          applicable policy and law.
+        </p>
+        <p style={{ margin: 0, fontWeight: 800, fontSize: '1.02rem', lineHeight: 1.55 }}>
+          Do not sign this Agreement or use the card unless you understand every requirement. If you
+          are uncertain whether a purchase is allowed, you must obtain written approval before making
+          the purchase.
+        </p>
+      </div>
+
       <p style={paragraphStyle}>
         Credit card access is a revocable privilege granted solely to support authorized Robotics
         Club activities. It is based on a high degree of trust and carries a duty to protect club

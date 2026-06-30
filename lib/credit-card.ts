@@ -165,6 +165,25 @@ export async function setCardGrant(userId: string, enabled: boolean, grantedBy: 
   if (error) {
     throw new Error(error.message);
   }
+
+  // Revoking access wipes the signed agreement, its FO approval, and the
+  // view-time state, so if the user is ever granted access again they must read
+  // and re-sign the agreement and go back through Financial Officer approval.
+  if (!enabled) {
+    await resetCardAgreement(userId);
+  }
+}
+
+// Clears a user's agreement + approval + view state, sending them back to the
+// start of the signing flow. Used when access is revoked.
+export async function resetCardAgreement(userId: string): Promise<void> {
+  const admin = createAdminClient();
+  const [{ error: agreementError }, { error: viewError }] = await Promise.all([
+    admin.from('credit_card_agreements').delete().eq('user_id', userId),
+    admin.from('credit_card_view_state').delete().eq('user_id', userId)
+  ]);
+  if (agreementError) throw new Error(agreementError.message);
+  if (viewError) throw new Error(viewError.message);
 }
 
 type EligibleCardUser = {

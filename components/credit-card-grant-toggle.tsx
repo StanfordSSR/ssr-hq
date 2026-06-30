@@ -23,6 +23,19 @@ export function CreditCardGrantToggle({ userId, name, roleLabel, email, enabled 
           name="enabled"
           defaultChecked={enabled}
           onChange={(event) => {
+            // Revoking wipes their signed agreement + FO approval, so they'd have
+            // to redo the whole process if re-granted. Confirm before doing it.
+            if (!event.currentTarget.checked) {
+              const ok = window.confirm(
+                `Remove credit-card access for ${name}? This also resets their agreement — if you ` +
+                  `grant access again they will have to read and re-sign it and get Financial Officer ` +
+                  `approval from scratch.`
+              );
+              if (!ok) {
+                event.currentTarget.checked = true;
+                return;
+              }
+            }
             event.currentTarget.form?.requestSubmit();
           }}
         />

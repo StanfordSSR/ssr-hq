@@ -578,8 +578,10 @@ export async function setCreditCardGrantAction(formData: FormData) {
         action: 'credit_card.grant_updated',
         targetType: 'credit_card_grant',
         targetId: userId,
-        summary: `${enabled ? 'Granted' : 'Revoked'} credit-card access for a user.`,
-        details: { userId, enabled }
+        summary: enabled
+          ? 'Granted credit-card access for a user.'
+          : 'Revoked credit-card access and reset the user’s agreement.',
+        details: { userId, enabled, agreementReset: !enabled }
       });
 
       revalidatePaths(REVALIDATE_PATHS.settings);
