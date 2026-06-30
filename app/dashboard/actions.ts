@@ -1559,6 +1559,7 @@ export async function logPurchaseAction(formData: FormData) {
             purchaseId,
             loggedById: user.id,
             loggedByName: personName,
+            loggedAsRole: currentRole,
             loggedAmountCents: amountCents,
             description
           });
