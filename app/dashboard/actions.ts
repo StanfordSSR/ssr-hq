@@ -1464,7 +1464,13 @@ export async function logPurchaseAction(formData: FormData) {
         if (!teamId) {
           throw new Error('Team and description are required.');
         }
-        if (currentRole !== 'admin' && currentRole !== 'financial_officer') {
+        // Admins, financial officers, and presidents can log to ANY team; team
+        // leads can only log to a team they lead.
+        if (
+          currentRole !== 'admin' &&
+          currentRole !== 'financial_officer' &&
+          currentRole !== 'president'
+        ) {
           await requireLeadTeam(teamId);
         }
       }
