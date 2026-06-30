@@ -12,6 +12,7 @@ import { getLeadTeamIds } from '@/lib/lead-state';
 import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel, LEADERSHIP_STEWARD_LABEL } from '@/lib/high-value-assets';
 import { getPendingCardAgreements } from '@/lib/credit-card';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
+import { TeamExpenseLogger } from '@/components/team-expense-logger';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
 import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
@@ -285,6 +286,14 @@ export default async function DashboardPage() {
 
         {isAdmin || isPresident || isVicePresident ? (
           <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} />
+        ) : null}
+
+        {isPresident || isFinancialOfficer ? (
+          <TeamExpenseLogger
+            teams={teams.map((team) => ({ id: team.id, name: team.name }))}
+            academicYear={academicYear}
+            personName={me.full_name || ''}
+          />
         ) : null}
 
         {isAdmin || isPresident || isVicePresident ? <VisitorLinkGenerator /> : null}

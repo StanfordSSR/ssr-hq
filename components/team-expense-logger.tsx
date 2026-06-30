@@ -4,28 +4,33 @@ import { useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { logPurchaseAction } from '@/app/dashboard/actions';
 
+type TeamOption = { id: string; name: string };
+
 // Disables itself while the server action runs so a double-click can't log twice.
 function ExpenseSubmitButton() {
   const { pending } = useFormStatus();
   return (
     <button className="button" type="submit" disabled={pending} aria-busy={pending}>
-      {pending ? 'Logging…' : 'Log expense'}
+      {pending ? 'Logging…' : 'Log team expense'}
     </button>
   );
 }
 
-// Collapsible quick-logger for club leadership / operations expenses, surfaced
-// on the dashboard for admins and presidents. Posts to the shared
-// logPurchaseAction with expense_type=leadership (no team). Credit-card
-// purchases reveal a drag-and-drop receipt uploader.
-export function LeadershipExpenseLogger({
+// Collapsible logger for presidents / financial officers to log an expense to
+// ANY team (not just one they lead). Posts to the shared logPurchaseAction with
+// expense_type=team and a chosen team_id. Credit-card purchases reveal a
+// drag-and-drop receipt uploader that auto-fills item / amount / category.
+export function TeamExpenseLogger({
+  teams,
   academicYear,
   personName
 }: {
+  teams: TeamOption[];
   academicYear: string;
   personName: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [teamId, setTeamId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'credit_card' | 'reimbursement'>('credit_card');
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -116,8 +121,8 @@ export function LeadershipExpenseLogger({
         }}
       >
         <span>
-          <strong style={{ display: 'block' }}>Log a leadership / operations expense</strong>
-          <small className="helper">Club-wide spending not tied to a team.</small>
+          <strong style={{ display: 'block' }}>Log a team expense</strong>
+          <small className="helper">Log a purchase to any team&rsquo;s budget.</small>
         </span>
         <span aria-hidden="true" style={{ fontSize: '1.1rem' }}>
           {open ? '▾' : '▸'}
@@ -137,17 +142,40 @@ export function LeadershipExpenseLogger({
             }
           }}
         >
-          <input type="hidden" name="expense_type" value="leadership" />
+          <input type="hidden" name="expense_type" value="team" />
           <input type="hidden" name="academic_year" value={academicYear} />
           <input type="hidden" name="person_name" value={personName} />
 
           <div className="field">
-            <label className="label" htmlFor="leadership-item">
+            <label className="label" htmlFor="team-expense-team">
+              Team
+            </label>
+            <select
+              className="select"
+              id="team-expense-team"
+              name="team_id"
+              value={teamId}
+              onChange={(event) => setTeamId(event.target.value)}
+              required
+            >
+              <option value="" disabled>
+                Choose a team…
+              </option>
+              {teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field">
+            <label className="label" htmlFor="team-expense-item">
               Item
             </label>
             <input
               className="input"
-              id="leadership-item"
+              id="team-expense-item"
               name="description"
               placeholder="What was purchased?"
               value={item}
@@ -158,12 +186,12 @@ export function LeadershipExpenseLogger({
 
           <div className="hq-inline-grid">
             <div className="field">
-              <label className="label" htmlFor="leadership-amount">
+              <label className="label" htmlFor="team-expense-amount">
                 Amount (USD)
               </label>
               <input
                 className="input"
-                id="leadership-amount"
+                id="team-expense-amount"
                 name="amount"
                 type="number"
                 min="0.01"
@@ -176,12 +204,12 @@ export function LeadershipExpenseLogger({
             </div>
 
             <div className="field">
-              <label className="label" htmlFor="leadership-method">
+              <label className="label" htmlFor="team-expense-method">
                 Payment method
               </label>
               <select
                 className="select"
-                id="leadership-method"
+                id="team-expense-method"
                 name="payment_method"
                 value={paymentMethod}
                 onChange={(event) =>
@@ -195,12 +223,12 @@ export function LeadershipExpenseLogger({
           </div>
 
           <div className="field">
-            <label className="label" htmlFor="leadership-category">
+            <label className="label" htmlFor="team-expense-category">
               Category
             </label>
             <select
               className="select"
-              id="leadership-category"
+              id="team-expense-category"
               name="category"
               value={category}
               onChange={(event) => setCategory(event.target.value)}
@@ -214,7 +242,7 @@ export function LeadershipExpenseLogger({
 
           {paymentMethod === 'credit_card' ? (
             <div className="field">
-              <label className="label" htmlFor="leadership-receipt">
+              <label className="label" htmlFor="team-expense-receipt">
                 Receipt
               </label>
               <div
@@ -255,7 +283,7 @@ export function LeadershipExpenseLogger({
               </div>
               <input
                 ref={fileInputRef}
-                id="leadership-receipt"
+                id="team-expense-receipt"
                 type="file"
                 name="receipt"
                 accept=".pdf,image/png,image/jpeg,image/webp"

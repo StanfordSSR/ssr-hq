@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getViewerContext, profileHasPresidentRole } from '@/lib/auth';
+import { getViewerContext } from '@/lib/auth';
 import {
   extractReceiptFields,
   isSupportedReceiptUpload,
@@ -7,17 +7,18 @@ import {
 } from '@/lib/openai-receipt';
 import { env } from '@/lib/env';
 
-// Authenticated receipt autofill for the leadership / operations expense logger.
-// Admins and presidents can upload a receipt image and have the item, amount,
-// and category read with OpenAI vision. Best-effort only — the values land in
-// editable fields, so a failed or low-confidence read never blocks logging.
+// Authenticated receipt autofill for the leadership and team expense loggers.
+// Admins, presidents, vice presidents, and financial officers can upload a
+// receipt (image or PDF) and have the item, amount, and category read with
+// OpenAI vision. Best-effort only — the values land in editable fields, so a
+// failed or low-confidence read never blocks logging.
 export const runtime = 'nodejs';
 
+const ALLOWED_ROLES = new Set(['admin', 'president', 'vice_president', 'financial_officer']);
+
 export async function POST(request: NextRequest) {
-  const { profile, currentRole } = await getViewerContext();
-  const allowed =
-    currentRole === 'admin' || currentRole === 'president' || profileHasPresidentRole(profile);
-  if (!allowed) {
+  const { currentRole } = await getViewerContext();
+  if (!ALLOWED_ROLES.has(currentRole)) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 
@@ -32,12 +33,12 @@ export async function POST(request: NextRequest) {
   try {
     formData = await request.formData();
   } catch {
-    return NextResponse.json({ error: 'Could not read the uploaded image.' }, { status: 400 });
+    return NextResponse.json({ error: 'Could not read the uploaded file.' }, { status: 400 });
   }
 
   const file = formData.get('image');
   if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: 'Attach a receipt image first.' }, { status: 400 });
+    return NextResponse.json({ error: 'Attach a receipt first.' }, { status: 400 });
   }
 
   // Images and PDFs are both supported (PDFs are read natively by OpenAI).
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (file.size > RECEIPT_EXTRACT_MAX_BYTES) {
-    return NextResponse.json({ error: 'Image must be under 6 MB.' }, { status: 413 });
+    return NextResponse.json({ error: 'File must be under 6 MB.' }, { status: 413 });
   }
 
   try {
