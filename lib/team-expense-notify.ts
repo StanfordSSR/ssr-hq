@@ -111,12 +111,14 @@ export async function notifyTeamLeadsOfExpense(args: NotifyArgs): Promise<void> 
   let remainingCents: number;
   let basisLine: string;
 
-  // The team's year-end report predicted summer spend, if a report exists.
+  // The team's predicted summer spend from their SUBMITTED year-end report, if
+  // one exists. A draft isn't authoritative, so we only trust a submitted one.
   const { data: report } = await admin
     .from('eoy_reports')
     .select('data')
     .eq('team_id', teamId)
     .eq('academic_year', academicYear)
+    .eq('status', 'submitted')
     .maybeSingle();
   const predictedSummerCents =
     typeof (report?.data as { summer?: { predictedSpendCents?: unknown } } | null)?.summer
