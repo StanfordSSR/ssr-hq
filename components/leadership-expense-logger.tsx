@@ -38,11 +38,13 @@ export function LeadershipExpenseLogger({
   const [scanning, setScanning] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
 
-  // Read an attached receipt IMAGE and auto-fill item / amount / category. PDFs
-  // and failures are silent-ish: the fields just stay editable.
+  // Read an attached receipt (image OR PDF) and auto-fill item / amount /
+  // category. Failures are silent-ish: the fields just stay editable.
   const scanReceipt = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setScanNote('PDF attached — autofill needs an image. Enter the details below.');
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type === 'application/pdf';
+    if (!isImage && !isPdf) {
+      setScanNote('Unsupported file — enter the details below.');
       return;
     }
     setScanning(true);
@@ -273,8 +275,8 @@ export function LeadershipExpenseLogger({
                 </span>
               ) : (
                 <span className="helper">
-                  Attach a receipt image to auto-fill the item, amount, and category. Receipts must be
-                  under 2 MB.
+                  Attach a receipt image or PDF to auto-fill the item, amount, and category. Receipts
+                  must be under 2 MB.
                 </span>
               )}
             </div>

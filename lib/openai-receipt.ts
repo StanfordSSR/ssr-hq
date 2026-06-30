@@ -26,10 +26,17 @@ function coerceCategory(value: unknown): ExpenseCategory | null {
 }
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+// PDFs are sent to OpenAI as a native "file" part (it renders the pages itself).
+const ALLOWED_UPLOAD_TYPES = [...ALLOWED_IMAGE_TYPES, 'application/pdf'];
 export const RECEIPT_EXTRACT_MAX_BYTES = 6 * 1024 * 1024;
 
 export function isSupportedReceiptImage(mimeType: string | null | undefined) {
   return Boolean(mimeType && ALLOWED_IMAGE_TYPES.includes(mimeType));
+}
+
+// Anything we can hand to the scanner: images OR PDFs.
+export function isSupportedReceiptUpload(mimeType: string | null | undefined) {
+  return Boolean(mimeType && ALLOWED_UPLOAD_TYPES.includes(mimeType));
 }
 
 function coerceAmount(value: unknown): number | null {
@@ -60,12 +67,25 @@ function coerceReimbursementNumber(value: unknown): string | null {
 }
 
 export async function extractReceiptFields(
-  imageBase64: string,
+  fileBase64: string,
   mimeType: string
 ): Promise<ExtractedReceipt> {
   if (!env.openaiApiKey) {
     throw new Error('Receipt scanning is not configured. Enter the details manually.');
   }
+
+  // Images go as an image_url part; PDFs go as a native file part that OpenAI
+  // renders server-side (no local PDF→image conversion needed).
+  const mediaPart =
+    mimeType === 'application/pdf'
+      ? {
+          type: 'file',
+          file: {
+            filename: 'receipt.pdf',
+            file_data: `data:application/pdf;base64,${fileBase64}`
+          }
+        }
+      : { type: 'image_url', image_url: { url: `data:${mimeType};base64,${fileBase64}` } };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
@@ -106,12 +126,9 @@ export async function extractReceiptFields(
             content: [
               {
                 type: 'text',
-                text: 'Extract the item description and total amount paid from this receipt.'
+                text: 'Extract the item description, total amount paid, and category from this receipt.'
               },
-              {
-                type: 'image_url',
-                image_url: { url: `data:${mimeType};base64,${imageBase64}` }
-              }
+              mediaPart
             ]
           }
         ]

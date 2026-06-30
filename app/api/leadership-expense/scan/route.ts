@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getViewerContext, profileHasPresidentRole } from '@/lib/auth';
 import {
   extractReceiptFields,
-  isSupportedReceiptImage,
+  isSupportedReceiptUpload,
   RECEIPT_EXTRACT_MAX_BYTES
 } from '@/lib/openai-receipt';
 import { env } from '@/lib/env';
@@ -40,10 +40,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Attach a receipt image first.' }, { status: 400 });
   }
 
-  // Vision can only read images; PDFs fall back to manual entry on the client.
-  if (!isSupportedReceiptImage(file.type)) {
+  // Images and PDFs are both supported (PDFs are read natively by OpenAI).
+  if (!isSupportedReceiptUpload(file.type)) {
     return NextResponse.json(
-      { error: 'Autofill needs a PNG, JPG, WEBP, or GIF image. Enter the details manually.' },
+      { error: 'Autofill needs a PNG, JPG, WEBP, GIF, or PDF receipt. Enter the details manually.' },
       { status: 415 }
     );
   }
