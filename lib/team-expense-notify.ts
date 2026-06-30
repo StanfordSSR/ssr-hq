@@ -3,7 +3,7 @@ import {
   formatPacificDateKey,
   getReportingWindows
 } from '@/lib/academic-calendar';
-import { getTeamAnnualBudgetCents, getYearFundsSpentCents } from '@/lib/eoy-report';
+import { getTeamAnnualBudgetCents } from '@/lib/eoy-report';
 import {
   sendSlackbotNotification,
   SLACKBOT_SYSTEM_TEAM_ID,
@@ -153,10 +153,23 @@ export async function notifyTeamLeadsOfExpense(args: NotifyArgs): Promise<void> 
       predictedSummerCents
     )} planned summer spend).`;
   } else {
-    const [annualBudgetCents, yearSpentCents] = await Promise.all([
+    // Total spent this academic year for the team — ALL team purchases (any
+    // quarter, including summer and the item just logged), matching the finances
+    // page. Note: getYearFundsSpentCents intentionally excludes summer, so it is
+    // NOT used here.
+    const [annualBudgetCents, { data: yearPurchases }] = await Promise.all([
       getTeamAnnualBudgetCents(teamId, academicYear),
-      getYearFundsSpentCents(teamId, academicYear)
+      admin
+        .from('purchase_logs')
+        .select('amount_cents')
+        .eq('team_id', teamId)
+        .eq('academic_year', academicYear)
+        .eq('expense_type', 'team')
     ]);
+    const yearSpentCents = ((yearPurchases || []) as Array<{ amount_cents: number }>).reduce(
+      (sum, purchase) => sum + purchase.amount_cents,
+      0
+    );
     remainingCents = annualRemainingCents(annualBudgetCents, yearSpentCents);
     basisLine = `Budget remaining: *${usd(remainingCents)}* of ${usd(annualBudgetCents)}.`;
   }
