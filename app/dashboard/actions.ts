@@ -34,6 +34,7 @@ import {
   type EoyQuestionConfig,
   type EoyReportData
 } from '@/lib/eoy-report';
+import { notifyTeamLeadsOfExpense } from '@/lib/team-expense-notify';
 import {
   getAcademicCalendarSettings,
   getCurrentAcademicYear,
@@ -1545,6 +1546,25 @@ export async function logPurchaseAction(formData: FormData) {
             receiptPath
           }
         });
+      }
+
+      // If this is a team expense logged by someone who isn't a lead of that
+      // team, notify the team's leads with the amount + remaining budget. The
+      // notifier self-skips when the logger is a lead. Best-effort.
+      if (expenseType === 'team' && effectiveTeamId) {
+        try {
+          await notifyTeamLeadsOfExpense({
+            teamId: effectiveTeamId,
+            academicYear,
+            purchaseId,
+            loggedById: user.id,
+            loggedByName: personName,
+            loggedAmountCents: amountCents,
+            description
+          });
+        } catch (error) {
+          console.error('Team expense lead notification failed:', error);
+        }
       }
 
       await syncQueueAndRevalidate(REVALIDATE_PATHS.purchases);
