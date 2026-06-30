@@ -36,7 +36,6 @@ type NotifyArgs = {
   teamId: string;
   academicYear: string;
   purchaseId: string;
-  loggedById: string;
   loggedByName: string;
   loggedAsRole: string;
   loggedAmountCents: number;
@@ -62,7 +61,6 @@ export async function notifyTeamLeadsOfExpense(args: NotifyArgs): Promise<void> 
     teamId,
     academicYear,
     purchaseId,
-    loggedById,
     loggedByName,
     loggedAsRole,
     loggedAmountCents,
@@ -82,16 +80,16 @@ export async function notifyTeamLeadsOfExpense(args: NotifyArgs): Promise<void> 
     .eq('team_role', 'lead')
     .eq('is_active', true);
 
+  // Notify all active leads of the team — including the person who logged it if
+  // they happen to be a lead (they logged from an officer profile, so they still
+  // get the budget notice).
   const leadIds = Array.from(new Set((leadRows || []).map((row) => row.user_id as string)));
-  // Notify the other leads — exclude the person who logged it (even if they're
-  // also a lead) so they don't get a message about their own action.
-  const recipientIds = leadIds.filter((id) => id !== loggedById);
-  if (recipientIds.length === 0) return;
+  if (leadIds.length === 0) return;
 
   const { data: leadProfiles } = await admin
     .from('profiles')
     .select('id, email, active')
-    .in('id', recipientIds);
+    .in('id', leadIds);
 
   const emails = ((leadProfiles || []) as Array<{ email: string | null; active: boolean | null }>)
     .filter((p) => p.active && p.email)

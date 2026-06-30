@@ -1557,7 +1557,6 @@ export async function logPurchaseAction(formData: FormData) {
             teamId: effectiveTeamId,
             academicYear,
             purchaseId,
-            loggedById: user.id,
             loggedByName: personName,
             loggedAsRole: currentRole,
             loggedAmountCents: amountCents,
