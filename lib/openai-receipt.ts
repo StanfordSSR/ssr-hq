@@ -5,12 +5,25 @@ import { env } from '@/lib/env';
 // total amount. Best-effort only — the member can always correct the values
 // before submitting, so a low-confidence or failed read never blocks them.
 
+export type ExpenseCategory = 'equipment' | 'food' | 'travel' | 'registration';
+
 export type ExtractedReceipt = {
   itemName: string | null;
   amount: number | null;
   merchant: string | null;
   reimbursementNumber: string | null;
+  category: ExpenseCategory | null;
 };
+
+const EXPENSE_CATEGORIES: ExpenseCategory[] = ['equipment', 'food', 'travel', 'registration'];
+
+function coerceCategory(value: unknown): ExpenseCategory | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return (EXPENSE_CATEGORIES as string[]).includes(normalized)
+    ? (normalized as ExpenseCategory)
+    : null;
+}
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 export const RECEIPT_EXTRACT_MAX_BYTES = 6 * 1024 * 1024;
@@ -79,10 +92,14 @@ export async function extractReceiptFields(
               'of what was bought, e.g. "Motor controller" or "Team pizza" — prefer the ' +
               'main line item, or a brief summary if there are several), amount (the grand ' +
               'total actually paid, as a number, including tax and shipping), merchant ' +
-              '(the store name if visible), and reimbursement_number (a Stanford Granted ' +
+              '(the store name if visible), reimbursement_number (a Stanford Granted ' +
               'reimbursement number of the form "R-119704" if one appears in the image, e.g. ' +
-              'on a Granted portal confirmation). Use null for any field you cannot read with ' +
-              'confidence. Never invent values.'
+              'on a Granted portal confirmation), and category (classify the purchase as ' +
+              'exactly one of "equipment" (parts, tools, hardware, electronics, materials), ' +
+              '"food" (meals, snacks, catering, groceries), "travel" (flights, hotels, gas, ' +
+              'rideshare, transit), or "registration" (competition or event registration / ' +
+              'entry fees); use null if genuinely unsure). ' +
+              'Use null for any field you cannot read with confidence. Never invent values.'
           },
           {
             role: 'user',
@@ -111,21 +128,22 @@ export async function extractReceiptFields(
     };
     const raw = data.choices?.[0]?.message?.content;
     if (!raw) {
-      return { itemName: null, amount: null, merchant: null, reimbursementNumber: null };
+      return { itemName: null, amount: null, merchant: null, reimbursementNumber: null, category: null };
     }
 
     let parsed: Record<string, unknown> = {};
     try {
       parsed = JSON.parse(raw) as Record<string, unknown>;
     } catch {
-      return { itemName: null, amount: null, merchant: null, reimbursementNumber: null };
+      return { itemName: null, amount: null, merchant: null, reimbursementNumber: null, category: null };
     }
 
     return {
       itemName: coerceText(parsed.item_name),
       amount: coerceAmount(parsed.amount),
       merchant: coerceText(parsed.merchant),
-      reimbursementNumber: coerceReimbursementNumber(parsed.reimbursement_number)
+      reimbursementNumber: coerceReimbursementNumber(parsed.reimbursement_number),
+      category: coerceCategory(parsed.category)
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
