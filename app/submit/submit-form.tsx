@@ -4,10 +4,28 @@ import { useEffect, useRef, useState } from 'react';
 
 type TeamOption = { id: string; name: string };
 
+type PurchaseType = 'equipment' | 'event_food' | 'travel' | 'other';
+type TravelSubtype = 'vehicle_rental' | 'gas_reimbursement' | 'food';
+
 const NAME_STORAGE_KEY = 'ssr_submitter_name';
 
 const OFF_CAMPUS_NOTICE =
   "We noticed you're not on campus. Please confirm you are following all relevant policy when it comes to orders not shipped to campus.";
+
+const GAS_MIN_ATTACHMENTS = 2;
+
+const PURCHASE_TYPE_OPTIONS: Array<{ value: PurchaseType; label: string }> = [
+  { value: 'equipment', label: 'Equipment' },
+  { value: 'event_food', label: 'Event food' },
+  { value: 'travel', label: 'Travel' },
+  { value: 'other', label: 'Other' }
+];
+
+const TRAVEL_SUBTYPE_OPTIONS: Array<{ value: TravelSubtype; label: string }> = [
+  { value: 'vehicle_rental', label: 'Vehicle rental' },
+  { value: 'gas_reimbursement', label: 'Gas reimbursement' },
+  { value: 'food', label: 'Food' }
+];
 
 export function SubmitReimbursementForm({
   teams,
@@ -18,10 +36,12 @@ export function SubmitReimbursementForm({
 }) {
   const [teamId, setTeamId] = useState(teams[0]?.id || '');
   const [submitterName, setSubmitterName] = useState('');
+  const [purchaseType, setPurchaseType] = useState<PurchaseType | ''>('');
+  const [travelSubtype, setTravelSubtype] = useState<TravelSubtype | ''>('');
   const [itemName, setItemName] = useState('');
   const [amount, setAmount] = useState('');
   const [reimbursementNumber, setReimbursementNumber] = useState('');
-  const [receipt, setReceipt] = useState<File | null>(null);
+  const [receipts, setReceipts] = useState<File[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const [scanning, setScanning] = useState(false);
@@ -38,25 +58,26 @@ export function SubmitReimbursementForm({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isGasReimbursement = purchaseType === 'travel' && travelSubtype === 'gas_reimbursement';
+  const gasNeedsMoreFiles = isGasReimbursement && receipts.length < GAS_MIN_ATTACHMENTS;
+
   // Auto-fill the member's name across visits.
   useEffect(() => {
     const saved = window.localStorage.getItem(NAME_STORAGE_KEY);
     if (saved) setSubmitterName(saved);
   }, []);
 
+  // Preview the first attached image (if any).
   useEffect(() => {
-    if (!receipt) {
+    const firstImage = receipts.find((file) => file.type.startsWith('image/'));
+    if (!firstImage) {
       setPreviewUrl(null);
       return;
     }
-    if (!receipt.type.startsWith('image/')) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(receipt);
+    const url = URL.createObjectURL(firstImage);
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
-  }, [receipt]);
+  }, [receipts]);
 
   const scanReceipt = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -94,10 +115,34 @@ export function SubmitReimbursementForm({
     }
   };
 
-  const handleFile = (file: File | null | undefined) => {
-    if (!file) return;
-    setReceipt(file);
-    void scanReceipt(file);
+  const addFiles = (incoming: FileList | File[] | null | undefined) => {
+    if (!incoming) return;
+    const files = Array.from(incoming);
+    if (files.length === 0) return;
+    setReceipts((current) => {
+      const wasEmpty = current.length === 0;
+      // De-dupe by name + size so re-selecting doesn't stack duplicates.
+      const seen = new Set(current.map((file) => `${file.name}:${file.size}`));
+      const merged = [...current];
+      for (const file of files) {
+        const key = `${file.name}:${file.size}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(file);
+        }
+      }
+      // Auto-scan the first image only on the first upload, to fill item/amount.
+      if (wasEmpty) {
+        const firstImage = files.find((file) => file.type.startsWith('image/'));
+        if (firstImage) void scanReceipt(firstImage);
+        else setScanNote('Attached. Enter the item and amount manually.');
+      }
+      return merged;
+    });
+  };
+
+  const removeFile = (index: number) => {
+    setReceipts((current) => current.filter((_, i) => i !== index));
   };
 
   const handlePaste = (event: React.ClipboardEvent) => {
@@ -106,7 +151,7 @@ export function SubmitReimbursementForm({
       const file = item.getAsFile();
       if (file) {
         event.preventDefault();
-        handleFile(file);
+        addFiles([file]);
       }
     }
   };
@@ -115,6 +160,20 @@ export function SubmitReimbursementForm({
     event.preventDefault();
     setError(null);
 
+    if (!purchaseType) {
+      setError('Choose a purchase type.');
+      return;
+    }
+    if (purchaseType === 'travel' && !travelSubtype) {
+      setError('Choose a travel type.');
+      return;
+    }
+    if (gasNeedsMoreFiles) {
+      setError(
+        'Gas reimbursements require at least two files: your route driven with mileage, and your gas receipt(s).'
+      );
+      return;
+    }
     if (showOffCampus && !offCampusAck) {
       setError('Please confirm the off-campus policy notice before submitting.');
       return;
@@ -126,11 +185,13 @@ export function SubmitReimbursementForm({
       const body = new FormData();
       body.append('team_id', teamId);
       body.append('submitter_name', submitterName);
+      body.append('purchase_type', purchaseType);
+      if (purchaseType === 'travel') body.append('travel_subtype', travelSubtype);
       body.append('item_name', itemName);
       body.append('amount', amount);
       body.append('reimbursement_number', reimbursementNumber);
       body.append('off_campus_ack', showOffCampus && offCampusAck ? 'true' : 'false');
-      if (receipt) body.append('receipt', receipt);
+      for (const file of receipts) body.append('receipt', file);
 
       const response = await fetch('/api/submit', { method: 'POST', body });
       const data = await response.json().catch(() => ({}));
@@ -164,10 +225,12 @@ export function SubmitReimbursementForm({
           className="button"
           onClick={() => {
             setDone(null);
+            setPurchaseType('');
+            setTravelSubtype('');
             setItemName('');
             setAmount('');
             setReimbursementNumber('');
-            setReceipt(null);
+            setReceipts([]);
             setScanNote(null);
             setSubmitting(false);
           }}
@@ -217,8 +280,79 @@ export function SubmitReimbursementForm({
       </div>
 
       <div className="field">
+        <label className="label" htmlFor="purchase_type">
+          Purchase type
+        </label>
+        <select
+          className="select"
+          id="purchase_type"
+          value={purchaseType}
+          onChange={(event) => {
+            const next = event.target.value as PurchaseType | '';
+            setPurchaseType(next);
+            if (next !== 'travel') setTravelSubtype('');
+          }}
+          required
+        >
+          <option value="" disabled>
+            Select a type…
+          </option>
+          {PURCHASE_TYPE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {purchaseType === 'travel' ? (
+        <div className="field">
+          <label className="label" htmlFor="travel_subtype">
+            Travel type
+          </label>
+          <select
+            className="select"
+            id="travel_subtype"
+            value={travelSubtype}
+            onChange={(event) => setTravelSubtype(event.target.value as TravelSubtype | '')}
+            required
+          >
+            <option value="" disabled>
+              Select a travel type…
+            </option>
+            {TRAVEL_SUBTYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      {isGasReimbursement ? (
+        <div
+          style={{
+            border: '1.5px solid #8c1515',
+            background: '#f7ecec',
+            borderRadius: 10,
+            padding: '0.9rem 1rem'
+          }}
+        >
+          <strong style={{ display: 'block', marginBottom: '0.4rem' }}>Gas reimbursement requirements</strong>
+          <p className="helper" style={{ margin: '0 0 0.5rem' }}>
+            You must upload <strong>both</strong> your attachment of the route driven with mileage,
+            <strong> and</strong> your gas receipts. The robotics club reimburses gas costs only up to{' '}
+            <strong>$0.70 / mile</strong>.
+          </p>
+          <p className="helper" style={{ margin: 0 }}>
+            Attach at least two files below (route/mileage + gas receipts).
+          </p>
+        </div>
+      ) : null}
+
+      <div className="field">
         <label className="label" htmlFor="receipt">
-          Receipt (optional)
+          {isGasReimbursement ? 'Attachments (route/mileage + gas receipts)' : 'Receipt (optional)'}
         </label>
         <div
           role="button"
@@ -241,7 +375,7 @@ export function SubmitReimbursementForm({
           onDrop={(event) => {
             event.preventDefault();
             setDragging(false);
-            handleFile(event.dataTransfer.files?.[0]);
+            addFiles(event.dataTransfer.files);
           }}
           style={{
             border: `1.5px dashed ${dragging ? '#8c1515' : '#c9bcbc'}`,
@@ -261,8 +395,10 @@ export function SubmitReimbursementForm({
               {scanning
                 ? 'Reading receipt…'
                 : dragging
-                  ? 'Drop the receipt to scan it'
-                  : 'Drag & drop, paste a screenshot, or click to upload.'}
+                  ? 'Drop the files to attach them'
+                  : isGasReimbursement
+                    ? 'Drag & drop, paste, or click to upload multiple files.'
+                    : 'Drag & drop, paste a screenshot, or click to upload. You can add more than one.'}
             </span>
           )}
         </div>
@@ -270,11 +406,41 @@ export function SubmitReimbursementForm({
           ref={fileInputRef}
           type="file"
           id="receipt"
+          multiple
           accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
           style={{ display: 'none' }}
-          onChange={(event) => handleFile(event.target.files?.[0])}
+          onChange={(event) => {
+            addFiles(event.target.files);
+            // Reset so re-selecting the same file re-triggers onChange.
+            event.target.value = '';
+          }}
         />
+        {receipts.length > 0 ? (
+          <ul className="hq-attachment-list">
+            {receipts.map((file, index) => (
+              <li key={`${file.name}:${file.size}:${index}`} className="hq-attachment-item">
+                <span className="hq-attachment-name">
+                  {index === 0 ? '★ ' : ''}
+                  {file.name}
+                </span>
+                <button
+                  type="button"
+                  className="hq-attachment-remove"
+                  onClick={() => removeFile(index)}
+                  aria-label={`Remove ${file.name}`}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {scanNote ? <span className="helper">{scanNote}</span> : null}
+        {gasNeedsMoreFiles ? (
+          <span className="helper" style={{ color: '#8c1515' }}>
+            Attach at least {GAS_MIN_ATTACHMENTS} files: your route with mileage and your gas receipt(s).
+          </span>
+        ) : null}
       </div>
 
       <div className="field">
@@ -354,7 +520,7 @@ export function SubmitReimbursementForm({
       <button
         className="button"
         type="submit"
-        disabled={submitting || scanning || (showOffCampus && !offCampusAck)}
+        disabled={submitting || scanning || gasNeedsMoreFiles || (showOffCampus && !offCampusAck)}
       >
         {submitting ? 'Submitting…' : 'Submit reimbursement'}
       </button>

@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { Header } from '@/components/header';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getReimbursementByToken } from '@/lib/reimbursements';
+import {
+  getReimbursementByToken,
+  PURCHASE_TYPE_LABELS,
+  TRAVEL_SUBTYPE_LABELS
+} from '@/lib/reimbursements';
 import { ApprovalPanel } from '@/app/approve-reimbursement/[token]/approval-panel';
 
 export const dynamic = 'force-dynamic';
@@ -48,11 +52,18 @@ export default async function ApproveReimbursementPage({
     .eq('id', reimbursement.team_id)
     .maybeSingle();
 
+  const purchaseTypeValue = reimbursement.purchase_type
+    ? reimbursement.purchase_type === 'travel' && reimbursement.travel_subtype
+      ? `${PURCHASE_TYPE_LABELS[reimbursement.purchase_type]} · ${TRAVEL_SUBTYPE_LABELS[reimbursement.travel_subtype]}`
+      : PURCHASE_TYPE_LABELS[reimbursement.purchase_type]
+    : null;
+
   const details = (
     <dl className="form-stack" style={{ margin: 0 }}>
       <Row label="Team" value={team?.name || '—'} />
       <Row label="Submitted by" value={reimbursement.submitter_name} />
       <Row label="Item" value={reimbursement.item_name} />
+      {purchaseTypeValue ? <Row label="Type" value={purchaseTypeValue} /> : null}
       <Row label="Amount" value={formatCurrency(reimbursement.amount_cents)} />
       <Row label="Granted #" value={reimbursement.reimbursement_number} />
     </dl>

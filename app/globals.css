@@ -2664,6 +2664,46 @@ tr:last-child td {
   color: #8c1515;
 }
 
+.hq-attachment-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.hq-attachment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border: 1px solid #e0d7d7;
+  border-radius: 8px;
+  background: #fbf9f9;
+  font-size: 0.88rem;
+}
+
+.hq-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hq-attachment-remove {
+  border: none;
+  background: none;
+  color: #8c1515;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+}
+
+.hq-attachment-remove:hover {
+  text-decoration: underline;
+}
+
 .hq-inline-editor-form {
   display: grid;
   gap: 10px;

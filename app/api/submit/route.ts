@@ -3,15 +3,21 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
 import {
   extractSubmissionFootprint,
+  GAS_REIMBURSEMENT_MIN_ATTACHMENTS,
   getActiveTeamLeads,
   getCurrentAcademicYearSafe,
   getReimbursementSettings,
+  isPurchaseType,
+  isTravelSubtype,
   matchSubmitterToTeam,
   normalizeReimbursementNumber,
+  recordReimbursementAttachments,
   recordSubmissionFootprint,
   sendReimbursementSlackPush,
-  uploadReimbursementReceipt,
-  type ReimbursementRow
+  uploadReimbursementAttachments,
+  type PurchaseType,
+  type ReimbursementRow,
+  type TravelSubtype
 } from '@/lib/reimbursements';
 
 export const runtime = 'nodejs';
@@ -40,10 +46,43 @@ export async function POST(request: NextRequest) {
   const amountRaw = String(formData.get('amount') || '').trim();
   const reimbursementNumberRaw = String(formData.get('reimbursement_number') || '').trim();
   const offCampusAck = String(formData.get('off_campus_ack') || '') === 'true';
-  const receipt = formData.get('receipt');
+  const purchaseTypeRaw = String(formData.get('purchase_type') || '').trim();
+  const travelSubtypeRaw = String(formData.get('travel_subtype') || '').trim();
+  const receipts = formData
+    .getAll('receipt')
+    .filter((entry): entry is File => entry instanceof File && entry.size > 0);
 
   if (!teamId || !submitterName || !itemName || !amountRaw || !reimbursementNumberRaw) {
     return NextResponse.json({ error: 'Please fill in every field.' }, { status: 400 });
+  }
+
+  if (!isPurchaseType(purchaseTypeRaw)) {
+    return NextResponse.json({ error: 'Choose a purchase type.' }, { status: 400 });
+  }
+  const purchaseType: PurchaseType = purchaseTypeRaw;
+
+  let travelSubtype: TravelSubtype | null = null;
+  if (purchaseType === 'travel') {
+    if (!isTravelSubtype(travelSubtypeRaw)) {
+      return NextResponse.json({ error: 'Choose a travel type.' }, { status: 400 });
+    }
+    travelSubtype = travelSubtypeRaw;
+  }
+
+  // Gas reimbursements must include both the route/mileage document and the gas
+  // receipt(s). The club only reimburses gas up to $0.70/mile.
+  if (
+    purchaseType === 'travel' &&
+    travelSubtype === 'gas_reimbursement' &&
+    receipts.length < GAS_REIMBURSEMENT_MIN_ATTACHMENTS
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          'Gas reimbursements require at least two files: your route driven with mileage, and your gas receipt(s).'
+      },
+      { status: 400 }
+    );
   }
 
   // Capture the submitter's network footprint, and require the off-campus
@@ -108,13 +147,23 @@ export async function POST(request: NextRequest) {
   const reimbursementId = crypto.randomUUID();
   let receiptPath: string | null = null;
   let receiptFileName: string | null = null;
-  if (receipt instanceof File && receipt.size > 0) {
+  let uploadedAttachments: Awaited<ReturnType<typeof uploadReimbursementAttachments>> = [];
+  if (receipts.length > 0) {
     try {
-      const uploaded = await uploadReimbursementReceipt(reimbursementId, teamId, receipt);
-      receiptPath = uploaded.path;
-      receiptFileName = uploaded.fileName;
+      uploadedAttachments = await uploadReimbursementAttachments(reimbursementId, teamId, receipts);
+      // Mirror the first file onto the primary receipt columns for the existing
+      // approval → ledger flow and single-receipt views.
+      receiptPath = uploadedAttachments[0]?.path ?? null;
+      receiptFileName = uploadedAttachments[0]?.fileName ?? null;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not upload the receipt.';
+      // Remove anything already uploaded before failing.
+      if (uploadedAttachments.length > 0) {
+        await admin.storage
+          .from('purchase-receipts')
+          .remove(uploadedAttachments.map((attachment) => attachment.path))
+          .catch(() => {});
+      }
       return NextResponse.json({ error: message }, { status: 400 });
     }
   }
@@ -135,6 +184,8 @@ export async function POST(request: NextRequest) {
       amount_cents: amountCents,
       reimbursement_number: reimbursementNumber,
       academic_year: academicYear,
+      purchase_type: purchaseType,
+      travel_subtype: travelSubtype,
       receipt_path: receiptPath,
       receipt_file_name: receiptFileName,
       decision_token: decisionToken,
@@ -145,14 +196,20 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (insertError || !inserted) {
-    if (receiptPath) {
-      await admin.storage.from('purchase-receipts').remove([receiptPath]).catch(() => {});
+    if (uploadedAttachments.length > 0) {
+      await admin.storage
+        .from('purchase-receipts')
+        .remove(uploadedAttachments.map((attachment) => attachment.path))
+        .catch(() => {});
     }
     return NextResponse.json(
       { error: insertError?.message || 'Could not save your submission. Try again.' },
       { status: 500 }
     );
   }
+
+  // Persist every uploaded file (the primary one is also on receipt_path).
+  await recordReimbursementAttachments(reimbursementId, uploadedAttachments);
 
   await recordAuditEvent({
     actorId: match.profileId,
