@@ -3,8 +3,8 @@
 -- The public /submit intake now asks for a purchase type (equipment, event
 -- food, travel, or other). Travel submissions pick a sub-type (vehicle rental,
 -- gas reimbursement, or food). Gas-reimbursement submissions must upload BOTH a
--- route/mileage document and their gas receipts (the club reimburses the actual
--- gas cost from the receipts, not a per-mile mileage rate), so a single receipt
+-- route/mileage document and their gas receipts (gas is reimbursed by mileage at
+-- $0.70/mile, capped at the miles the gas actually covers), so a single receipt
 -- column is no longer enough — attachments move into their own table while
 -- receipt_path/receipt_file_name are kept as the primary attachment for backward
 -- compatibility with the approval + ledger flow.
