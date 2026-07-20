@@ -11,6 +11,8 @@ import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel, LEADERSHIP_STEWARD_LABEL } from '@/lib/high-value-assets';
 import { getPendingCardAgreements } from '@/lib/credit-card';
+import { getSummerSpendSummary } from '@/lib/summer-spend';
+import { SummerSpendPanel } from '@/components/summer-spend-panel';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
 import { TeamExpenseLogger } from '@/components/team-expense-logger';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
@@ -199,6 +201,9 @@ export default async function DashboardPage() {
       getAllHighValueAssets(),
       showCardApprovalBanner ? getPendingCardAgreements() : Promise.resolve([])
     ]);
+    // Summer spend roll-up for presidents and financial officers: how much of
+    // each team's planned summer spend is left. Depends on academicYear.
+    const summerSpend = await getSummerSpendSummary(academicYear);
     const pendingCardCount = pendingCardAgreements.length;
     const teams = (teamsData || []) as Team[];
     const memberships = (membershipsData || []) as Membership[];
@@ -297,6 +302,8 @@ export default async function DashboardPage() {
         ) : null}
 
         {isAdmin || isPresident || isVicePresident ? <VisitorLinkGenerator /> : null}
+
+        {summerSpend.teams.length > 0 ? <SummerSpendPanel summary={summerSpend} /> : null}
 
         <section className="hq-admin-grid">
           {(isAdmin ? adminCards : isPresident || isVicePresident ? presidentCards : financialOfficerCards).map((card) => (
