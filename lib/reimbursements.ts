@@ -149,10 +149,11 @@ export const PURCHASE_TYPE_LABELS: Record<PurchaseType, string> = {
 };
 
 // Travel purchases pick one of these sub-types. Gas reimbursement carries extra
-// upload requirements: the route driven with mileage AND the gas receipts. The
-// club reimburses the ACTUAL gas cost from the receipts, deliberately not the
-// IRS standard mileage rate — the mileage/route is required only to substantiate
-// the trip.
+// upload requirements: the route driven with mileage AND the gas receipts. Gas
+// is reimbursed by mileage at $0.70/mile (policy rate), capped at the number of
+// miles the gas actually covers, so the payout never exceeds the gas spend
+// (e.g. 50 mi driven + $15 gas → first 21.43 mi × $0.70 ≈ $15). Both the route
+// and the receipts are required to compute that cap.
 export type TravelSubtype = 'vehicle_rental' | 'gas_reimbursement' | 'food';
 export const TRAVEL_SUBTYPE_LABELS: Record<TravelSubtype, string> = {
   vehicle_rental: 'Vehicle rental',

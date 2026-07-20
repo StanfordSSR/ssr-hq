@@ -70,8 +70,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Gas reimbursements must include both the route/mileage document and the gas
-  // receipt(s). The club reimburses the actual gas cost from the receipts, not a
-  // per-mile mileage rate.
+  // receipt(s): gas is reimbursed by mileage at $0.70/mile, capped at the miles
+  // the gas actually covers, so both are needed to compute the payout.
   if (
     purchaseType === 'travel' &&
     travelSubtype === 'gas_reimbursement' &&
