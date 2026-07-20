@@ -138,6 +138,52 @@ export const REIMBURSEMENT_RECEIPT_ALLOWED_TYPES = [
   'image/gif'
 ];
 
+// What kind of purchase the submitter is claiming. Asked on the public /submit
+// intake, right after their name.
+export type PurchaseType = 'equipment' | 'event_food' | 'travel' | 'other';
+export const PURCHASE_TYPE_LABELS: Record<PurchaseType, string> = {
+  equipment: 'Equipment',
+  event_food: 'Event food',
+  travel: 'Travel',
+  other: 'Other'
+};
+
+// Travel purchases pick one of these sub-types. Gas reimbursement carries extra
+// upload requirements (route/mileage + gas receipts) and a $0.70/mile cap.
+export type TravelSubtype = 'vehicle_rental' | 'gas_reimbursement' | 'food';
+export const TRAVEL_SUBTYPE_LABELS: Record<TravelSubtype, string> = {
+  vehicle_rental: 'Vehicle rental',
+  gas_reimbursement: 'Gas reimbursement',
+  food: 'Food'
+};
+
+// The club reimburses mileage-based gas costs up to this rate.
+export const GAS_REIMBURSEMENT_RATE_PER_MILE = 0.7;
+// Gas reimbursements require at least this many attachments: the route/mileage
+// document and the gas receipt(s).
+export const GAS_REIMBURSEMENT_MIN_ATTACHMENTS = 2;
+
+export function isPurchaseType(value: string): value is PurchaseType {
+  return value === 'equipment' || value === 'event_food' || value === 'travel' || value === 'other';
+}
+
+export function isTravelSubtype(value: string): value is TravelSubtype {
+  return value === 'vehicle_rental' || value === 'gas_reimbursement' || value === 'food';
+}
+
+// Map the declared purchase type to a ledger category. Falls back to keyword
+// detection on the item name when the type doesn't pin it down.
+export function categoryForReimbursement(
+  purchaseType: PurchaseType | null,
+  travelSubtype: TravelSubtype | null,
+  itemName: string
+): 'equipment' | 'food' | 'travel' | 'registration' {
+  if (purchaseType === 'equipment') return 'equipment';
+  if (purchaseType === 'event_food') return 'food';
+  if (purchaseType === 'travel') return travelSubtype === 'food' ? 'food' : 'travel';
+  return detectPurchaseCategory(itemName);
+}
+
 export type ReimbursementSettings = {
   signatureThresholdCents: number;
   intakeEnabled: boolean;
@@ -155,6 +201,8 @@ export type ReimbursementRow = {
   amount_cents: number;
   reimbursement_number: string;
   academic_year: string;
+  purchase_type: PurchaseType | null;
+  travel_subtype: TravelSubtype | null;
   receipt_path: string | null;
   receipt_file_name: string | null;
   decision_token: string;
@@ -273,7 +321,9 @@ export async function uploadReimbursementReceipt(reimbursementId: string, teamId
     .replace(/[^a-z0-9.-]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
-  const path = `member-reimbursements/${teamId}/${reimbursementId}-${Date.now()}-${safeBase || 'receipt'}.${extension.toLowerCase()}`;
+  const path = `member-reimbursements/${teamId}/${reimbursementId}-${Date.now()}-${Math.round(
+    Math.random() * 1e6
+  )}-${safeBase || 'receipt'}.${extension.toLowerCase()}`;
   const admin = createAdminClient();
   const buffer = Buffer.from(await file.arrayBuffer());
   const { error } = await admin.storage.from(RECEIPT_BUCKET).upload(path, buffer, {
@@ -284,6 +334,75 @@ export async function uploadReimbursementReceipt(reimbursementId: string, teamId
     throw new Error(error.message);
   }
   return { path, fileName: file.name };
+}
+
+export type UploadedAttachment = { path: string; fileName: string };
+
+// Upload every attached file for a reimbursement, in order. The first upload is
+// the "primary" attachment mirrored onto member_reimbursements.receipt_path.
+// Throws on the first failing file so the caller can clean up.
+export async function uploadReimbursementAttachments(
+  reimbursementId: string,
+  teamId: string,
+  files: File[]
+): Promise<UploadedAttachment[]> {
+  const uploaded: UploadedAttachment[] = [];
+  for (const file of files) {
+    const result = await uploadReimbursementReceipt(reimbursementId, teamId, file);
+    uploaded.push({ path: result.path, fileName: result.fileName });
+  }
+  return uploaded;
+}
+
+// Persist the attachment rows once the reimbursement exists. Best-effort per row
+// so a single bookkeeping failure never loses the whole submission.
+export async function recordReimbursementAttachments(
+  reimbursementId: string,
+  attachments: UploadedAttachment[]
+) {
+  if (attachments.length === 0) return;
+  const admin = createAdminClient();
+  const { error } = await admin.from('reimbursement_attachments').insert(
+    attachments.map((attachment, index) => ({
+      reimbursement_id: reimbursementId,
+      path: attachment.path,
+      file_name: attachment.fileName,
+      position: index
+    }))
+  );
+  if (error) {
+    console.error('Failed to record reimbursement attachments:', error.message);
+  }
+}
+
+export type ReimbursementAttachment = {
+  reimbursement_id: string;
+  path: string;
+  file_name: string | null;
+  position: number;
+};
+
+// All attachments for a set of reimbursements, grouped by reimbursement id and
+// ordered by upload position.
+export async function getReimbursementAttachments(
+  reimbursementIds: string[]
+): Promise<Map<string, ReimbursementAttachment[]>> {
+  const grouped = new Map<string, ReimbursementAttachment[]>();
+  if (reimbursementIds.length === 0) return grouped;
+
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('reimbursement_attachments')
+    .select('reimbursement_id, path, file_name, position')
+    .in('reimbursement_id', reimbursementIds)
+    .order('position', { ascending: true });
+
+  for (const row of (data || []) as ReimbursementAttachment[]) {
+    const list = grouped.get(row.reimbursement_id) || [];
+    list.push(row);
+    grouped.set(row.reimbursement_id, list);
+  }
+  return grouped;
 }
 
 // Sends the Slack push to the team lead(s). Below-threshold submissions can be
@@ -458,7 +577,11 @@ export async function finalizeReimbursementDecision(opts: {
       person_name: reimbursement.submitter_name,
       purchased_at: reimbursement.created_at,
       payment_method: 'reimbursement',
-      category: detectPurchaseCategory(reimbursement.item_name),
+      category: categoryForReimbursement(
+        reimbursement.purchase_type,
+        reimbursement.travel_subtype,
+        reimbursement.item_name
+      ),
       receipt_path: reimbursement.receipt_path,
       receipt_file_name: reimbursement.receipt_file_name,
       receipt_uploaded_at: reimbursement.receipt_path ? reimbursement.created_at : null,

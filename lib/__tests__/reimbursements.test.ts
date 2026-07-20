@@ -2,8 +2,58 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizeReimbursementNumber,
   isOutsideBayArea,
-  extractSubmissionFootprint
+  extractSubmissionFootprint,
+  isPurchaseType,
+  isTravelSubtype,
+  categoryForReimbursement
 } from '@/lib/reimbursements';
+
+describe('isPurchaseType', () => {
+  it('accepts the four purchase types', () => {
+    expect(isPurchaseType('equipment')).toBe(true);
+    expect(isPurchaseType('event_food')).toBe(true);
+    expect(isPurchaseType('travel')).toBe(true);
+    expect(isPurchaseType('other')).toBe(true);
+  });
+
+  it('rejects anything else', () => {
+    expect(isPurchaseType('')).toBe(false);
+    expect(isPurchaseType('food')).toBe(false);
+    expect(isPurchaseType('gas')).toBe(false);
+  });
+});
+
+describe('isTravelSubtype', () => {
+  it('accepts the three travel sub-types', () => {
+    expect(isTravelSubtype('vehicle_rental')).toBe(true);
+    expect(isTravelSubtype('gas_reimbursement')).toBe(true);
+    expect(isTravelSubtype('food')).toBe(true);
+  });
+
+  it('rejects anything else', () => {
+    expect(isTravelSubtype('')).toBe(false);
+    expect(isTravelSubtype('travel')).toBe(false);
+  });
+});
+
+describe('categoryForReimbursement', () => {
+  it('maps declared purchase types to ledger categories', () => {
+    expect(categoryForReimbursement('equipment', null, 'anything')).toBe('equipment');
+    expect(categoryForReimbursement('event_food', null, 'anything')).toBe('food');
+    expect(categoryForReimbursement('travel', 'vehicle_rental', 'Zipcar')).toBe('travel');
+    expect(categoryForReimbursement('travel', 'gas_reimbursement', 'gas')).toBe('travel');
+  });
+
+  it('treats travel food as a food expense', () => {
+    expect(categoryForReimbursement('travel', 'food', 'team dinner')).toBe('food');
+  });
+
+  it('falls back to keyword detection when the type does not pin it down', () => {
+    // "other" and null defer to detectPurchaseCategory on the item name.
+    expect(categoryForReimbursement('other', null, 'registration fee')).toBe('registration');
+    expect(categoryForReimbursement(null, null, 'aluminum extrusion')).toBe('equipment');
+  });
+});
 
 describe('normalizeReimbursementNumber', () => {
   it('accepts and canonicalizes valid Granted numbers', () => {

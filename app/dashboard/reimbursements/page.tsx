@@ -5,6 +5,13 @@ import { getLeadTeamIds } from '@/lib/lead-state';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { formatDateLabel } from '@/lib/academic-calendar';
 import { FinanceFileToggle, PortalDecideButtons } from '@/components/reimbursement-actions';
+import {
+  getReimbursementAttachments,
+  PURCHASE_TYPE_LABELS,
+  TRAVEL_SUBTYPE_LABELS,
+  type PurchaseType,
+  type TravelSubtype
+} from '@/lib/reimbursements';
 
 type ReimbursementRow = {
   id: string;
@@ -13,6 +20,8 @@ type ReimbursementRow = {
   item_name: string;
   amount_cents: number;
   reimbursement_number: string;
+  purchase_type: PurchaseType | null;
+  travel_subtype: TravelSubtype | null;
   receipt_path: string | null;
   status: 'pending' | 'approved' | 'rejected';
   requires_signature: boolean;
@@ -25,8 +34,30 @@ type ReimbursementRow = {
   created_at: string;
 };
 
+function purchaseTypeLabel(row: Pick<ReimbursementRow, 'purchase_type' | 'travel_subtype'>) {
+  if (!row.purchase_type) return null;
+  const base = PURCHASE_TYPE_LABELS[row.purchase_type];
+  if (row.purchase_type === 'travel' && row.travel_subtype) {
+    return `${base} · ${TRAVEL_SUBTYPE_LABELS[row.travel_subtype]}`;
+  }
+  return base;
+}
+
 function money(cents: number) {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+function ReceiptCell({ links }: { links: Array<{ url: string; label: string }> }) {
+  if (links.length === 0) return <>—</>;
+  return (
+    <div style={{ display: 'grid', gap: 2 }}>
+      {links.map((link, index) => (
+        <a key={`${link.url}:${index}`} href={link.url} target="_blank" rel="noreferrer">
+          {link.label}
+        </a>
+      ))}
+    </div>
+  );
 }
 
 export default async function ReimbursementsPage() {
@@ -51,7 +82,7 @@ export default async function ReimbursementsPage() {
   let query = admin
     .from('member_reimbursements')
     .select(
-      'id, team_id, submitter_name, item_name, amount_cents, reimbursement_number, receipt_path, status, requires_signature, approval_kind, decided_at, decided_by_profile_id, finance_processed_at, decision_token, off_campus_ack, created_at'
+      'id, team_id, submitter_name, item_name, amount_cents, reimbursement_number, purchase_type, travel_subtype, receipt_path, status, requires_signature, approval_kind, decided_at, decided_by_profile_id, finance_processed_at, decision_token, off_campus_ack, created_at'
     )
     .order('created_at', { ascending: false })
     .limit(500);
@@ -74,13 +105,39 @@ export default async function ReimbursementsPage() {
   const deciderIds = Array.from(
     new Set(rows.map((r) => r.decided_by_profile_id).filter((v): v is string => Boolean(v)))
   );
-  const [{ data: teamsData }, { data: decidersData }, receiptLinks] = await Promise.all([
+  const [{ data: teamsData }, { data: decidersData }, attachmentsByReimbursement] = await Promise.all([
     teamIds.length ? admin.from('teams').select('id, name').in('id', teamIds) : Promise.resolve({ data: [] }),
     deciderIds.length
       ? admin.from('profiles').select('id, full_name').in('id', deciderIds)
       : Promise.resolve({ data: [] }),
-    getReceiptLinks(rows.map((r) => r.receipt_path))
+    getReimbursementAttachments(rows.map((r) => r.id))
   ]);
+
+  // Sign every attachment path across all reimbursements in one storage call.
+  // Fall back to the primary receipt_path for older rows with no attachment rows.
+  const allAttachmentPaths = Array.from(attachmentsByReimbursement.values())
+    .flat()
+    .map((attachment) => attachment.path);
+  const receiptLinks = await getReceiptLinks([
+    ...allAttachmentPaths,
+    ...rows.map((r) => r.receipt_path)
+  ]);
+
+  // Resolve the viewable attachment links for a row: its attachment rows if any,
+  // otherwise the single legacy receipt.
+  const attachmentLinksFor = (row: ReimbursementRow) => {
+    const attachments = attachmentsByReimbursement.get(row.id) || [];
+    if (attachments.length > 0) {
+      return attachments
+        .map((attachment, index) => ({
+          url: receiptLinks.get(attachment.path),
+          label: attachment.file_name || `File ${index + 1}`
+        }))
+        .filter((link): link is { url: string; label: string } => Boolean(link.url));
+    }
+    const legacy = row.receipt_path ? receiptLinks.get(row.receipt_path) : undefined;
+    return legacy ? [{ url: legacy, label: 'View' }] : [];
+  };
 
   const teamName = new Map((teamsData || []).map((t) => [t.id, t.name]));
   const deciderName = new Map((decidersData || []).map((p) => [p.id, p.full_name]));
@@ -139,7 +196,14 @@ export default async function ReimbursementsPage() {
                         </span>
                       ) : null}
                     </td>
-                    <td style={{ fontWeight: 700 }}>{r.item_name}</td>
+                    <td style={{ fontWeight: 700 }}>
+                      {r.item_name}
+                      {purchaseTypeLabel(r) ? (
+                        <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>
+                          {purchaseTypeLabel(r)}
+                        </span>
+                      ) : null}
+                    </td>
                     <td>
                       {money(r.amount_cents)}
                       {r.requires_signature ? (
@@ -147,13 +211,9 @@ export default async function ReimbursementsPage() {
                       ) : null}
                     </td>
                     <td>{r.reimbursement_number}</td>
-                    <td>{receiptLinks.get(r.receipt_path || '') ? (
-                      <a href={receiptLinks.get(r.receipt_path || '')} target="_blank" rel="noreferrer">
-                        View
-                      </a>
-                    ) : (
-                      '—'
-                    )}</td>
+                    <td>
+                      <ReceiptCell links={attachmentLinksFor(r)} />
+                    </td>
                     <td>
                       {leadTeamSet.has(r.team_id) ? (
                         <PortalDecideButtons
@@ -202,7 +262,14 @@ export default async function ReimbursementsPage() {
                       <td>{r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}</td>
                       <td>{teamName.get(r.team_id) || '—'}</td>
                       <td>{r.submitter_name}</td>
-                      <td style={{ fontWeight: 700 }}>{r.item_name}</td>
+                      <td style={{ fontWeight: 700 }}>
+                        {r.item_name}
+                        {purchaseTypeLabel(r) ? (
+                          <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>
+                            {purchaseTypeLabel(r)}
+                          </span>
+                        ) : null}
+                      </td>
                       <td>{money(r.amount_cents)}</td>
                       <td style={{ fontWeight: 700 }}>{r.reimbursement_number}</td>
                       <td>
@@ -210,13 +277,7 @@ export default async function ReimbursementsPage() {
                         {r.approval_kind === 'signature' ? <span className="hq-inline-note"> · signed</span> : null}
                       </td>
                       <td>
-                        {receiptLinks.get(r.receipt_path || '') ? (
-                          <a href={receiptLinks.get(r.receipt_path || '')} target="_blank" rel="noreferrer">
-                            View
-                          </a>
-                        ) : (
-                          '—'
-                        )}
+                        <ReceiptCell links={attachmentLinksFor(r)} />
                       </td>
                       <td>
                         {canFileReimbursements ? <FinanceFileToggle id={r.id} processed={false} /> : null}
