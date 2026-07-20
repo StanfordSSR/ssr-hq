@@ -341,8 +341,9 @@ export function SubmitReimbursementForm({
           <strong style={{ display: 'block', marginBottom: '0.4rem' }}>Gas reimbursement requirements</strong>
           <p className="helper" style={{ margin: '0 0 0.5rem' }}>
             You must upload <strong>both</strong> your attachment of the route driven with mileage,
-            <strong> and</strong> your gas receipts. The robotics club reimburses gas costs only up to{' '}
-            <strong>$0.70 / mile</strong>.
+            <strong> and</strong> your gas receipts. The robotics club reimburses your{' '}
+            <strong>actual gas cost</strong> from the receipts you upload — <strong>not</strong> a
+            per-mile mileage rate.
           </p>
           <p className="helper" style={{ margin: 0 }}>
             Attach at least two files below (route/mileage + gas receipts).

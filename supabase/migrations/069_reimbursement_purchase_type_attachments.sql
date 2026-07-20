@@ -3,10 +3,11 @@
 -- The public /submit intake now asks for a purchase type (equipment, event
 -- food, travel, or other). Travel submissions pick a sub-type (vehicle rental,
 -- gas reimbursement, or food). Gas-reimbursement submissions must upload BOTH a
--- route/mileage document and their gas receipts (the club reimburses gas only up
--- to $0.70/mile), so a single receipt column is no longer enough — attachments
--- move into their own table while receipt_path/receipt_file_name are kept as the
--- primary attachment for backward compatibility with the approval + ledger flow.
+-- route/mileage document and their gas receipts (the club reimburses the actual
+-- gas cost from the receipts, not a per-mile mileage rate), so a single receipt
+-- column is no longer enough — attachments move into their own table while
+-- receipt_path/receipt_file_name are kept as the primary attachment for backward
+-- compatibility with the approval + ledger flow.
 
 alter table public.member_reimbursements
   add column if not exists purchase_type text
