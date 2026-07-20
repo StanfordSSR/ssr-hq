@@ -2633,6 +2633,37 @@ tr:last-child td {
   background: linear-gradient(90deg, #8c1515, #c15d43);
 }
 
+.hq-budget-progress-fill-over {
+  background: linear-gradient(90deg, #8c1515, #5b0f0f);
+}
+
+.hq-summer-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.hq-summer-total {
+  display: grid;
+  gap: 2px;
+}
+
+.hq-summer-total span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hq-summer-total strong {
+  color: var(--text);
+  font-size: 1.1rem;
+}
+
+.hq-summer-over {
+  color: #8c1515;
+}
+
 .hq-inline-editor-form {
   display: grid;
   gap: 10px;
