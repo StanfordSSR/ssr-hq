@@ -58,6 +58,16 @@ export function SubmitReimbursementForm({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 🥚 Harmless prank: submitters whose name contains "kai" have to earn it —
+  // the submit button dodges the cursor a few times before giving in. It always
+  // relents after MAX_DODGES (and Enter-to-submit still works), so it can never
+  // actually block a real reimbursement.
+  const MAX_DODGES = 6;
+  const isKai = submitterName.trim().toLowerCase().includes('kai');
+  const [dodge, setDodge] = useState({ x: 0, y: 0 });
+  const [dodgeCount, setDodgeCount] = useState(0);
+  const prankRelented = dodgeCount >= MAX_DODGES;
+
   const isGasReimbursement = purchaseType === 'travel' && travelSubtype === 'gas_reimbursement';
   const gasNeedsMoreFiles = isGasReimbursement && receipts.length < GAS_MIN_ATTACHMENTS;
 
@@ -66,6 +76,29 @@ export function SubmitReimbursementForm({
     const saved = window.localStorage.getItem(NAME_STORAGE_KEY);
     if (saved) setSubmitterName(saved);
   }, []);
+
+  // Reset the prank whenever the name stops matching (e.g. they retype it).
+  useEffect(() => {
+    if (!isKai) {
+      setDodge({ x: 0, y: 0 });
+      setDodgeCount(0);
+    }
+  }, [isKai]);
+
+  // Move the submit button to a new random offset, until it gives up.
+  const dodgeSubmit = () => {
+    if (!isKai || prankRelented) return;
+    const next = dodgeCount + 1;
+    if (next >= MAX_DODGES) {
+      setDodge({ x: 0, y: 0 }); // snap back so it's easy to click
+    } else {
+      setDodge({
+        x: Math.round((Math.random() * 2 - 1) * 170),
+        y: Math.round((Math.random() * 2 - 1) * 90)
+      });
+    }
+    setDodgeCount(next);
+  };
 
   // Preview the first attached image (if any).
   useEffect(() => {
@@ -522,13 +555,44 @@ export function SubmitReimbursementForm({
         </div>
       ) : null}
 
-      <button
-        className="button"
-        type="submit"
-        disabled={submitting || scanning || gasNeedsMoreFiles || (showOffCampus && !offCampusAck)}
+      <div
+        style={
+          isKai && !prankRelented
+            ? {
+                position: 'relative',
+                minHeight: '9rem',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }
+            : undefined
+        }
       >
-        {submitting ? 'Submitting…' : 'Submit reimbursement'}
-      </button>
+        <button
+          className="button"
+          type="submit"
+          onMouseEnter={dodgeSubmit}
+          style={
+            isKai
+              ? { transform: `translate(${dodge.x}px, ${dodge.y}px)`, transition: 'transform 0.12s ease-out' }
+              : undefined
+          }
+          disabled={submitting || scanning || gasNeedsMoreFiles || (showOffCampus && !offCampusAck)}
+        >
+          {submitting ? 'Submitting…' : 'Submit reimbursement'}
+        </button>
+      </div>
+
+      {isKai && dodgeCount > 0 && !prankRelented ? (
+        <p className="helper" style={{ textAlign: 'center', margin: 0 }}>
+          😏 catch me if you can…
+        </p>
+      ) : null}
+      {isKai && prankRelented ? (
+        <p className="helper" style={{ textAlign: 'center', margin: 0 }}>
+          😅 ok ok, you earned it — go ahead.
+        </p>
+      ) : null}
 
       {error ? (
         <p className="helper" style={{ color: '#8c1515' }}>
