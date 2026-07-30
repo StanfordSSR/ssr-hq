@@ -62,7 +62,7 @@ export function SubmitReimbursementForm({
   // the submit button dodges the cursor a few times before giving in. It always
   // relents after MAX_DODGES (and Enter-to-submit still works), so it can never
   // actually block a real reimbursement.
-  const MAX_DODGES = 6;
+  const MAX_DODGES = 12;
   const isKai = submitterName.trim().toLowerCase().includes('kai');
   const [dodge, setDodge] = useState({ x: 0, y: 0 });
   const [dodgeCount, setDodgeCount] = useState(0);
