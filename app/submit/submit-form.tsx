@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 type TeamOption = { id: string; name: string };
 
@@ -14,10 +14,12 @@ const OFF_CAMPUS_NOTICE =
 
 const GAS_MIN_ATTACHMENTS = 2;
 
-// 🥚 "kai" prank tuning: how long the Submit button flees the cursor, and how
-// close the cursor must get before it bolts to a new random on-screen spot.
+// 🥚 "kai" prank tuning: how long the Submit button flees the cursor, how close
+// the cursor may get before it bolts, and how quickly it glides to its target
+// (per-frame easing factor — higher is twitchier).
 const PRANK_ESCAPE_MS = 5 * 60 * 1000;
 const PRANK_PROXIMITY_PX = 150;
+const PRANK_EASE = 0.32;
 
 const PURCHASE_TYPE_OPTIONS: Array<{ value: PurchaseType; label: string }> = [
   { value: 'equipment', label: 'Equipment' },
@@ -69,14 +71,17 @@ export function SubmitReimbursementForm({
   // the whole time, so it can never actually block a real reimbursement.
   const isKai = submitterName.trim().toLowerCase().includes('kai');
   const submitButtonRef = useRef<HTMLButtonElement>(null);
-  // While set, the button is pinned to this fixed viewport spot. Fixed
-  // positioning is immune to ancestor overflow clipping, and a placeholder of
-  // the captured size holds its in-flow slot so nothing on the page shifts.
-  // null = the button is at home.
-  const [flee, setFlee] = useState<{ left: number; top: number; width: number; height: number } | null>(
-    null
-  );
+  // Once fleeing, the button is pinned with position: fixed (immune to ancestor
+  // overflow clipping) and moved with a GPU transform driven by a rAF loop, so
+  // it glides instead of stuttering. A placeholder of the captured size holds
+  // its in-flow slot so nothing on the page shifts. null = still at home.
+  const [flee, setFlee] = useState<{ width: number; height: number } | null>(null);
   const [prankRelented, setPrankRelented] = useState(false);
+  const fleeingRef = useRef(false);
+  const pointerRef = useRef({ x: -9999, y: -9999 });
+  const posRef = useRef({ x: 0, y: 0 });
+  const targetRef = useRef({ x: 0, y: 0 });
+  const sizeRef = useRef({ w: 0, h: 0 });
 
   const isGasReimbursement = purchaseType === 'travel' && travelSubtype === 'gas_reimbursement';
   const gasNeedsMoreFiles = isGasReimbursement && receipts.length < GAS_MIN_ATTACHMENTS;
@@ -87,62 +92,115 @@ export function SubmitReimbursementForm({
     if (saved) setSubmitterName(saved);
   }, []);
 
-  // Make the Submit button flee the cursor for "kai" submitters. Listens on the
-  // window so it reacts before the cursor reaches the button, and relents after
+  // Track the cursor and kick off the chase once it gets close. Relents after
   // PRANK_ESCAPE_MS so the button returns home and stays clickable.
   useEffect(() => {
     if (!isKai) {
       setFlee(null);
       setPrankRelented(false);
+      fleeingRef.current = false;
+      pointerRef.current = { x: -9999, y: -9999 };
       return;
     }
 
-    let relented = false;
-    const relent = () => {
-      relented = true;
-      setPrankRelented(true);
-      setFlee(null);
-    };
-
     const onMove = (event: PointerEvent) => {
+      pointerRef.current = { x: event.clientX, y: event.clientY };
       const button = submitButtonRef.current;
-      if (!button || relented) return;
+      if (!button || fleeingRef.current) return;
 
+      // Still parked in the layout — start fleeing once the cursor closes in.
       const rect = button.getBoundingClientRect();
-      const pad = 10;
-      // Never let the button be wider/taller than the viewport allows.
-      const w = Math.min(rect.width, window.innerWidth - 2 * pad);
-      const h = Math.min(rect.height, window.innerHeight - 2 * pad);
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       if (Math.hypot(cx - event.clientX, cy - event.clientY) >= PRANK_PROXIMITY_PX) return;
 
-      // Random top-left that keeps the WHOLE button on screen and away from the
-      // cursor. left/top are viewport coordinates (position: fixed).
-      const maxLeft = Math.max(pad, window.innerWidth - w - pad);
-      const maxTop = Math.max(pad, window.innerHeight - h - pad);
-      let left = rect.left;
-      let top = rect.top;
-      for (let i = 0; i < 24; i += 1) {
-        const rl = pad + Math.random() * (maxLeft - pad);
-        const rt = pad + Math.random() * (maxTop - pad);
-        if (Math.hypot(rl + w / 2 - event.clientX, rt + h / 2 - event.clientY) > PRANK_PROXIMITY_PX * 1.4) {
-          left = rl;
-          top = rt;
-          break;
-        }
-      }
-
-      setFlee({ left: Math.round(left), top: Math.round(top), width: Math.round(w), height: Math.round(h) });
+      fleeingRef.current = true;
+      sizeRef.current = { w: rect.width, h: rect.height };
+      posRef.current = { x: rect.left, y: rect.top };
+      targetRef.current = { x: rect.left, y: rect.top };
+      setFlee({ width: Math.round(rect.width), height: Math.round(rect.height) });
     };
 
     window.addEventListener('pointermove', onMove);
-    const timer = window.setTimeout(relent, PRANK_ESCAPE_MS);
+    const timer = window.setTimeout(() => {
+      fleeingRef.current = false;
+      setPrankRelented(true);
+      setFlee(null);
+    }, PRANK_ESCAPE_MS);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.clearTimeout(timer);
     };
   }, [isKai]);
+
+  // Pin the button at its captured spot before the browser paints, so switching
+  // to fixed positioning doesn't flash it at the top-left corner.
+  useLayoutEffect(() => {
+    const button = submitButtonRef.current;
+    if (!flee || !button) return;
+    button.style.transform = `translate3d(${posRef.current.x}px, ${posRef.current.y}px, 0)`;
+  }, [flee]);
+
+  // The chase itself: every frame, ease the button toward its target and pick a
+  // new target whenever the current one is compromised by the cursor. Runs off
+  // refs and writes the transform directly, so there's no per-frame React
+  // re-render — that's what makes the motion smooth.
+  useEffect(() => {
+    if (!flee || prankRelented) return;
+    let frame = 0;
+
+    // Farthest-from-cursor spot that keeps the WHOLE button on screen. Sampling
+    // and taking the best (rather than the first that passes a threshold) means
+    // this can never fail to find an escape, even when cornered.
+    const pickEscape = (px: number, py: number) => {
+      const pad = 10;
+      const { w, h } = sizeRef.current;
+      const maxLeft = Math.max(pad, window.innerWidth - w - pad);
+      const maxTop = Math.max(pad, window.innerHeight - h - pad);
+      let best = targetRef.current;
+      let bestDist = -1;
+      for (let i = 0; i < 40; i += 1) {
+        const x = pad + Math.random() * (maxLeft - pad);
+        const y = pad + Math.random() * (maxTop - pad);
+        const dist = Math.hypot(x + w / 2 - px, y + h / 2 - py);
+        if (dist > bestDist) {
+          bestDist = dist;
+          best = { x, y };
+        }
+      }
+      return best;
+    };
+
+    const tick = () => {
+      const button = submitButtonRef.current;
+      if (button) {
+        const { w, h } = sizeRef.current;
+        const { x: px, y: py } = pointerRef.current;
+        const cx = posRef.current.x + w / 2;
+        const cy = posRef.current.y + h / 2;
+
+        // Re-target when the cursor is closing in and the current destination
+        // won't actually get us clear of it.
+        if (Math.hypot(cx - px, cy - py) < PRANK_PROXIMITY_PX) {
+          const target = targetRef.current;
+          const targetDist = Math.hypot(target.x + w / 2 - px, target.y + h / 2 - py);
+          if (targetDist < PRANK_PROXIMITY_PX * 1.6) {
+            targetRef.current = pickEscape(px, py);
+          }
+        }
+
+        posRef.current = {
+          x: posRef.current.x + (targetRef.current.x - posRef.current.x) * PRANK_EASE,
+          y: posRef.current.y + (targetRef.current.y - posRef.current.y) * PRANK_EASE
+        };
+        button.style.transform = `translate3d(${posRef.current.x}px, ${posRef.current.y}px, 0)`;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [flee, prankRelented]);
 
   // Preview the first attached image (if any).
   useEffect(() => {
@@ -610,12 +668,12 @@ export function SubmitReimbursementForm({
           flee && !prankRelented
             ? {
                 position: 'fixed',
-                left: flee.left,
-                top: flee.top,
+                left: 0,
+                top: 0,
                 width: flee.width,
                 margin: 0,
                 zIndex: 60,
-                transition: 'left 0.03s linear, top 0.03s linear'
+                willChange: 'transform'
               }
             : undefined
         }
