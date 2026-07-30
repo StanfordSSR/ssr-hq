@@ -69,9 +69,13 @@ export function SubmitReimbursementForm({
   // the whole time, so it can never actually block a real reimbursement.
   const isKai = submitterName.trim().toLowerCase().includes('kai');
   const submitButtonRef = useRef<HTMLButtonElement>(null);
-  const [escapeOffset, setEscapeOffset] = useState({ x: 0, y: 0 });
-  const escapeOffsetRef = useRef(escapeOffset);
-  escapeOffsetRef.current = escapeOffset;
+  // While set, the button is pinned to this fixed viewport spot. Fixed
+  // positioning is immune to ancestor overflow clipping, and a placeholder of
+  // the captured size holds its in-flow slot so nothing on the page shifts.
+  // null = the button is at home.
+  const [flee, setFlee] = useState<{ left: number; top: number; width: number; height: number } | null>(
+    null
+  );
   const [prankRelented, setPrankRelented] = useState(false);
 
   const isGasReimbursement = purchaseType === 'travel' && travelSubtype === 'gas_reimbursement';
@@ -84,11 +88,11 @@ export function SubmitReimbursementForm({
   }, []);
 
   // Make the Submit button flee the cursor for "kai" submitters. Listens on the
-  // window so it reacts before the cursor ever reaches the button, and relents
-  // after PRANK_ESCAPE_MS so the button returns home and stays clickable.
+  // window so it reacts before the cursor reaches the button, and relents after
+  // PRANK_ESCAPE_MS so the button returns home and stays clickable.
   useEffect(() => {
     if (!isKai) {
-      setEscapeOffset({ x: 0, y: 0 });
+      setFlee(null);
       setPrankRelented(false);
       return;
     }
@@ -97,7 +101,7 @@ export function SubmitReimbursementForm({
     const relent = () => {
       relented = true;
       setPrankRelented(true);
-      setEscapeOffset({ x: 0, y: 0 });
+      setFlee(null);
     };
 
     const onMove = (event: PointerEvent) => {
@@ -105,39 +109,31 @@ export function SubmitReimbursementForm({
       if (!button || relented) return;
 
       const rect = button.getBoundingClientRect();
-      const halfW = rect.width / 2;
-      const halfH = rect.height / 2;
-      const cx = rect.left + halfW;
-      const cy = rect.top + halfH;
+      const pad = 10;
+      // Never let the button be wider/taller than the viewport allows.
+      const w = Math.min(rect.width, window.innerWidth - 2 * pad);
+      const h = Math.min(rect.height, window.innerHeight - 2 * pad);
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
       if (Math.hypot(cx - event.clientX, cy - event.clientY) >= PRANK_PROXIMITY_PX) return;
 
-      // Keep the WHOLE button on screen: clamp the target center by the button's
-      // own half-size plus a small pad, not a fixed margin.
-      const pad = 10;
-      const minX = halfW + pad;
-      const minY = halfH + pad;
-      const maxX = Math.max(minX, window.innerWidth - halfW - pad);
-      const maxY = Math.max(minY, window.innerHeight - halfH - pad);
-
-      // The button's un-translated layout center, so we can turn an absolute
-      // target position back into a transform offset.
-      const layoutCx = cx - escapeOffsetRef.current.x;
-      const layoutCy = cy - escapeOffsetRef.current.y;
-
-      // Snap to a random on-screen spot that isn't near the cursor.
-      let targetCx = cx;
-      let targetCy = cy;
+      // Random top-left that keeps the WHOLE button on screen and away from the
+      // cursor. left/top are viewport coordinates (position: fixed).
+      const maxLeft = Math.max(pad, window.innerWidth - w - pad);
+      const maxTop = Math.max(pad, window.innerHeight - h - pad);
+      let left = rect.left;
+      let top = rect.top;
       for (let i = 0; i < 24; i += 1) {
-        const rx = minX + Math.random() * (maxX - minX);
-        const ry = minY + Math.random() * (maxY - minY);
-        if (Math.hypot(rx - event.clientX, ry - event.clientY) > PRANK_PROXIMITY_PX * 1.4) {
-          targetCx = rx;
-          targetCy = ry;
+        const rl = pad + Math.random() * (maxLeft - pad);
+        const rt = pad + Math.random() * (maxTop - pad);
+        if (Math.hypot(rl + w / 2 - event.clientX, rt + h / 2 - event.clientY) > PRANK_PROXIMITY_PX * 1.4) {
+          left = rl;
+          top = rt;
           break;
         }
       }
 
-      setEscapeOffset({ x: Math.round(targetCx - layoutCx), y: Math.round(targetCy - layoutCy) });
+      setFlee({ left: Math.round(left), top: Math.round(top), width: Math.round(w), height: Math.round(h) });
     };
 
     window.addEventListener('pointermove', onMove);
@@ -603,18 +599,23 @@ export function SubmitReimbursementForm({
         </div>
       ) : null}
 
+      {/* Placeholder holds the button's in-flow slot while it's pinned/fixed so
+          the rest of the page doesn't shift. */}
+      {flee && !prankRelented ? <div aria-hidden="true" style={{ height: flee.height }} /> : null}
       <button
         ref={submitButtonRef}
         className="button"
         type="submit"
         style={
-          isKai && !prankRelented && (escapeOffset.x !== 0 || escapeOffset.y !== 0)
+          flee && !prankRelented
             ? {
-                transform: `translate(${escapeOffset.x}px, ${escapeOffset.y}px)`,
-                transition: 'transform 0.03s linear',
-                position: 'relative',
+                position: 'fixed',
+                left: flee.left,
+                top: flee.top,
+                width: flee.width,
+                margin: 0,
                 zIndex: 60,
-                willChange: 'transform'
+                transition: 'left 0.03s linear, top 0.03s linear'
               }
             : undefined
         }
