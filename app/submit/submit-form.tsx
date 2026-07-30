@@ -14,11 +14,10 @@ const OFF_CAMPUS_NOTICE =
 
 const GAS_MIN_ATTACHMENTS = 2;
 
-// 🥚 "kai" prank tuning: how long the Submit button flees the cursor, how close
-// the cursor must get before it bolts, and how far it jumps each time.
+// 🥚 "kai" prank tuning: how long the Submit button flees the cursor, and how
+// close the cursor must get before it bolts to a new random on-screen spot.
 const PRANK_ESCAPE_MS = 5 * 60 * 1000;
-const PRANK_PROXIMITY_PX = 130;
-const PRANK_STEP_PX = 110;
+const PRANK_PROXIMITY_PX = 150;
 
 const PURCHASE_TYPE_OPTIONS: Array<{ value: PurchaseType; label: string }> = [
   { value: 'equipment', label: 'Equipment' },
@@ -106,36 +105,35 @@ export function SubmitReimbursementForm({
       if (!button || relented) return;
 
       const rect = button.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const dx = cx - event.clientX;
-      const dy = cy - event.clientY;
-      const dist = Math.hypot(dx, dy) || 1;
-      if (dist >= PRANK_PROXIMITY_PX) return;
+      const halfW = rect.width / 2;
+      const halfH = rect.height / 2;
+      const cx = rect.left + halfW;
+      const cy = rect.top + halfH;
+      if (Math.hypot(cx - event.clientX, cy - event.clientY) >= PRANK_PROXIMITY_PX) return;
 
-      const margin = 72;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      // The button's un-translated layout center, so we can convert an absolute
+      // Keep the WHOLE button on screen: clamp the target center by the button's
+      // own half-size plus a small pad, not a fixed margin.
+      const pad = 10;
+      const minX = halfW + pad;
+      const minY = halfH + pad;
+      const maxX = Math.max(minX, window.innerWidth - halfW - pad);
+      const maxY = Math.max(minY, window.innerHeight - halfH - pad);
+
+      // The button's un-translated layout center, so we can turn an absolute
       // target position back into a transform offset.
       const layoutCx = cx - escapeOffsetRef.current.x;
       const layoutCy = cy - escapeOffsetRef.current.y;
 
-      let targetCx = cx + (dx / dist) * PRANK_STEP_PX;
-      let targetCy = cy + (dy / dist) * PRANK_STEP_PX;
-      targetCx = Math.min(vw - margin, Math.max(margin, targetCx));
-      targetCy = Math.min(vh - margin, Math.max(margin, targetCy));
-
-      // Cornered against an edge? Teleport somewhere random and far away.
-      if (Math.hypot(targetCx - event.clientX, targetCy - event.clientY) < PRANK_PROXIMITY_PX) {
-        for (let i = 0; i < 12; i += 1) {
-          const rx = margin + Math.random() * (vw - 2 * margin);
-          const ry = margin + Math.random() * (vh - 2 * margin);
-          if (Math.hypot(rx - event.clientX, ry - event.clientY) > PRANK_PROXIMITY_PX * 1.6) {
-            targetCx = rx;
-            targetCy = ry;
-            break;
-          }
+      // Snap to a random on-screen spot that isn't near the cursor.
+      let targetCx = cx;
+      let targetCy = cy;
+      for (let i = 0; i < 24; i += 1) {
+        const rx = minX + Math.random() * (maxX - minX);
+        const ry = minY + Math.random() * (maxY - minY);
+        if (Math.hypot(rx - event.clientX, ry - event.clientY) > PRANK_PROXIMITY_PX * 1.4) {
+          targetCx = rx;
+          targetCy = ry;
+          break;
         }
       }
 
@@ -613,7 +611,7 @@ export function SubmitReimbursementForm({
           isKai && !prankRelented && (escapeOffset.x !== 0 || escapeOffset.y !== 0)
             ? {
                 transform: `translate(${escapeOffset.x}px, ${escapeOffset.y}px)`,
-                transition: 'transform 0.08s linear',
+                transition: 'transform 0.03s linear',
                 position: 'relative',
                 zIndex: 60,
                 willChange: 'transform'
