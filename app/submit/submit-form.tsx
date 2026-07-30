@@ -14,6 +14,12 @@ const OFF_CAMPUS_NOTICE =
 
 const GAS_MIN_ATTACHMENTS = 2;
 
+// 🥚 "kai" prank tuning: how long the Submit button flees the cursor, how close
+// the cursor must get before it bolts, and how far it jumps each time.
+const PRANK_ESCAPE_MS = 5 * 60 * 1000;
+const PRANK_PROXIMITY_PX = 130;
+const PRANK_STEP_PX = 110;
+
 const PURCHASE_TYPE_OPTIONS: Array<{ value: PurchaseType; label: string }> = [
   { value: 'equipment', label: 'Equipment' },
   { value: 'event_food', label: 'Event food' },
@@ -58,15 +64,16 @@ export function SubmitReimbursementForm({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 🥚 Harmless prank: submitters whose name contains "kai" have to earn it —
-  // the submit button dodges the cursor a few times before giving in. It always
-  // relents after MAX_DODGES (and Enter-to-submit still works), so it can never
-  // actually block a real reimbursement.
-  const MAX_DODGES = 12;
+  // 🥚 Harmless prank: when the submitter's name contains "kai", the Submit
+  // button actively runs from the cursor whenever it gets close — teleporting
+  // when cornered — for 5 minutes, then gives up. Enter-to-submit still works
+  // the whole time, so it can never actually block a real reimbursement.
   const isKai = submitterName.trim().toLowerCase().includes('kai');
-  const [dodge, setDodge] = useState({ x: 0, y: 0 });
-  const [dodgeCount, setDodgeCount] = useState(0);
-  const prankRelented = dodgeCount >= MAX_DODGES;
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const [escapeOffset, setEscapeOffset] = useState({ x: 0, y: 0 });
+  const escapeOffsetRef = useRef(escapeOffset);
+  escapeOffsetRef.current = escapeOffset;
+  const [prankRelented, setPrankRelented] = useState(false);
 
   const isGasReimbursement = purchaseType === 'travel' && travelSubtype === 'gas_reimbursement';
   const gasNeedsMoreFiles = isGasReimbursement && receipts.length < GAS_MIN_ATTACHMENTS;
@@ -77,28 +84,71 @@ export function SubmitReimbursementForm({
     if (saved) setSubmitterName(saved);
   }, []);
 
-  // Reset the prank whenever the name stops matching (e.g. they retype it).
+  // Make the Submit button flee the cursor for "kai" submitters. Listens on the
+  // window so it reacts before the cursor ever reaches the button, and relents
+  // after PRANK_ESCAPE_MS so the button returns home and stays clickable.
   useEffect(() => {
     if (!isKai) {
-      setDodge({ x: 0, y: 0 });
-      setDodgeCount(0);
+      setEscapeOffset({ x: 0, y: 0 });
+      setPrankRelented(false);
+      return;
     }
-  }, [isKai]);
 
-  // Move the submit button to a new random offset, until it gives up.
-  const dodgeSubmit = () => {
-    if (!isKai || prankRelented) return;
-    const next = dodgeCount + 1;
-    if (next >= MAX_DODGES) {
-      setDodge({ x: 0, y: 0 }); // snap back so it's easy to click
-    } else {
-      setDodge({
-        x: Math.round((Math.random() * 2 - 1) * 170),
-        y: Math.round((Math.random() * 2 - 1) * 90)
-      });
-    }
-    setDodgeCount(next);
-  };
+    let relented = false;
+    const relent = () => {
+      relented = true;
+      setPrankRelented(true);
+      setEscapeOffset({ x: 0, y: 0 });
+    };
+
+    const onMove = (event: PointerEvent) => {
+      const button = submitButtonRef.current;
+      if (!button || relented) return;
+
+      const rect = button.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = cx - event.clientX;
+      const dy = cy - event.clientY;
+      const dist = Math.hypot(dx, dy) || 1;
+      if (dist >= PRANK_PROXIMITY_PX) return;
+
+      const margin = 72;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      // The button's un-translated layout center, so we can convert an absolute
+      // target position back into a transform offset.
+      const layoutCx = cx - escapeOffsetRef.current.x;
+      const layoutCy = cy - escapeOffsetRef.current.y;
+
+      let targetCx = cx + (dx / dist) * PRANK_STEP_PX;
+      let targetCy = cy + (dy / dist) * PRANK_STEP_PX;
+      targetCx = Math.min(vw - margin, Math.max(margin, targetCx));
+      targetCy = Math.min(vh - margin, Math.max(margin, targetCy));
+
+      // Cornered against an edge? Teleport somewhere random and far away.
+      if (Math.hypot(targetCx - event.clientX, targetCy - event.clientY) < PRANK_PROXIMITY_PX) {
+        for (let i = 0; i < 12; i += 1) {
+          const rx = margin + Math.random() * (vw - 2 * margin);
+          const ry = margin + Math.random() * (vh - 2 * margin);
+          if (Math.hypot(rx - event.clientX, ry - event.clientY) > PRANK_PROXIMITY_PX * 1.6) {
+            targetCx = rx;
+            targetCy = ry;
+            break;
+          }
+        }
+      }
+
+      setEscapeOffset({ x: Math.round(targetCx - layoutCx), y: Math.round(targetCy - layoutCy) });
+    };
+
+    window.addEventListener('pointermove', onMove);
+    const timer = window.setTimeout(relent, PRANK_ESCAPE_MS);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.clearTimeout(timer);
+    };
+  }, [isKai]);
 
   // Preview the first attached image (if any).
   useEffect(() => {
@@ -555,39 +605,26 @@ export function SubmitReimbursementForm({
         </div>
       ) : null}
 
-      <div
+      <button
+        ref={submitButtonRef}
+        className="button"
+        type="submit"
         style={
-          isKai && !prankRelented
+          isKai && !prankRelented && (escapeOffset.x !== 0 || escapeOffset.y !== 0)
             ? {
+                transform: `translate(${escapeOffset.x}px, ${escapeOffset.y}px)`,
+                transition: 'transform 0.08s linear',
                 position: 'relative',
-                minHeight: '9rem',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center'
+                zIndex: 60,
+                willChange: 'transform'
               }
             : undefined
         }
+        disabled={submitting || scanning || gasNeedsMoreFiles || (showOffCampus && !offCampusAck)}
       >
-        <button
-          className="button"
-          type="submit"
-          onMouseEnter={dodgeSubmit}
-          style={
-            isKai
-              ? { transform: `translate(${dodge.x}px, ${dodge.y}px)`, transition: 'transform 0.12s ease-out' }
-              : undefined
-          }
-          disabled={submitting || scanning || gasNeedsMoreFiles || (showOffCampus && !offCampusAck)}
-        >
-          {submitting ? 'Submitting…' : 'Submit reimbursement'}
-        </button>
-      </div>
+        {submitting ? 'Submitting…' : 'Submit reimbursement'}
+      </button>
 
-      {isKai && dodgeCount > 0 && !prankRelented ? (
-        <p className="helper" style={{ textAlign: 'center', margin: 0 }}>
-          😏 catch me if you can…
-        </p>
-      ) : null}
       {isKai && prankRelented ? (
         <p className="helper" style={{ textAlign: 'center', margin: 0 }}>
           😅 ok ok, you earned it — go ahead.
