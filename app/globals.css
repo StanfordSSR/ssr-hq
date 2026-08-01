@@ -2704,6 +2704,89 @@ tr:last-child td {
   text-decoration: underline;
 }
 
+/* Left column of the finances layout: overview panel with the purchase ledger
+   stacked beneath it. */
+.hq-finance-column {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+  min-width: 0;
+}
+
+.hq-ledger-panel {
+  min-width: 0;
+}
+
+.hq-ledger-scroll {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid #e7e0e0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.hq-ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.hq-ledger-table th,
+.hq-ledger-table td {
+  padding: 7px 10px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #f0eaea;
+}
+
+.hq-ledger-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.hq-ledger-table tbody tr:hover {
+  background: #faf7f7;
+}
+
+.hq-ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f6f1f1;
+  padding: 0;
+}
+
+.hq-ledger-numeric {
+  text-align: right;
+}
+
+.hq-ledger-sort {
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: inherit;
+  white-space: nowrap;
+}
+
+.hq-ledger-sort:hover {
+  color: var(--text);
+}
+
+.hq-ledger-sort-active {
+  color: #8c1515;
+}
+
+.hq-ledger-numeric .hq-ledger-sort {
+  text-align: right;
+}
+
 .hq-inline-editor-form {
   display: grid;
   gap: 10px;

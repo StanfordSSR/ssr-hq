@@ -7,6 +7,7 @@ import { getActiveBudgetPlan, getBudgetSetupState } from '@/lib/budget-plan';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/actions';
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
+import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
 import { getViewerContext } from '@/lib/auth';
 
 type Team = {
@@ -53,6 +54,11 @@ const categoryLabel: Record<'equipment' | 'food' | 'travel' | 'registration', st
 
 function readSingle(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] || '' : value || '';
+}
+
+// Module scope so the clock read stays out of the component body.
+function daysAgoIso(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 export default async function FinancesPage({
@@ -110,7 +116,7 @@ export default async function FinancesPage({
   if (selectedRange === 'current_cycle') {
     filteredPurchaseQuery.eq('academic_year', cycle);
   } else if (selectedRange === 'last_90_days') {
-    filteredPurchaseQuery.gte('purchased_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
+    filteredPurchaseQuery.gte('purchased_at', daysAgoIso(90));
   }
 
   const [
@@ -165,6 +171,48 @@ export default async function FinancesPage({
         .eq('team_id', validSelectedTeamId)
         .eq('is_active', true)
     : { data: [] };
+  // Full purchase rows backing the sortable ledger below the overview panel.
+  // Mirrors the active team + range filters, newest first, uncapped (bounded
+  // only by a high safety limit).
+  const ledgerQuery = admin
+    .from('purchase_logs')
+    .select('id, team_id, expense_type, description, amount_cents, purchased_at, person_name, payment_method, category')
+    .order('purchased_at', { ascending: false })
+    .limit(1000);
+  if (validSelectedTeamId !== 'all') {
+    ledgerQuery.eq('team_id', validSelectedTeamId).eq('expense_type', 'team');
+  }
+  if (selectedRange === 'current_cycle') {
+    ledgerQuery.eq('academic_year', cycle);
+  } else if (selectedRange === 'last_90_days') {
+    ledgerQuery.gte('purchased_at', daysAgoIso(90));
+  }
+  const { data: ledgerData } = await ledgerQuery;
+  const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
+  const ledgerRows: PurchaseLedgerRow[] = ((ledgerData || []) as Array<{
+    id: string;
+    team_id: string | null;
+    expense_type: 'team' | 'leadership';
+    description: string | null;
+    amount_cents: number;
+    purchased_at: string;
+    person_name: string | null;
+    payment_method: PurchaseLog['payment_method'];
+    category: PurchaseLog['category'];
+  }>).map((purchase) => ({
+    id: purchase.id,
+    teamName:
+      purchase.expense_type === 'leadership'
+        ? 'Leadership'
+        : teamNameById.get(purchase.team_id || '') || 'Unknown team',
+    description: purchase.description || 'Untitled purchase',
+    amountCents: purchase.amount_cents,
+    purchasedAt: purchase.purchased_at,
+    personName: purchase.person_name || 'Unknown',
+    paymentMethod: purchase.payment_method || 'unknown',
+    category: purchase.category || 'equipment'
+  }));
+
   const allocatedTotal = teams.reduce((sum, team) => sum + (teamBudgets.get(team.id) || 0), 0);
   const remainingBudget = Math.max(0, clubBudget.total_budget_cents - allocatedTotal);
   const allocationPercent =
@@ -323,6 +371,7 @@ export default async function FinancesPage({
       ) : null}
 
       <div className="hq-finance-layout">
+        <div className="hq-finance-column">
         <aside className="hq-panel hq-lead-sidebar hq-surface-muted hq-finance-overview">
           <div className="hq-section-head">
             <div className="hq-section-head-copy">
@@ -442,6 +491,20 @@ export default async function FinancesPage({
             </div>
           </div>
         </aside>
+
+        <PurchaseLedger
+          rows={ledgerRows}
+          showTeam={validSelectedTeamId === 'all'}
+          title={selectedTeam ? `${selectedTeam.name} purchases` : 'All purchases'}
+          subtitle={
+            selectedRange === 'current_cycle'
+              ? `Every purchase logged in the ${cycle} cycle, newest first. Click a column to sort.`
+              : selectedRange === 'last_90_days'
+                ? 'Every purchase logged in the last 90 days, newest first. Click a column to sort.'
+                : 'Every purchase ever logged, newest first. Click a column to sort.'
+          }
+        />
+        </div>
 
         <section className="hq-panel hq-lead-main hq-surface-muted hq-finance-allocations">
           <div className="hq-section-head">
