@@ -152,7 +152,11 @@ const financialOfficerCards = [
   }
 ];
 
-// Module scope so the clock read stays out of the component body.
+// Module scope so the clock reads stay out of the component body.
+function currentPacificMonthKey() {
+  return formatPacificDateKey(new Date()).slice(0, 7);
+}
+
 function hoursAgoIso(hours: number) {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 }
@@ -186,7 +190,20 @@ export default async function DashboardPage() {
   const showCardApprovalBanner = isAdmin || isFinancialOfficer;
 
   if (isAdmin || isPresident || isVicePresident || isFinancialOfficer) {
-    const [{ data: teamsData }, { data: membershipsData }, { count }, { data: rosterMembersData }, academicYear, allAssets, pendingCardAgreements] = await Promise.all([
+    const academicYear = await getCurrentAcademicYear();
+    const [
+      { data: teamsData },
+      { data: membershipsData },
+      { count },
+      { data: rosterMembersData },
+      allAssets,
+      pendingCardAgreements,
+      summerSpend,
+      { data: teamBudgetsData },
+      { data: clubBudgetData },
+      { data: cyclePurchasesData },
+      { data: reimbursementRowsData }
+    ] = await Promise.all([
       admin
         .from('teams')
         .select('id, name, description, logo_url, is_active, created_at')
@@ -201,13 +218,20 @@ export default async function DashboardPage() {
         .select('id', { count: 'exact', head: true })
         .eq('active', true),
       admin.from('team_roster_members').select('id'),
-      getCurrentAcademicYear(),
       getAllHighValueAssets(),
-      showCardApprovalBanner ? getPendingCardAgreements() : Promise.resolve([])
+      showCardApprovalBanner ? getPendingCardAgreements() : Promise.resolve([]),
+      getSummerSpendSummary(academicYear),
+      admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', academicYear),
+      admin.from('club_budgets').select('total_budget_cents').eq('academic_year', academicYear).maybeSingle(),
+      admin
+        .from('purchase_logs')
+        .select(
+          'id, team_id, description, person_name, amount_cents, purchased_at, category, payment_method, receipt_path, receipt_not_needed'
+        )
+        .eq('expense_type', 'team')
+        .eq('academic_year', academicYear),
+      admin.from('member_reimbursements').select('id, team_id, status, finance_processed_at, amount_cents')
     ]);
-    // Summer spend roll-up for presidents and financial officers: how much of
-    // each team's planned summer spend is left. Depends on academicYear.
-    const summerSpend = await getSummerSpendSummary(academicYear);
     const pendingCardCount = pendingCardAgreements.length;
     const teams = (teamsData || []) as Team[];
     const memberships = (membershipsData || []) as Membership[];
@@ -244,90 +268,526 @@ export default async function DashboardPage() {
       stewardshipNote: asset.stewardship_note
     }));
 
+    // Per-team finance rollup for the cycle.
+    const usd = (cents: number) => `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    const teamBudgetById = new Map(
+      ((teamBudgetsData || []) as Array<{ team_id: string; annual_budget_cents: number }>).map((row) => [
+        row.team_id,
+        row.annual_budget_cents
+      ])
+    );
+    const cyclePurchases = (cyclePurchasesData || []) as Array<{
+      id: string;
+      team_id: string | null;
+      description: string | null;
+      person_name: string | null;
+      amount_cents: number;
+      purchased_at: string;
+      category: 'equipment' | 'food' | 'travel' | 'registration' | null;
+      payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown' | null;
+      receipt_path: string | null;
+      receipt_not_needed: boolean;
+    }>;
+    const teamNameById = new Map(teams.map((teamRow) => [teamRow.id, teamRow.name]));
+    const monthKey = currentPacificMonthKey();
+    const spentByTeam = new Map<string, number>();
+    const monthByTeam = new Map<string, number>();
+    for (const purchase of cyclePurchases) {
+      if (!purchase.team_id) continue;
+      spentByTeam.set(purchase.team_id, (spentByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
+      if (formatPacificDateKey(new Date(purchase.purchased_at)).slice(0, 7) === monthKey) {
+        monthByTeam.set(purchase.team_id, (monthByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
+      }
+    }
+    const clubBudgetCents = clubBudgetData?.total_budget_cents || 0;
+    const clubSpentCents = cyclePurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
+    const teamFinanceRows = teams
+      .map((teamRow) => {
+        const budget = teamBudgetById.get(teamRow.id) || 0;
+        const teamSpent = spentByTeam.get(teamRow.id) || 0;
+        return {
+          id: teamRow.id,
+          name: teamRow.name,
+          budgetCents: budget,
+          spentCents: teamSpent,
+          monthCents: monthByTeam.get(teamRow.id) || 0,
+          remainingCents: budget - teamSpent
+        };
+      })
+      .sort((a, b) => b.spentCents - a.spentCents);
+    const overBudgetTeams = teamFinanceRows.filter((row) => row.budgetCents > 0 && row.remainingCents < 0);
+    const summerOverTeams = summerSpend.teams.filter((row) => row.remainingCents < 0);
+
+    const reimbursementRows = (reimbursementRowsData || []) as Array<{
+      id: string;
+      team_id: string;
+      status: 'pending' | 'approved' | 'rejected';
+      finance_processed_at: string | null;
+      amount_cents: number;
+    }>;
+    const pendingReimbCount = reimbursementRows.filter((row) => row.status === 'pending').length;
+    const toFile = reimbursementRows.filter((row) => row.status === 'approved' && !row.finance_processed_at);
+    const toFileTotalCents = toFile.reduce((sum, row) => sum + row.amount_cents, 0);
+
+    const missingReceipts = cyclePurchases
+      .filter(
+        (purchase) =>
+          purchase.payment_method === 'credit_card' && !purchase.receipt_path && !purchase.receipt_not_needed
+      )
+      .map((purchase) => ({
+        purchase,
+        state: getReceiptTaskState({
+          paymentMethod: purchase.payment_method || 'unknown',
+          purchasedAt: purchase.purchased_at,
+          receiptPath: purchase.receipt_path,
+          receiptNotNeeded: purchase.receipt_not_needed
+        })
+      }));
+    const overdueReceiptCount = missingReceipts.filter((entry) => entry.state.overdue).length;
+
+    const sortedByDate = [...cyclePurchases].sort(
+      (a, b) => Date.parse(b.purchased_at) - Date.parse(a.purchased_at)
+    );
+    const BIG_TICKET_CENTS = 25000;
+    const bigTickets = sortedByDate.filter((purchase) => purchase.amount_cents >= BIG_TICKET_CENTS).slice(0, 8);
+    const recentPurchases = sortedByDate.slice(0, 10);
+
+    const roleLabel = isAdmin
+      ? 'Admin portal'
+      : isPresident
+        ? 'President portal'
+        : isVicePresident
+          ? 'Vice president portal'
+          : 'Financial officer portal';
+    const firstName = (me.full_name || '').split(' ')[0] || 'officer';
+    const navCards = isAdmin ? adminCards : isPresident || isVicePresident ? presidentCards : financialOfficerCards;
+    const attentionCount =
+      pendingCardCount + toFile.length + (overdueReceiptCount > 0 ? 1 : 0) + overBudgetTeams.length + summerOverTeams.length;
+
     return (
-      <div className="hq-page">
-        <section className="hq-hero">
-          <div>
-            <p className="hq-eyebrow">{isAdmin ? 'Admin portal' : isPresident ? 'President portal' : isVicePresident ? 'Vice president portal' : 'Financial officer portal'}</p>
-            <h1 className="hq-title">Welcome back, {me.full_name || 'operator'}.</h1>
-            <p className="hq-subtitle">
-              {isAdmin
-                ? "Use HQ to manage teams, leads, members, and the club's operating structure."
-                : isPresident || isVicePresident
-                  ? 'Use HQ to review teams, reports, finances, and member activity with read-only access.'
-                  : 'Use HQ to review finances, purchases, receipts, and the shared expense log with read-only access.'}
+      <div className="th-page">
+        {/* Masthead */}
+        <header className="th-mast">
+          <div className="th-mast-main">
+            <p className="th-mast-eyebrow">{roleLabel} · {academicYear}</p>
+            <div className="th-mast-title">
+              <h1>Robotics HQ</h1>
+            </div>
+            <p className="th-mast-desc">
+              Welcome back, {firstName}. {teams.length} active team{teams.length === 1 ? '' : 's'} ·{' '}
+              {totalMembers} members · {activeLeadMemberships.length} lead assignments.
             </p>
           </div>
+          <div className="th-mast-side">
+            <Link href="/dashboard/finances" className="th-btn-light">
+              Finances
+            </Link>
+            <Link href="/dashboard/reimbursements" className="th-mast-link">
+              Reimbursements →
+            </Link>
+          </div>
+        </header>
 
-          <div className="hq-mini-stats">
-            <div className="hq-mini-stat">
-              <strong>{teams.length}</strong>
-              <span>active teams</span>
+        {/* Scoreboard */}
+        <div className="th-stats">
+          <div className="th-stat">
+            <span>Club budget</span>
+            <strong>{usd(clubBudgetCents)}</strong>
+          </div>
+          <div className="th-stat">
+            <span>Spent · {academicYear}</span>
+            <strong>{usd(clubSpentCents)}</strong>
+          </div>
+          <div className="th-stat">
+            <span>Remaining</span>
+            <strong className={clubBudgetCents - clubSpentCents < 0 ? 'th-bad' : undefined}>
+              {usd(clubBudgetCents - clubSpentCents)}
+            </strong>
+          </div>
+          <div className="th-stat">
+            <span>Teams</span>
+            <strong>{teams.length}</strong>
+          </div>
+          <div className="th-stat">
+            <span>Members</span>
+            <strong>{totalMembers}</strong>
+          </div>
+          <div className="th-stat">
+            <span>Pending reimb.</span>
+            <strong className={pendingReimbCount > 0 ? 'th-warn' : undefined}>{pendingReimbCount}</strong>
+          </div>
+          <div className="th-stat">
+            <span>To file in Granted</span>
+            <strong className={toFile.length > 0 ? 'th-warn' : undefined}>{toFile.length}</strong>
+          </div>
+          {showCardApprovalBanner ? (
+            <div className="th-stat">
+              <span>Card approvals</span>
+              <strong className={pendingCardCount > 0 ? 'th-warn' : undefined}>{pendingCardCount}</strong>
             </div>
-            <div className="hq-mini-stat">
-              <strong>{activeLeadMemberships.length}</strong>
-              <span>lead assignments</span>
+          ) : null}
+          <div className="th-stat">
+            <span>Receipts missing</span>
+            <strong className={overdueReceiptCount > 0 ? 'th-bad' : missingReceipts.length > 0 ? 'th-warn' : undefined}>
+              {missingReceipts.length}
+            </strong>
+          </div>
+        </div>
+
+        {/* Needs attention */}
+        {attentionCount > 0 ? (
+          <details className="th-section th-section-alert" open>
+            <summary>
+              <span className="th-sec-label">Needs attention</span>
+              <span className="th-sec-preview">
+                {[
+                  pendingCardCount > 0 ? `${pendingCardCount} card request${pendingCardCount === 1 ? '' : 's'}` : null,
+                  toFile.length > 0 ? `${toFile.length} to file in Granted (${usd(toFileTotalCents)})` : null,
+                  overdueReceiptCount > 0 ? `${overdueReceiptCount} receipts overdue` : null,
+                  overBudgetTeams.length > 0
+                    ? `${overBudgetTeams.length} team${overBudgetTeams.length === 1 ? '' : 's'} over budget`
+                    : null,
+                  summerOverTeams.length > 0
+                    ? `${summerOverTeams.length} over summer plan`
+                    : null
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+              <span className="th-sec-count">{attentionCount}</span>
+            </summary>
+            <div className="th-body">
+              <div className="table-wrap">
+                <table>
+                  <tbody>
+                    {showCardApprovalBanner && pendingCardCount > 0 ? (
+                      <tr>
+                        <td className="th-warn" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          Card access
+                        </td>
+                        <td>
+                          {pendingCardCount} signed agreement{pendingCardCount === 1 ? '' : 's'} awaiting review
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <Link href="/dashboard/credit-card/approvals" className="th-link">
+                            Review →
+                          </Link>
+                        </td>
+                      </tr>
+                    ) : null}
+                    {toFile.length > 0 ? (
+                      <tr>
+                        <td className="th-warn" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          File in Granted
+                        </td>
+                        <td>
+                          {toFile.length} approved reimbursement{toFile.length === 1 ? '' : 's'} totaling{' '}
+                          {usd(toFileTotalCents)}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <Link href="/dashboard/reimbursements" className="th-link">
+                            Open →
+                          </Link>
+                        </td>
+                      </tr>
+                    ) : null}
+                    {overdueReceiptCount > 0 ? (
+                      <tr>
+                        <td className="th-bad" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          Receipts overdue
+                        </td>
+                        <td>
+                          {overdueReceiptCount} of {missingReceipts.length} missing receipts past the deadline
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <Link href="/dashboard/expenses" className="th-link">
+                            Open →
+                          </Link>
+                        </td>
+                      </tr>
+                    ) : null}
+                    {overBudgetTeams.map((row) => (
+                      <tr key={`over-${row.id}`}>
+                        <td className="th-bad" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          Over budget
+                        </td>
+                        <td>
+                          {row.name} — spent {usd(row.spentCents)} of {usd(row.budgetCents)}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <Link href={`/dashboard/teams/${row.id}`} className="th-link">
+                            Team page →
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                    {summerOverTeams.map((row) => (
+                      <tr key={`summer-${row.teamId}`}>
+                        <td className="th-bad" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          Summer overspend
+                        </td>
+                        <td>
+                          {row.teamName} — {usd(Math.abs(row.remainingCents))} over their planned summer spend
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <Link href={`/dashboard/teams/${row.teamId}`} className="th-link">
+                            Team page →
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div className="hq-mini-stat">
-              <strong>{totalMembers}</strong>
-              <span>total members</span>
+          </details>
+        ) : null}
+
+        {/* Per-team spend */}
+        <details className="th-section" open>
+          <summary>
+            <span className="th-sec-label">Team spending</span>
+            <span className="th-sec-preview">
+              {usd(clubSpentCents)} spent across {teams.length} teams · {usd(clubBudgetCents)} club budget
+            </span>
+            <span className="th-sec-count">{teams.length}</span>
+          </summary>
+          <div className="th-body">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Team</th>
+                    <th>Budget</th>
+                    <th>Spent</th>
+                    <th>This month</th>
+                    <th>Remaining</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamFinanceRows.map((row) => (
+                    <tr key={row.id}>
+                      <td style={{ fontWeight: 700 }}>
+                        <Link href={`/dashboard/teams/${row.id}`} className="th-link">
+                          {row.name}
+                        </Link>
+                      </td>
+                      <td>{usd(row.budgetCents)}</td>
+                      <td>{usd(row.spentCents)}</td>
+                      <td>{usd(row.monthCents)}</td>
+                      <td className={row.remainingCents < 0 ? 'th-bad' : undefined} style={{ fontWeight: 700 }}>
+                        {usd(row.remainingCents)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        </section>
+        </details>
 
-        {showCardApprovalBanner && pendingCardCount > 0 ? (
-          <Link
-            href="/dashboard/credit-card/approvals"
-            className="hq-panel hq-surface-muted"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', textDecoration: 'none' }}
-          >
-            <span>
-              <strong>
-                {pendingCardCount} credit card access request{pendingCardCount === 1 ? '' : 's'} pending review
-              </strong>
-              <span className="helper" style={{ display: 'block' }}>
-                A member signed the credit card agreement and is waiting for approval.
-              </span>
+        {/* Big-ticket purchases */}
+        <details className="th-section">
+          <summary>
+            <span className="th-sec-label">Big-ticket items</span>
+            <span className="th-sec-preview">
+              {bigTickets.length > 0
+                ? `Latest: ${bigTickets[0].description || 'Untitled'} (${usd(bigTickets[0].amount_cents)}, ${teamNameById.get(bigTickets[0].team_id || '') || 'Unknown team'})`
+                : 'No purchases of $250 or more this cycle'}
             </span>
-            <span className="hq-inline-link">Review →</span>
-          </Link>
+            <span className="th-sec-count">{bigTickets.length}</span>
+          </summary>
+          <div className="th-body">
+            {bigTickets.length === 0 ? (
+              <p className="empty-note">No purchases of $250 or more this cycle.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Team</th>
+                      <th>Item</th>
+                      <th>Person</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bigTickets.map((purchase) => (
+                      <tr key={purchase.id}>
+                        <td>{formatDateLabel(new Date(purchase.purchased_at))}</td>
+                        <td>{teamNameById.get(purchase.team_id || '') || '—'}</td>
+                        <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
+                        <td>{purchase.person_name || '—'}</td>
+                        <td style={{ fontWeight: 700 }}>{usd(purchase.amount_cents)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </details>
+
+        {/* Recent purchases */}
+        <details className="th-section">
+          <summary>
+            <span className="th-sec-label">Recent purchases</span>
+            <span className="th-sec-preview">
+              {recentPurchases[0]
+                ? `Latest: ${recentPurchases[0].description || 'Untitled'} (${usd(recentPurchases[0].amount_cents)})`
+                : 'Nothing logged this cycle yet'}
+            </span>
+            <span className="th-sec-count">{cyclePurchases.length}</span>
+          </summary>
+          <div className="th-body">
+            <div className="th-block-head">
+              <h3>Last 10 purchases</h3>
+              <Link href="/dashboard/expenses" className="th-link">
+                Full expense log →
+              </Link>
+            </div>
+            {recentPurchases.length === 0 ? (
+              <p className="empty-note">No purchases logged this cycle yet.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Team</th>
+                      <th>Item</th>
+                      <th>Person</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentPurchases.map((purchase) => (
+                      <tr key={purchase.id}>
+                        <td>{formatDateLabel(new Date(purchase.purchased_at))}</td>
+                        <td>{teamNameById.get(purchase.team_id || '') || '—'}</td>
+                        <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
+                        <td>{purchase.person_name || '—'}</td>
+                        <td>{usd(purchase.amount_cents)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </details>
+
+        {/* Summer spending */}
+        {summerSpend.teams.length > 0 ? (
+          <details className="th-section">
+            <summary>
+              <span className="th-sec-label">Summer spending</span>
+              <span className="th-sec-preview">
+                {usd(summerSpend.totalRemainingCents)} remaining of {usd(summerSpend.totalPlannedCents)} planned
+              </span>
+              <span className="th-sec-count">{summerSpend.teams.length}</span>
+            </summary>
+            <div className="th-body">
+              <SummerSpendPanel summary={summerSpend} />
+            </div>
+          </details>
         ) : null}
 
+        {/* Log expenses */}
+        {isAdmin || isPresident || isVicePresident || isFinancialOfficer ? (
+          <details className="th-section">
+            <summary>
+              <span className="th-sec-label">Log an expense</span>
+              <span className="th-sec-preview">
+                {isFinancialOfficer
+                  ? 'Record a team purchase'
+                  : isPresident
+                    ? 'Record a leadership or team purchase'
+                    : 'Record a leadership purchase'}
+              </span>
+              <span className="th-sec-count">{''}</span>
+            </summary>
+            <div className="th-body">
+              {isAdmin || isPresident || isVicePresident ? (
+                <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} />
+              ) : null}
+              {isPresident || isFinancialOfficer ? (
+                <TeamExpenseLogger
+                  teams={teams.map((teamRow) => ({ id: teamRow.id, name: teamRow.name }))}
+                  academicYear={academicYear}
+                  personName={me.full_name || ''}
+                />
+              ) : null}
+            </div>
+          </details>
+        ) : null}
+
+        {/* Visitors */}
         {isAdmin || isPresident || isVicePresident ? (
-          <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} />
+          <details className="th-section">
+            <summary>
+              <span className="th-sec-label">Visitors</span>
+              <span className="th-sec-preview">Generate a visitor agreement link</span>
+              <span className="th-sec-count">{''}</span>
+            </summary>
+            <div className="th-body">
+              <VisitorLinkGenerator />
+            </div>
+          </details>
         ) : null}
 
-        {isPresident || isFinancialOfficer ? (
-          <TeamExpenseLogger
-            teams={teams.map((team) => ({ id: team.id, name: team.name }))}
-            academicYear={academicYear}
-            personName={me.full_name || ''}
-          />
-        ) : null}
+        {/* Equipment */}
+        <details className="th-section">
+          <summary>
+            <span className="th-sec-label">Equipment</span>
+            <span className="th-sec-preview">
+              {allAssetViews.length > 0
+                ? `${allAssetViews.length} high value item${allAssetViews.length === 1 ? '' : 's'} on record`
+                : 'No high value equipment recorded'}
+            </span>
+            <span className="th-sec-count">{allAssetViews.length}</span>
+          </summary>
+          <div className="th-body">
+            <HighValueAssetPanel
+              teams={teams.map((teamRow) => ({ id: teamRow.id, name: teamRow.name }))}
+              canStewardLeadership={isAdmin || isPresident || isVicePresident}
+              loggedByName={me.full_name || ''}
+              initialAssets={allAssetViews}
+              showTeam
+              canManage={isAdmin}
+              canLog={isAdmin || isPresident || isVicePresident}
+              listTitle="High value equipment"
+            />
+          </div>
+        </details>
 
-        {isAdmin || isPresident || isVicePresident ? <VisitorLinkGenerator /> : null}
-
-        {summerSpend.teams.length > 0 ? <SummerSpendPanel summary={summerSpend} /> : null}
-
-        <section className="hq-admin-grid">
-          {(isAdmin ? adminCards : isPresident || isVicePresident ? presidentCards : financialOfficerCards).map((card) => (
-            <Link href={card.href} key={card.href} className="hq-admin-link">
-              <strong>{card.title}</strong>
-              <span>{card.description}</span>
-            </Link>
-          ))}
-        </section>
-
-        <HighValueAssetPanel
-          teams={teams.map((team) => ({ id: team.id, name: team.name }))}
-          canStewardLeadership={isAdmin || isPresident || isVicePresident}
-          loggedByName={me.full_name || ''}
-          initialAssets={allAssetViews}
-          showTeam
-          canManage={isAdmin}
-          canLog={isAdmin || isPresident || isVicePresident}
-          listTitle="High value equipment"
-        />
+        {/* Navigate */}
+        <details className="th-section">
+          <summary>
+            <span className="th-sec-label">Navigate</span>
+            <span className="th-sec-preview">Every destination in your portal</span>
+            <span className="th-sec-count">{navCards.length}</span>
+          </summary>
+          <div className="th-body">
+            <div className="table-wrap">
+              <table>
+                <tbody>
+                  {navCards.map((card) => (
+                    <tr key={card.href}>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <Link href={card.href} className="th-link">
+                          {card.title} →
+                        </Link>
+                      </td>
+                      <td>{card.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </details>
       </div>
     );
   }

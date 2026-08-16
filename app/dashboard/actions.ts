@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { headers } from 'next/headers';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -151,13 +152,29 @@ function revalidatePaths(paths: string[]) {
   }
 }
 
+// Queue rebuilds are expensive full-table sweeps across four notification
+// queues. Run them AFTER the response is sent (next/server after) so the
+// user's click never waits on them — the daily cron also re-syncs, so nothing
+// is lost if a background sync fails.
 async function syncQueueAndRevalidate(paths: string[]) {
-  await syncNotificationQueue();
+  after(async () => {
+    try {
+      await syncNotificationQueue();
+    } catch (error) {
+      console.error('Background notification queue sync failed:', error);
+    }
+  });
   revalidatePaths(paths);
 }
 
 async function syncInviteQueueAndRevalidate(paths: string[]) {
-  await syncInviteQueue();
+  after(async () => {
+    try {
+      await syncInviteQueue();
+    } catch (error) {
+      console.error('Background invite queue sync failed:', error);
+    }
+  });
   revalidatePaths(paths);
 }
 

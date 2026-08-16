@@ -153,24 +153,6 @@ export default async function FinancesPage({
   const clubBudget = (clubBudgetData || { academic_year: cycle, total_budget_cents: 0 }) as ClubBudget;
   const purchases = (purchasesData || []) as PurchaseLog[];
   const filteredPurchases = (filteredPurchasesData || []) as PurchaseLog[];
-  const { data: rosterMembersData } = validSelectedTeamId !== 'all'
-    ? await admin.from('team_roster_members').select('id').eq('team_id', validSelectedTeamId)
-    : { data: [] };
-  const { data: selectedTeamPurchasesData } = validSelectedTeamId !== 'all'
-    ? await admin
-        .from('purchase_logs')
-        .select('id, team_id, description, amount_cents, purchased_at, person_name, payment_method, category')
-        .eq('team_id', validSelectedTeamId)
-        .order('purchased_at', { ascending: false })
-        .limit(25)
-    : { data: [] };
-  const { data: teamMembershipsData } = validSelectedTeamId !== 'all'
-    ? await admin
-        .from('team_memberships')
-        .select('id')
-        .eq('team_id', validSelectedTeamId)
-        .eq('is_active', true)
-    : { data: [] };
   // Full purchase rows backing the sortable ledger below the overview panel.
   // Mirrors the active team + range filters, newest first, uncapped (bounded
   // only by a high safety limit).
@@ -187,7 +169,29 @@ export default async function FinancesPage({
   } else if (selectedRange === 'last_90_days') {
     ledgerQuery.gte('purchased_at', daysAgoIso(90));
   }
-  const { data: ledgerData } = await ledgerQuery;
+  // These four queries are independent — one round-trip, not four.
+  const [{ data: rosterMembersData }, { data: selectedTeamPurchasesData }, { data: teamMembershipsData }, { data: ledgerData }] =
+    await Promise.all([
+      validSelectedTeamId !== 'all'
+        ? admin.from('team_roster_members').select('id').eq('team_id', validSelectedTeamId)
+        : Promise.resolve({ data: [] }),
+      validSelectedTeamId !== 'all'
+        ? admin
+            .from('purchase_logs')
+            .select('id, team_id, description, amount_cents, purchased_at, person_name, payment_method, category')
+            .eq('team_id', validSelectedTeamId)
+            .order('purchased_at', { ascending: false })
+            .limit(25)
+        : Promise.resolve({ data: [] }),
+      validSelectedTeamId !== 'all'
+        ? admin
+            .from('team_memberships')
+            .select('id')
+            .eq('team_id', validSelectedTeamId)
+            .eq('is_active', true)
+        : Promise.resolve({ data: [] }),
+      ledgerQuery
+    ]);
   const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
   const ledgerRows: PurchaseLedgerRow[] = ((ledgerData || []) as Array<{
     id: string;

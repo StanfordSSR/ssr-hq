@@ -2835,7 +2835,9 @@ tr:last-child td {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1px;
-  background: var(--th-ink);
+  /* Hairline grid lines so a partially-filled last row reads as a blank
+     slot, not a black block. The heavy frame stays on the outer border. */
+  background: var(--th-hairline);
   border: 1px solid var(--th-ink);
   border-top: none;
 }
