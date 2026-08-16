@@ -7954,3 +7954,20 @@ tr:last-child td {
   border-color: #8c1515;
   color: #8c1515;
 }
+
+/* Scoreboard cells double as links: the number is the door to its page. */
+a.th-stat {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+a.th-stat:hover {
+  background: var(--th-fog);
+}
+
+a.th-stat:focus-visible {
+  outline: 2px solid var(--th-cardinal);
+  outline-offset: -2px;
+}

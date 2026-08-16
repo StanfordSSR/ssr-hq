@@ -390,48 +390,48 @@ export default async function DashboardPage() {
 
         {/* Scoreboard */}
         <div className="th-stats">
-          <div className="th-stat">
+          <Link href="/dashboard/finances" className="th-stat">
             <span>Club budget</span>
             <strong>{usd(clubBudgetCents)}</strong>
-          </div>
-          <div className="th-stat">
+          </Link>
+          <Link href="/dashboard/expenses" className="th-stat">
             <span>Spent · {academicYear}</span>
             <strong>{usd(clubSpentCents)}</strong>
-          </div>
-          <div className="th-stat">
+          </Link>
+          <Link href="/dashboard/finances" className="th-stat">
             <span>Remaining</span>
             <strong className={clubBudgetCents - clubSpentCents < 0 ? 'th-bad' : undefined}>
               {usd(clubBudgetCents - clubSpentCents)}
             </strong>
-          </div>
-          <div className="th-stat">
+          </Link>
+          <Link href={isFinancialOfficer ? '/dashboard/finances' : '/dashboard/teams'} className="th-stat">
             <span>Teams</span>
             <strong>{teams.length}</strong>
-          </div>
-          <div className="th-stat">
+          </Link>
+          <Link href={isFinancialOfficer ? '/dashboard/expenses' : '/dashboard/members'} className="th-stat">
             <span>Members</span>
             <strong>{totalMembers}</strong>
-          </div>
-          <div className="th-stat">
+          </Link>
+          <Link href="/dashboard/reimbursements" className="th-stat">
             <span>Pending reimb.</span>
             <strong className={pendingReimbCount > 0 ? 'th-warn' : undefined}>{pendingReimbCount}</strong>
-          </div>
-          <div className="th-stat">
+          </Link>
+          <Link href="/dashboard/reimbursements" className="th-stat">
             <span>To file in Granted</span>
             <strong className={toFile.length > 0 ? 'th-warn' : undefined}>{toFile.length}</strong>
-          </div>
+          </Link>
           {showCardApprovalBanner ? (
-            <div className="th-stat">
+            <Link href="/dashboard/credit-card/approvals" className="th-stat">
               <span>Card approvals</span>
               <strong className={pendingCardCount > 0 ? 'th-warn' : undefined}>{pendingCardCount}</strong>
-            </div>
+            </Link>
           ) : null}
-          <div className="th-stat">
+          <Link href="/dashboard/expenses" className="th-stat">
             <span>Receipts missing</span>
             <strong className={overdueReceiptCount > 0 ? 'th-bad' : missingReceipts.length > 0 ? 'th-warn' : undefined}>
               {missingReceipts.length}
             </strong>
-          </div>
+          </Link>
         </div>
 
         {/* Needs attention */}
@@ -1099,42 +1099,42 @@ export default async function DashboardPage() {
 
       {/* Scoreboard */}
       <div className="th-stats">
-        <div className="th-stat">
+        <Link href={`/dashboard/teams/${team.id}`} className="th-stat">
           <span>Annual budget</span>
           <strong>{usd(annualBudget)}</strong>
-        </div>
-        <div className="th-stat">
+        </Link>
+        <Link href="/dashboard/purchases" className="th-stat">
           <span>Spent</span>
           <strong>{usd(spent)}</strong>
-        </div>
-        <div className="th-stat">
+        </Link>
+        <Link href={`/dashboard/teams/${team.id}`} className="th-stat">
           <span>Remaining</span>
           <strong className={annualBudget - spent < 0 ? 'th-bad' : undefined}>{usd(annualBudget - spent)}</strong>
-        </div>
-        <div className="th-stat">
+        </Link>
+        <Link href={`/dashboard/teams/${team.id}`} className="th-stat">
           <span>Utilization</span>
           <strong>{spentPercent}%</strong>
           <div className="th-stat-bar">
             <div style={{ width: `${spentPercent}%` }} />
           </div>
-        </div>
-        <div className="th-stat">
+        </Link>
+        <Link href="/dashboard/reimbursements" className="th-stat">
           <span>Pending reimb.</span>
           <strong className={pendingReimbursements.length > 0 ? 'th-warn' : undefined}>
             {pendingReimbursements.length}
           </strong>
-        </div>
-        <div className="th-stat">
+        </Link>
+        <Link href="/dashboard/purchases" className="th-stat">
           <span>Receipts owed</span>
           <strong className={overdueReceiptCount > 0 ? 'th-bad' : pendingReceipts.length > 0 ? 'th-warn' : undefined}>
             {pendingReceipts.length}
           </strong>
-        </div>
-        <div className="th-stat">
+        </Link>
+        <Link href="/dashboard/members" className="th-stat">
           <span>Members</span>
           <strong>{memberCount}</strong>
-        </div>
-        <div className="th-stat th-stat-text">
+        </Link>
+        <Link href="/dashboard/reports" className="th-stat th-stat-text">
           <span>Next report</span>
           <strong className={reportDue ? 'th-bad' : undefined}>
             {reportRecord?.status === 'submitted'
@@ -1143,7 +1143,7 @@ export default async function DashboardPage() {
                 ? `${reportState.countdownLabel} left`
                 : `Opens in ${reportState.countdownLabel}`}
           </strong>
-        </div>
+        </Link>
       </div>
 
       {/* Needs attention */}
