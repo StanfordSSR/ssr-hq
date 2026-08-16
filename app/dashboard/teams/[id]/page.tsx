@@ -8,7 +8,6 @@ import { getReceiptTaskState } from '@/lib/purchases';
 import { getSummerSpendSummary } from '@/lib/summer-spend';
 import { getHighValueAssetsForTeams, storageLocationLabel } from '@/lib/high-value-assets';
 import { EOY_REPORT_TITLE } from '@/lib/eoy-report';
-import { HubTabs } from '@/components/hub-tabs';
 import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
@@ -58,9 +57,9 @@ function money(cents: number) {
   return `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
-// One page per team: everything about a single team — budget, people, money,
-// reports, equipment — as tabs, instead of scattered across the portal. Purely
-// additive: every panel here also still exists in its original home.
+// One page per team, no tabs: a cardinal masthead, a scoreboard of the numbers
+// that matter, then every domain as an expandable section on the same page.
+// Purely additive: every panel here also still exists in its original home.
 export default async function TeamHubPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: teamId } = await params;
   const { user, profile, currentRole } = await getViewerContext();
@@ -205,8 +204,10 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
         receiptNotNeeded: p.receipt_not_needed
       })
     }));
+  const overdueReceipts = receiptsOwed.filter((p) => p.state.overdue).length;
 
   const pendingReimbursements = reimbursements.filter((r) => r.status === 'pending');
+  const attentionCount = pendingReimbursements.length + receiptsOwed.length;
 
   const ledgerRows: PurchaseLedgerRow[] = purchases.map((p) => ({
     id: p.id,
@@ -232,363 +233,395 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
 
   const isAdmin = currentRole === 'admin';
   const canLogAssets = isAdmin || currentRole === 'president' || currentRole === 'vice_president' || isLeadOfTeam;
+  const canManagePeople = isOfficer && currentRole !== 'financial_officer';
 
-  const overviewTab = (
-    <div className="hq-lead-block">
-      <div className="hq-finance-metric-grid" style={{ marginTop: 16 }}>
-        <div className="hq-finance-metric-card">
+  const totalPeople = leads.length + portalMembers.length + roster.length;
+  const leadNames = leads.map((lead) => lead.full_name).filter(Boolean).join(', ');
+  const latestReport = reports[0] || null;
+  const latestEoy = eoyReports[0] || null;
+  const cyclePurchaseCount = purchases.filter((p) => p.academic_year === cycle).length;
+
+  return (
+    <div className="th-page">
+      {/* Masthead */}
+      <header className="th-mast">
+        <div className="th-mast-main">
+          <p className="th-mast-eyebrow">Stanford Student Robotics · {cycle}</p>
+          <div className="th-mast-title">
+            {team.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={team.logo_url} alt="" className="th-mast-logo" />
+            ) : (
+              <span className="th-mast-logo th-mast-logo-fallback">{team.name.slice(0, 1)}</span>
+            )}
+            <h1>{team.name}</h1>
+          </div>
+          {team.description ? <p className="th-mast-desc">{team.description}</p> : null}
+        </div>
+        <div className="th-mast-side">
+          <span className={`th-status ${team.is_active ? 'th-status-live' : 'th-status-off'}`}>
+            {team.is_active ? 'Active' : 'Inactive'}
+          </span>
+          {isOfficer && currentRole !== 'financial_officer' ? (
+            <Link href="/dashboard/teams" className="th-mast-link">
+              ← All teams
+            </Link>
+          ) : null}
+        </div>
+      </header>
+
+      {/* Scoreboard */}
+      <div className="th-stats">
+        <div className="th-stat">
           <span>Annual budget</span>
           <strong>{money(annualBudgetCents)}</strong>
         </div>
-        <div className="hq-finance-metric-card">
+        <div className="th-stat">
           <span>Spent · {cycle}</span>
           <strong>{money(cycleSpentCents)}</strong>
         </div>
-        <div className="hq-finance-metric-card">
+        <div className="th-stat">
           <span>Remaining</span>
-          <strong style={remainingCents < 0 ? { color: '#8c1515' } : undefined}>{money(remainingCents)}</strong>
+          <strong className={remainingCents < 0 ? 'th-bad' : undefined}>{money(remainingCents)}</strong>
         </div>
-        <div className="hq-finance-metric-card">
+        <div className="th-stat">
           <span>Utilization</span>
           <strong>{utilizationPercent}%</strong>
-        </div>
-        <div className="hq-finance-metric-card">
-          <span>People</span>
-          <strong>{leads.length + portalMembers.length + roster.length}</strong>
-        </div>
-        <div className="hq-finance-metric-card">
-          <span>Pending reimbursements</span>
-          <strong>{pendingReimbursements.length}</strong>
-        </div>
-        <div className="hq-finance-metric-card">
-          <span>Receipts owed</span>
-          <strong style={receiptsOwed.some((r) => r.state.overdue) ? { color: '#8c1515' } : undefined}>
-            {receiptsOwed.length}
-          </strong>
+          <div className="th-stat-bar">
+            <div style={{ width: `${utilizationPercent}%` }} />
+          </div>
         </div>
         {summerRow ? (
-          <div className="hq-finance-metric-card">
+          <div className="th-stat">
             <span>Summer remaining</span>
-            <strong style={summerRow.remainingCents < 0 ? { color: '#8c1515' } : undefined}>
+            <strong className={summerRow.remainingCents < 0 ? 'th-bad' : undefined}>
               {money(summerRow.remainingCents)}
             </strong>
           </div>
         ) : null}
+        <div className="th-stat">
+          <span>People</span>
+          <strong>{totalPeople}</strong>
+        </div>
+        <div className="th-stat">
+          <span>Pending reimb.</span>
+          <strong className={pendingReimbursements.length > 0 ? 'th-warn' : undefined}>
+            {pendingReimbursements.length}
+          </strong>
+        </div>
+        <div className="th-stat">
+          <span>Receipts owed</span>
+          <strong className={overdueReceipts > 0 ? 'th-bad' : receiptsOwed.length > 0 ? 'th-warn' : undefined}>
+            {receiptsOwed.length}
+          </strong>
+        </div>
       </div>
 
-      <div className="hq-budget-row-meta" style={{ marginTop: 18, maxWidth: 480 }}>
-        <div className="hq-budget-meta-line">
-          <span>Budget used</span>
-          <strong>{utilizationPercent}%</strong>
-        </div>
-        <div className="hq-budget-progress">
-          <div className="hq-budget-progress-fill" style={{ width: `${utilizationPercent}%` }} />
-        </div>
-      </div>
-
-      <section className="hq-lead-block" style={{ marginTop: 24 }}>
-        <div className="hq-block-head">
-          <h3>Recent purchases</h3>
-        </div>
-        {purchases.length === 0 ? (
-          <p className="empty-note">No purchases logged yet.</p>
-        ) : (
-          <div className="hq-summary-list">
-            {purchases.slice(0, 5).map((p) => (
-              <div key={p.id} className="hq-summary-row">
-                <span>{formatDateLabel(new Date(p.purchased_at))}</span>
-                <strong>{p.description || 'Untitled purchase'}</strong>
-                <strong>{money(p.amount_cents)}</strong>
+      {/* Needs attention — only when something actually needs it; open by default */}
+      {attentionCount > 0 ? (
+        <details className="th-section th-section-alert" open>
+          <summary>
+            <span className="th-sec-label">Needs attention</span>
+            <span className="th-sec-preview">
+              {pendingReimbursements.length > 0
+                ? `${pendingReimbursements.length} reimbursement${pendingReimbursements.length === 1 ? '' : 's'} waiting`
+                : ''}
+              {pendingReimbursements.length > 0 && receiptsOwed.length > 0 ? ' · ' : ''}
+              {receiptsOwed.length > 0
+                ? `${receiptsOwed.length} receipt${receiptsOwed.length === 1 ? '' : 's'} owed${overdueReceipts > 0 ? ` (${overdueReceipts} overdue)` : ''}`
+                : ''}
+            </span>
+            <span className="th-sec-count">{attentionCount}</span>
+          </summary>
+          <div className="th-body">
+            {pendingReimbursements.length > 0 ? (
+              <div className="th-block">
+                <div className="th-block-head">
+                  <h3>Pending reimbursements</h3>
+                  <Link href="/dashboard/reimbursements" className="th-link">
+                    Decide →
+                  </Link>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Submitted</th>
+                        <th>Person</th>
+                        <th>Item</th>
+                        <th>Amount</th>
+                        <th>Granted #</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingReimbursements.map((r) => (
+                        <tr key={r.id}>
+                          <td>{formatDateLabel(new Date(r.created_at))}</td>
+                          <td>{r.submitter_name}</td>
+                          <td style={{ fontWeight: 700 }}>{r.item_name}</td>
+                          <td>
+                            {money(r.amount_cents)}
+                            {r.requires_signature ? <span className="hq-inline-note"> · needs signature</span> : null}
+                          </td>
+                          <td>{r.reimbursement_number}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
+            ) : null}
 
-  const peopleTab = (
-    <div className="hq-lead-block">
-      <section style={{ marginTop: 16 }}>
-        <div className="hq-block-head">
-          <h3>Leads ({leads.length})</h3>
-          {isOfficer && currentRole !== 'financial_officer' ? (
-            <Link href="/dashboard/teams" className="hq-inline-link">
-              Manage leads
-            </Link>
-          ) : null}
-        </div>
-        {leads.length === 0 ? (
-          <p className="empty-note">No active leads assigned.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leads.map((lead) => (
-                  <tr key={lead.id}>
-                    <td style={{ fontWeight: 700 }}>{lead.full_name || '—'}</td>
-                    <td>{lead.email || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {receiptsOwed.length > 0 ? (
+              <div className="th-block">
+                <div className="th-block-head">
+                  <h3>Receipts owed</h3>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Status</th>
+                        <th>Purchase</th>
+                        <th>Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {receiptsOwed.map((p) => (
+                        <tr key={p.id}>
+                          <td className={p.state.overdue ? 'th-bad' : undefined} style={{ fontWeight: 700 }}>
+                            {p.state.overdue ? 'Overdue' : 'Pending'}
+                          </td>
+                          <td>{p.description || 'Untitled purchase'}</td>
+                          <td>{formatDateLabel(new Date(p.purchased_at))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </div>
-        )}
-      </section>
-
-      {portalMembers.length > 0 ? (
-        <section style={{ marginTop: 22 }}>
-          <div className="hq-block-head">
-            <h3>Portal members ({portalMembers.length})</h3>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                </tr>
-              </thead>
-              <tbody>
-                {portalMembers.map((member) => (
-                  <tr key={member.id}>
-                    <td style={{ fontWeight: 700 }}>{member.full_name || '—'}</td>
-                    <td>{member.email || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        </details>
       ) : null}
 
-      <section style={{ marginTop: 22 }}>
-        <div className="hq-block-head">
-          <h3>Roster ({roster.length})</h3>
-          {isLeadOfTeam || (isOfficer && currentRole !== 'financial_officer') ? (
-            <Link href="/dashboard/members" className="hq-inline-link">
-              Manage roster
-            </Link>
-          ) : null}
+      {/* Purchases */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">Purchases</span>
+          <span className="th-sec-preview">
+            {cyclePurchaseCount} this cycle · {money(cycleSpentCents)} spent
+            {purchases[0]
+              ? ` · latest: ${purchases[0].description || 'Untitled'} (${money(purchases[0].amount_cents)})`
+              : ''}
+          </span>
+          <span className="th-sec-count">{purchases.length}</span>
+        </summary>
+        <div className="th-body">
+          <PurchaseLedger rows={ledgerRows} showTeam={false} title={`${team.name} purchases`} />
         </div>
-        {roster.length === 0 ? (
-          <p className="empty-note">No roster members recorded yet.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Stanford email</th>
-                  <th>Joined</th>
-                </tr>
-              </thead>
-              <tbody>
-                {roster.map((member) => (
-                  <tr key={member.id}>
-                    <td style={{ fontWeight: 700 }}>{member.full_name}</td>
-                    <td>{member.stanford_email}</td>
-                    <td>
-                      {new Date(member.joined_year, member.joined_month - 1).toLocaleDateString('en-US', {
-                        month: 'short',
-                        year: 'numeric'
-                      })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
-  );
+      </details>
 
-  const moneyTab = (
-    <div className="hq-lead-block">
-      <section style={{ marginTop: 16 }}>
-        <div className="hq-block-head">
-          <h3>Pending reimbursements ({pendingReimbursements.length})</h3>
-          <Link href="/dashboard/reimbursements" className="hq-inline-link">
-            Open reimbursements
-          </Link>
-        </div>
-        {pendingReimbursements.length === 0 ? (
-          <p className="empty-note">Nothing waiting for a decision.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Submitted</th>
-                  <th>Person</th>
-                  <th>Item</th>
-                  <th>Amount</th>
-                  <th>Granted #</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingReimbursements.map((r) => (
-                  <tr key={r.id}>
-                    <td>{formatDateLabel(new Date(r.created_at))}</td>
-                    <td>{r.submitter_name}</td>
-                    <td style={{ fontWeight: 700 }}>{r.item_name}</td>
-                    <td>
-                      {money(r.amount_cents)}
-                      {r.requires_signature ? <span className="hq-inline-note"> · needs signature</span> : null}
-                    </td>
-                    <td>{r.reimbursement_number}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {receiptsOwed.length > 0 ? (
-        <section style={{ marginTop: 22 }}>
-          <div className="hq-block-head">
-            <h3>Receipts owed ({receiptsOwed.length})</h3>
-          </div>
-          <div className="hq-summary-list">
-            {receiptsOwed.map((p) => (
-              <div key={p.id} className="hq-summary-row">
-                <span style={p.state.overdue ? { color: '#8c1515' } : undefined}>
-                  {p.state.overdue ? 'Overdue' : 'Pending'}
-                </span>
-                <strong>{p.description || 'Untitled purchase'}</strong>
-                <strong>{formatDateLabel(new Date(p.purchased_at))}</strong>
+      {/* People */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">People</span>
+          <span className="th-sec-preview">{leadNames ? `Led by ${leadNames}` : 'No active leads'}</span>
+          <span className="th-sec-count">{totalPeople}</span>
+        </summary>
+        <div className="th-body">
+          <div className="th-cols">
+            <div className="th-block">
+              <div className="th-block-head">
+                <h3>Leads ({leads.length})</h3>
+                {canManagePeople ? (
+                  <Link href="/dashboard/teams" className="th-link">
+                    Manage →
+                  </Link>
+                ) : null}
               </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
+              {leads.length === 0 ? (
+                <p className="empty-note">No active leads assigned.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <tbody>
+                      {leads.map((lead) => (
+                        <tr key={lead.id}>
+                          <td style={{ fontWeight: 700 }}>{lead.full_name || '—'}</td>
+                          <td>{lead.email || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
-      <div style={{ marginTop: 22 }}>
-        <PurchaseLedger rows={ledgerRows} showTeam={false} title={`${team.name} purchases`} />
-      </div>
-    </div>
-  );
+              {portalMembers.length > 0 ? (
+                <>
+                  <div className="th-block-head" style={{ marginTop: 18 }}>
+                    <h3>Portal members ({portalMembers.length})</h3>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <tbody>
+                        {portalMembers.map((member) => (
+                          <tr key={member.id}>
+                            <td style={{ fontWeight: 700 }}>{member.full_name || '—'}</td>
+                            <td>{member.email || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : null}
+            </div>
 
-  const reportsTab = (
-    <div className="hq-lead-block">
-      <section style={{ marginTop: 16 }}>
-        <div className="hq-block-head">
-          <h3>Quarterly reports</h3>
-          <Link href="/dashboard/reports" className="hq-inline-link">
-            Open reports
-          </Link>
-        </div>
-        {reports.length === 0 ? (
-          <p className="empty-note">No quarterly reports yet.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Cycle</th>
-                  <th>Quarter</th>
-                  <th>Status</th>
-                  <th>Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports.map((report) => (
-                  <tr key={report.id}>
-                    <td>{report.academic_year}</td>
-                    <td style={{ fontWeight: 700 }}>{report.quarter}</td>
-                    <td>{report.status === 'submitted' ? 'Submitted' : 'Draft'}</td>
-                    <td>{report.submitted_at ? formatDateLabel(new Date(report.submitted_at)) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section style={{ marginTop: 22 }}>
-        <div className="hq-block-head">
-          <h3>{EOY_REPORT_TITLE}</h3>
-          <Link href="/dashboard/reports/eoy" className="hq-inline-link">
-            Open year-end report
-          </Link>
-        </div>
-        {eoyReports.length === 0 ? (
-          <p className="empty-note">No year-end reports yet.</p>
-        ) : (
-          <div className="hq-summary-list">
-            {eoyReports.map((report) => (
-              <div key={report.id} className="hq-summary-row">
-                <span>{report.academic_year}</span>
-                <strong>{report.status === 'submitted' ? 'Submitted' : 'Draft'}</strong>
+            <div className="th-block">
+              <div className="th-block-head">
+                <h3>Roster ({roster.length})</h3>
+                {isLeadOfTeam || canManagePeople ? (
+                  <Link href="/dashboard/members" className="th-link">
+                    Manage →
+                  </Link>
+                ) : null}
               </div>
-            ))}
+              {roster.length === 0 ? (
+                <p className="empty-note">No roster members recorded yet.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Joined</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {roster.map((member) => (
+                        <tr key={member.id}>
+                          <td style={{ fontWeight: 700 }}>{member.full_name}</td>
+                          <td>{member.stanford_email}</td>
+                          <td>
+                            {new Date(member.joined_year, member.joined_month - 1).toLocaleDateString('en-US', {
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </section>
-    </div>
-  );
-
-  const equipmentTab = (
-    <div className="hq-lead-block" style={{ marginTop: 16 }}>
-      <HighValueAssetPanel
-        teams={[{ id: team.id, name: team.name }]}
-        loggedByName={profile.full_name || ''}
-        initialAssets={assetViews}
-        canManage={isAdmin}
-        canLog={canLogAssets}
-        listTitle={`${team.name} high value equipment`}
-      />
-    </div>
-  );
-
-  return (
-    <div className="hq-page">
-      <section className="hq-page-head">
-        <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">Team</p>
-          <div className="hq-team-title-row">
-            {team.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={team.logo_url} alt="" className="hq-team-logo hq-team-logo-large" />
-            ) : (
-              <div className="hq-team-logo hq-team-logo-large hq-team-logo-fallback">{team.name.slice(0, 1)}</div>
-            )}
-            <h1 className="hq-page-title">{team.name}</h1>
-          </div>
-          <p className="hq-subtitle">
-            {team.description || 'Budget, people, purchases, reports, and equipment for this team — all in one place.'}
-          </p>
         </div>
-        {isOfficer && currentRole !== 'financial_officer' ? (
-          <div className="hq-page-head-action">
-            <Link href="/dashboard/teams" className="button-secondary">
-              All teams
-            </Link>
-          </div>
-        ) : null}
-      </section>
+      </details>
 
-      <section className="hq-panel hq-surface-muted">
-        <HubTabs
-          initialTab="overview"
-          tabs={[
-            { id: 'overview', label: 'Overview', content: overviewTab },
-            { id: 'people', label: 'People', content: peopleTab },
-            { id: 'money', label: 'Money', content: moneyTab },
-            { id: 'reports', label: 'Reports', content: reportsTab },
-            { id: 'equipment', label: 'Equipment', content: equipmentTab }
-          ]}
-        />
-      </section>
+      {/* Reports */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">Reports</span>
+          <span className="th-sec-preview">
+            {latestReport
+              ? `${latestReport.quarter} ${latestReport.academic_year}: ${latestReport.status === 'submitted' ? 'submitted' : 'draft'}`
+              : 'No quarterly reports yet'}
+            {latestEoy ? ` · Year-end ${latestEoy.academic_year}: ${latestEoy.status}` : ''}
+          </span>
+          <span className="th-sec-count">{reports.length + eoyReports.length}</span>
+        </summary>
+        <div className="th-body">
+          <div className="th-cols">
+            <div className="th-block">
+              <div className="th-block-head">
+                <h3>Quarterly</h3>
+                <Link href="/dashboard/reports" className="th-link">
+                  Open →
+                </Link>
+              </div>
+              {reports.length === 0 ? (
+                <p className="empty-note">No quarterly reports yet.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cycle</th>
+                        <th>Quarter</th>
+                        <th>Status</th>
+                        <th>Submitted</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reports.map((report) => (
+                        <tr key={report.id}>
+                          <td>{report.academic_year}</td>
+                          <td style={{ fontWeight: 700 }}>{report.quarter}</td>
+                          <td>{report.status === 'submitted' ? 'Submitted' : 'Draft'}</td>
+                          <td>{report.submitted_at ? formatDateLabel(new Date(report.submitted_at)) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="th-block">
+              <div className="th-block-head">
+                <h3>{EOY_REPORT_TITLE}</h3>
+                <Link href="/dashboard/reports/eoy" className="th-link">
+                  Open →
+                </Link>
+              </div>
+              {eoyReports.length === 0 ? (
+                <p className="empty-note">No year-end reports yet.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <tbody>
+                      {eoyReports.map((report) => (
+                        <tr key={report.id}>
+                          <td>{report.academic_year}</td>
+                          <td style={{ fontWeight: 700 }}>
+                            {report.status === 'submitted' ? 'Submitted' : 'Draft'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </details>
+
+      {/* Equipment */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">Equipment</span>
+          <span className="th-sec-preview">
+            {assets.length > 0
+              ? `${assets.length} high value item${assets.length === 1 ? '' : 's'} on record`
+              : 'No high value equipment recorded'}
+          </span>
+          <span className="th-sec-count">{assets.length}</span>
+        </summary>
+        <div className="th-body">
+          <HighValueAssetPanel
+            teams={[{ id: team.id, name: team.name }]}
+            loggedByName={profile.full_name || ''}
+            initialAssets={assetViews}
+            canManage={isAdmin}
+            canLog={canLogAssets}
+            listTitle={`${team.name} high value equipment`}
+          />
+        </div>
+      </details>
     </div>
   );
 }

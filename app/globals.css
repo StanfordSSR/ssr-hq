@@ -2704,6 +2704,351 @@ tr:last-child td {
   text-decoration: underline;
 }
 
+/* ====================================================================
+   Team hub — Stanford collegiate system: cardinal, black rules, square
+   corners, one continuous page with expandable sections. Scoped to
+   .th-page so it can be rolled out surface by surface.
+   ==================================================================== */
+
+.th-page {
+  --th-cardinal: #8c1515;
+  --th-cardinal-dark: #650f0f;
+  --th-ink: #1a1414;
+  --th-paper: #ffffff;
+  --th-fog: #f7f4f2;
+  --th-hairline: #d9d0cd;
+  --th-muted: #6e6260;
+  display: block;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 8px 0 64px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Square everything inside the hub, including reused components. */
+.th-page,
+.th-page * {
+  border-radius: 0 !important;
+}
+
+/* --- masthead --- */
+.th-mast {
+  background: var(--th-cardinal);
+  color: #fff;
+  padding: 30px 34px 26px;
+  border-bottom: 5px solid var(--th-ink);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.th-mast-eyebrow {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #eecfcf;
+}
+
+.th-mast-title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.th-mast-title h1 {
+  margin: 0;
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
+  font-size: clamp(2rem, 4.5vw, 3rem);
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.th-mast-logo {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  background: #fff;
+  border: 3px solid #fff;
+  flex-shrink: 0;
+}
+
+.th-mast-logo-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--th-cardinal);
+}
+
+.th-mast-desc {
+  margin: 12px 0 0;
+  max-width: 60ch;
+  color: #f2dfdf;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.th-mast-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.th-status {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border: 1.5px solid #fff;
+  color: #fff;
+}
+
+.th-status-off {
+  opacity: 0.65;
+}
+
+.th-mast-link {
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.55);
+  padding-bottom: 1px;
+}
+
+.th-mast-link:hover {
+  border-bottom-color: #fff;
+}
+
+/* --- scoreboard --- */
+.th-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--th-ink);
+  border: 1px solid var(--th-ink);
+  border-top: none;
+}
+
+.th-stat {
+  background: var(--th-paper);
+  padding: 16px 18px 14px;
+  min-width: 0;
+}
+
+.th-stat span {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--th-muted);
+  margin-bottom: 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.th-stat strong {
+  display: block;
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--th-ink);
+}
+
+.th-bad {
+  color: var(--th-cardinal) !important;
+}
+
+.th-warn {
+  color: #8a5a00 !important;
+}
+
+.th-stat-bar {
+  margin-top: 9px;
+  height: 5px;
+  background: #e8e1de;
+}
+
+.th-stat-bar > div {
+  height: 100%;
+  background: var(--th-cardinal);
+}
+
+/* --- expandable sections --- */
+.th-section {
+  border: 1px solid var(--th-ink);
+  border-top: none;
+  background: var(--th-paper);
+}
+
+.th-section summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 18px 22px;
+  user-select: none;
+}
+
+.th-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.th-section summary:hover {
+  background: var(--th-fog);
+}
+
+.th-section summary:focus-visible {
+  outline: 2px solid var(--th-cardinal);
+  outline-offset: -2px;
+}
+
+.th-sec-label {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--th-ink);
+  white-space: nowrap;
+}
+
+.th-sec-preview {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--th-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.th-sec-count {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--th-cardinal);
+  min-width: 26px;
+  text-align: right;
+}
+
+/* plus/minus indicator */
+.th-section summary::after {
+  content: '+';
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--th-cardinal);
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.th-section[open] > summary::after {
+  content: '−';
+}
+
+.th-section[open] > summary {
+  border-bottom: 1px solid var(--th-hairline);
+}
+
+.th-section-alert {
+  border-left: 6px solid var(--th-cardinal);
+}
+
+.th-body {
+  padding: 20px 22px 26px;
+}
+
+.th-body > * + * {
+  margin-top: 20px;
+}
+
+.th-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.th-block-head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--th-ink);
+}
+
+.th-block + .th-block {
+  margin-top: 22px;
+}
+
+.th-link {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--th-cardinal);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.th-link:hover {
+  text-decoration: underline;
+}
+
+.th-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 26px;
+  align-items: start;
+}
+
+/* tighten reused tables inside the hub */
+.th-page .table-wrap {
+  border: 1px solid var(--th-hairline);
+}
+
+.th-page table {
+  font-size: 0.88rem;
+}
+
+@media (max-width: 860px) {
+  .th-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .th-mast {
+    padding: 22px 20px 20px;
+  }
+
+  .th-section summary {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .th-sec-preview {
+    order: 3;
+    flex-basis: 100%;
+    white-space: normal;
+  }
+}
+
 /* Left column of the finances layout: overview panel with the purchase ledger
    stacked beneath it. */
 .hq-finance-column {
