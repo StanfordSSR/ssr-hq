@@ -151,53 +151,176 @@ export default async function ReimbursementsPage() {
     (r) => r.status === 'rejected' || (r.status === 'approved' && r.finance_processed_at)
   );
 
+  const toFileTotalCents = approvedToFile.reduce((sum, r) => sum + r.amount_cents, 0);
+
   return (
-    <div className="hq-page">
-      <div className="hq-page-head">
-        <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">Finances</p>
-          <h1 className="hq-page-title">Reimbursements</h1>
-          <p className="hq-subtitle">
+    <div className="th-page">
+      {/* Masthead */}
+      <header className="th-mast">
+        <div className="th-mast-main">
+          <p className="th-mast-eyebrow">Finances</p>
+          <div className="th-mast-title">
+            <h1>Reimbursements</h1>
+          </div>
+          <p className="th-mast-desc">
             {isFinance
-              ? 'Member-submitted reimbursements approved by team leads. File the approved ones in the Stanford Granted portal using their R-codes, then mark them filed.'
+              ? 'Team leads approve; you file the approved ones in Stanford Granted and mark them done.'
               : 'Reimbursements your team members submitted. Approve or reject — approved purchases are logged to your budget.'}
           </p>
         </div>
+        {isFinance ? (
+          <div className="th-mast-side">
+            <a href={GRANTED_URL} target="_blank" rel="noreferrer" className="th-btn-light">
+              Open Granted ↗
+            </a>
+          </div>
+        ) : null}
+      </header>
+
+      {/* Scoreboard */}
+      <div className="th-stats">
+        {isFinance ? (
+          <div className="th-stat">
+            <span>Ready to file</span>
+            <strong className={approvedToFile.length > 0 ? 'th-warn' : undefined}>{approvedToFile.length}</strong>
+          </div>
+        ) : null}
+        {isFinance ? (
+          <div className="th-stat">
+            <span>Total to file</span>
+            <strong>{money(toFileTotalCents)}</strong>
+          </div>
+        ) : null}
+        <div className="th-stat">
+          <span>Pending approval</span>
+          <strong className={pending.length > 0 ? 'th-warn' : undefined}>{pending.length}</strong>
+        </div>
+        <div className="th-stat">
+          <span>Decided</span>
+          <strong>{history.length}</strong>
+        </div>
       </div>
 
+      {/* File in Granted — the FO loop, front and center */}
       {isFinance ? (
-        <section className="hq-panel hq-surface-muted">
-          <div className="hq-block-head">
-            <h2>Approved — ready for Granted ({approvedToFile.length})</h2>
+        <details className="th-section th-section-alert" open>
+          <summary>
+            <span className="th-sec-label">File in Granted</span>
+            <span className="th-sec-preview">
+              Copy the R-number → approve it in Granted → come back → mark filed. Rows drop off as you go.
+            </span>
+            <span className="th-sec-count">{approvedToFile.length}</span>
+          </summary>
+          <div className="th-body">
+            {approvedToFile.length === 0 ? (
+              <p className="empty-note">Nothing waiting to be filed.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Approved</th>
+                      <th>Team</th>
+                      <th>Person</th>
+                      <th>Item</th>
+                      <th>Amount</th>
+                      <th>Granted #</th>
+                      <th>Approved by</th>
+                      <th>Receipts</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {approvedToFile.map((r) => (
+                      <tr key={r.id}>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}
+                        </td>
+                        <td>{teamName.get(r.team_id) || '—'}</td>
+                        <td>{r.submitter_name}</td>
+                        <td style={{ fontWeight: 700 }}>
+                          {r.item_name}
+                          {purchaseTypeLabel(r) ? (
+                            <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>
+                              {purchaseTypeLabel(r)}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{money(r.amount_cents)}</td>
+                        <td>
+                          <CopyRNumber value={r.reimbursement_number} />
+                        </td>
+                        <td>
+                          {r.decided_by_profile_id ? deciderName.get(r.decided_by_profile_id) || '—' : '—'}
+                          {r.approval_kind === 'signature' ? <span className="hq-inline-note"> · signed</span> : null}
+                        </td>
+                        <td>
+                          <ReceiptCell links={attachmentLinksFor(r)} />
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                            <a className="th-link" href={GRANTED_URL} target="_blank" rel="noreferrer">
+                              Granted ↗
+                            </a>
+                            {canFileReimbursements ? <FinanceFileToggle id={r.id} processed={false} /> : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <p className="helper">
-            The loop: copy the R-number, approve it in Stanford Granted, come back, and mark it filed —
-            the row drops off this list.
-          </p>
-          {approvedToFile.length === 0 ? (
-            <p className="empty-note">No approved reimbursements waiting to be filed.</p>
+        </details>
+      ) : null}
+
+      {/* Pending approval */}
+      <details className="th-section" open={pending.length > 0}>
+        <summary>
+          <span className="th-sec-label">Pending approval</span>
+          <span className="th-sec-preview">
+            {pending.length > 0
+              ? `${pending[0].submitter_name} — ${pending[0].item_name} (${money(pending[0].amount_cents)})${pending.length > 1 ? ` · +${pending.length - 1} more` : ''}`
+              : 'Nothing waiting for a decision'}
+          </span>
+          <span className="th-sec-count">{pending.length}</span>
+        </summary>
+        <div className="th-body">
+          {pending.length === 0 ? (
+            <p className="empty-note">Nothing waiting for a decision.</p>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Approved</th>
+                    <th>Submitted</th>
                     <th>Team</th>
                     <th>Person</th>
                     <th>Item</th>
                     <th>Amount</th>
                     <th>Granted #</th>
-                    <th>Approved by</th>
-                    <th>Receipt</th>
-                    <th></th>
+                    <th>Receipts</th>
+                    <th>Decision</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {approvedToFile.map((r) => (
+                  {pending.map((r) => (
                     <tr key={r.id}>
-                      <td>{r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{formatDateLabel(new Date(r.created_at))}</td>
                       <td>{teamName.get(r.team_id) || '—'}</td>
-                      <td>{r.submitter_name}</td>
+                      <td>
+                        {r.submitter_name}
+                        {r.off_campus_ack ? (
+                          <span
+                            className="hq-inline-note"
+                            title="Submitted from outside the Bay Area; submitter acknowledged the off-campus policy."
+                          >
+                            {' '}
+                            ⚠ off-campus
+                          </span>
+                        ) : null}
+                      </td>
                       <td style={{ fontWeight: 700 }}>
                         {r.item_name}
                         {purchaseTypeLabel(r) ? (
@@ -205,90 +328,25 @@ export default async function ReimbursementsPage() {
                             {purchaseTypeLabel(r)}
                           </span>
                         ) : null}
-
-      <section className="hq-panel hq-surface-muted">
-        <div className="hq-block-head">
-          <h2>Pending approval ({pending.length})</h2>
-        </div>
-        {pending.length === 0 ? (
-          <p className="empty-note">Nothing waiting for a decision.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Submitted</th>
-                  <th>Team</th>
-                  <th>Person</th>
-                  <th>Item</th>
-                  <th>Amount</th>
-                  <th>Granted #</th>
-                  <th>Receipt</th>
-                  <th>Decision</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pending.map((r) => (
-                  <tr key={r.id}>
-                    <td>{formatDateLabel(new Date(r.created_at))}</td>
-                    <td>{teamName.get(r.team_id) || '—'}</td>
-                    <td>
-                      {r.submitter_name}
-                      {r.off_campus_ack ? (
-                        <span className="hq-inline-note" title="Submitted from outside the Bay Area; submitter acknowledged the off-campus policy.">
-                          {' '}⚠ off-campus
-                        </span>
-                      ) : null}
-                    </td>
-                    <td style={{ fontWeight: 700 }}>
-                      {r.item_name}
-                      {purchaseTypeLabel(r) ? (
-                        <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>
-                          {purchaseTypeLabel(r)}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>
-                      {money(r.amount_cents)}
-                      {r.requires_signature ? (
-                        <span className="hq-inline-note"> · needs signature</span>
-                      ) : null}
-                    </td>
-                    <td>{r.reimbursement_number}</td>
-                    <td>
-                      <ReceiptCell links={attachmentLinksFor(r)} />
-                    </td>
-                    <td>
-                      {leadTeamSet.has(r.team_id) ? (
-                        <PortalDecideButtons
-                          id={r.id}
-                          requiresSignature={r.requires_signature}
-                          token={r.decision_token}
-                        />
-                      ) : (
-                        <span className="hq-inline-note">Awaiting team lead</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
                       </td>
-                      <td>{money(r.amount_cents)}</td>
-                      <td style={{ fontWeight: 700 }}>{r.reimbursement_number}</td>
-                      <td>
-                        {r.decided_by_profile_id ? deciderName.get(r.decided_by_profile_id) || '—' : '—'}
-                        {r.approval_kind === 'signature' ? <span className="hq-inline-note"> · signed</span> : null}
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {money(r.amount_cents)}
+                        {r.requires_signature ? <span className="hq-inline-note"> · needs signature</span> : null}
                       </td>
+                      <td>{r.reimbursement_number}</td>
                       <td>
                         <ReceiptCell links={attachmentLinksFor(r)} />
                       </td>
                       <td>
-                        {canFileReimbursements ? <FinanceFileToggle id={r.id} processed={false} /> : null}
+                        {leadTeamSet.has(r.team_id) ? (
+                          <PortalDecideButtons
+                            id={r.id}
+                            requiresSignature={r.requires_signature}
+                            token={r.decision_token}
+                          />
+                        ) : (
+                          <span className="hq-inline-note">Awaiting team lead</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -296,60 +354,71 @@ export default async function ReimbursementsPage() {
               </table>
             </div>
           )}
-        </section>
-      ) : null}
-
-      <section className="hq-panel hq-surface-muted">
-        <div className="hq-block-head">
-          <h2>History ({history.length})</h2>
         </div>
-        {history.length === 0 ? (
-          <p className="empty-note">No decided reimbursements yet.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Decided</th>
-                  <th>Team</th>
-                  <th>Person</th>
-                  <th>Item</th>
-                  <th>Amount</th>
-                  <th>Granted #</th>
-                  <th>Status</th>
-                  {isFinance ? <th></th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((r) => (
-                  <tr key={r.id}>
-                    <td>{r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}</td>
-                    <td>{teamName.get(r.team_id) || '—'}</td>
-                    <td>{r.submitter_name}</td>
-                    <td style={{ fontWeight: 700 }}>{r.item_name}</td>
-                    <td>{money(r.amount_cents)}</td>
-                    <td>{r.reimbursement_number}</td>
-                    <td>
-                      {r.status === 'rejected'
-                        ? 'Rejected'
-                        : r.finance_processed_at
-                          ? 'Filed in Granted'
-                          : 'Approved'}
-                    </td>
-                    {isFinance ? (
-                      <td>
-                        {canFileReimbursements && r.status === 'approved' && r.finance_processed_at ? (
-                          <FinanceFileToggle id={r.id} processed={true} />
-                        ) : null}
-                      </td>
-                    ) : null}
+      </details>
+
+      {/* History */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">History</span>
+          <span className="th-sec-preview">
+            {history.length > 0
+              ? `Latest: ${history[0].submitter_name} — ${history[0].item_name} (${history[0].status === 'rejected' ? 'rejected' : history[0].finance_processed_at ? 'filed in Granted' : 'approved'})`
+              : 'No decided reimbursements yet'}
+          </span>
+          <span className="th-sec-count">{history.length}</span>
+        </summary>
+        <div className="th-body">
+          {history.length === 0 ? (
+            <p className="empty-note">No decided reimbursements yet.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Decided</th>
+                    <th>Team</th>
+                    <th>Person</th>
+                    <th>Item</th>
+                    <th>Amount</th>
+                    <th>Granted #</th>
+                    <th>Status</th>
+                    {isFinance ? <th></th> : null}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {history.map((r) => (
+                    <tr key={r.id}>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}
+                      </td>
+                      <td>{teamName.get(r.team_id) || '—'}</td>
+                      <td>{r.submitter_name}</td>
+                      <td style={{ fontWeight: 700 }}>{r.item_name}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{money(r.amount_cents)}</td>
+                      <td>{r.reimbursement_number}</td>
+                      <td>
+                        {r.status === 'rejected'
+                          ? 'Rejected'
+                          : r.finance_processed_at
+                            ? 'Filed in Granted'
+                            : 'Approved'}
+                      </td>
+                      {isFinance ? (
+                        <td>
+                          {canFileReimbursements && r.status === 'approved' && r.finance_processed_at ? (
+                            <FinanceFileToggle id={r.id} processed={true} />
+                          ) : null}
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
