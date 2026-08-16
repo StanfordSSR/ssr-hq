@@ -57,7 +57,7 @@ export default async function PurchasesPage() {
 
   if (teams.length === 0) {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         <section className="hq-page-head">
           <div className="hq-page-head-copy">
             <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isVicePresident ? 'Vice president' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>
@@ -99,7 +99,7 @@ export default async function PurchasesPage() {
   const totalLogged = purchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0) / 100;
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isVicePresident ? 'Vice president' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>

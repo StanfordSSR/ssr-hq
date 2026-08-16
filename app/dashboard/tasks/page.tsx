@@ -256,7 +256,7 @@ export default async function TasksPage() {
   const teamNameMap = new Map(teams.map((team) => [team.id, team.name]));
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{isAdmin ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : isPresident ? 'President' : 'Lead portal'}</p>

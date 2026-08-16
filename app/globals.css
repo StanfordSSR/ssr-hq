@@ -7971,3 +7971,108 @@ a.th-stat:focus-visible {
   outline: 2px solid var(--th-cardinal);
   outline-offset: -2px;
 }
+
+/* ====================================================================
+   Legacy adapter: renders the existing hq-* page skeleton in the
+   collegiate (.th-) language, so every remaining dashboard page picks up
+   the system by adding th-page to its root — no JSX rewrites.
+   ==================================================================== */
+
+.hq-page.th-page {
+  display: grid;
+  gap: 16px;
+  padding-bottom: 48px;
+}
+
+/* Page head becomes the cardinal masthead. */
+.th-page .hq-page-head {
+  background: var(--th-cardinal);
+  color: #fff;
+  padding: 18px 22px 15px;
+  border-bottom: 4px solid var(--th-ink);
+  margin-bottom: -4px;
+}
+
+.th-page .hq-page-head .hq-eyebrow {
+  color: #eecfcf;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  margin-bottom: 6px;
+}
+
+.th-page .hq-page-head .hq-page-title {
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.45rem, 3vw, 2.1rem);
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+  margin: 0;
+}
+
+.th-page .hq-page-head .hq-subtitle {
+  color: #f2dfdf;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 7px 0 0;
+  max-width: 72ch;
+}
+
+.th-page .hq-page-head .button,
+.th-page .hq-page-head .button-secondary {
+  background: #fff;
+  color: var(--th-cardinal);
+  border: 2px solid #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+}
+
+.th-page .hq-page-head .button:hover,
+.th-page .hq-page-head .button-secondary:hover {
+  background: transparent;
+  color: #fff;
+}
+
+/* Panels become square, ink-framed cards. */
+.th-page .hq-panel {
+  border: 1px solid var(--th-ink);
+  background: var(--th-paper);
+  box-shadow: none;
+  padding: 14px 16px 18px;
+}
+
+.th-page .hq-surface-muted {
+  background: var(--th-paper);
+}
+
+/* Panel headings take the uppercase label voice. */
+.th-page .hq-panel .hq-block-head h2,
+.th-page .hq-panel .hq-block-head h3,
+.th-page .hq-panel .hq-section-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--th-ink);
+}
+
+.th-page .hq-panel .hq-eyebrow {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+}
+
+/* Big numbers inside metric cards pick up the serif scoreboard voice. */
+.th-page .hq-finance-metric-card strong,
+.th-page .hq-mini-stat strong,
+.th-page .hq-summer-total strong {
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+}
+
+.th-page .hq-finance-metric-card,
+.th-page .hq-team-row,
+.th-page .hq-question-card {
+  border-color: var(--th-hairline);
+}
