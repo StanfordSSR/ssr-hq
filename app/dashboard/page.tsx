@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -152,6 +151,11 @@ const financialOfficerCards = [
     description: 'Review receipt submissions from the most recently completed month.'
   }
 ];
+
+// Module scope so the clock read stays out of the component body.
+function hoursAgoIso(hours: number) {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
 
 function getQuarterVisual(quarter: string) {
   if (quarter.startsWith('Autumn')) {
@@ -392,7 +396,7 @@ export default async function DashboardPage() {
         .maybeSingle(),
       admin
         .from('purchase_logs')
-        .select('amount_cents, purchased_at')
+        .select('id, description, person_name, amount_cents, purchased_at')
         .eq('team_id', team.id)
         .eq('academic_year', cycle),
       admin
@@ -414,12 +418,27 @@ export default async function DashboardPage() {
         .from('announcements')
         .select('id, title, details, location, event_at, recipient_scope')
         .eq('is_active', true)
-        .gte('event_at', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+        .gte('event_at', hoursAgoIso(12))
         .order('event_at', { ascending: true }),
       admin.from('announcement_recipients').select('announcement_id, team_id').eq('team_id', team.id),
       admin.from('announcement_recipient_rsvps').select('announcement_id, response'),
       getReportingWindows(cycle)
     ]);
+  const { data: pendingReimbursementsData } = await admin
+    .from('member_reimbursements')
+    .select('id, submitter_name, item_name, amount_cents, reimbursement_number, requires_signature, created_at')
+    .eq('team_id', team.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+  const pendingReimbursements = (pendingReimbursementsData || []) as Array<{
+    id: string;
+    submitter_name: string;
+    item_name: string;
+    amount_cents: number;
+    reimbursement_number: string;
+    requires_signature: boolean;
+    created_at: string;
+  }>;
   const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
   const completedTaskIds = new Set((taskCompletions || []).map((entry) => entry.task_id));
   const recipientAnnouncementIds = new Set((announcementRecipientsData || []).map((entry) => entry.announcement_id));
@@ -446,7 +465,13 @@ export default async function DashboardPage() {
     announcementRsvpStats.set(rsvp.announcement_id, stats);
   }
   const annualBudget = teamBudget?.annual_budget_cents ? teamBudget.annual_budget_cents / 100 : 0;
-  const purchases = (purchasesData || []) as Array<{ amount_cents: number; purchased_at: string }>;
+  const purchases = (purchasesData || []) as Array<{
+    id: string;
+    description: string | null;
+    person_name: string | null;
+    amount_cents: number;
+    purchased_at: string;
+  }>;
   const spent = purchases.reduce(
     (sum, purchase) => sum + purchase.amount_cents / 100,
     0
@@ -524,68 +549,455 @@ export default async function DashboardPage() {
     stewardshipNote: asset.stewardship_note
   }));
 
+  const firstName = (me.full_name || '').split(' ')[0] || 'lead';
+  const receiptStates = pendingReceipts.map((purchase) => ({
+    purchase,
+    state: getReceiptTaskState({
+      paymentMethod: purchase.payment_method,
+      purchasedAt: purchase.purchased_at,
+      receiptPath: purchase.receipt_path,
+      receiptNotNeeded: purchase.receipt_not_needed
+    })
+  }));
+  const overdueReceiptCount = receiptStates.filter((entry) => entry.state.overdue).length;
+  const reportDue = reportState.reportState === 'open' && reportRecord?.status !== 'submitted';
+  const eoyDue = eoyState.reportState === 'open' && eoyRecord?.status !== 'submitted';
+  const attentionCount =
+    pendingReimbursements.length + pendingReceipts.length + (reportDue ? 1 : 0) + (eoyDue ? 1 : 0);
+  const recentPurchases = [...purchases]
+    .sort((a, b) => Date.parse(b.purchased_at) - Date.parse(a.purchased_at))
+    .slice(0, 8);
+  const nextEvent = teamAnnouncements[0] || null;
+  const usd = (value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
   return (
-    <div className="hq-page">
-      <section className="hq-page-head hq-page-head-lead">
-        <div className="hq-page-head-copy">
-          <p className="hq-eyebrow">Lead portal</p>
-          <h1 className="hq-page-title">Dashboard</h1>
-          <p className="hq-subtitle">
-            Stay on top of team health, reporting windows, and spending for {team.name}.
+    <div className="th-page">
+      {/* Masthead */}
+      <header className="th-mast">
+        <div className="th-mast-main">
+          <p className="th-mast-eyebrow">Lead portal · {cycle}</p>
+          <div className="th-mast-title">
+            {team.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={team.logo_url} alt="" className="th-mast-logo" />
+            ) : (
+              <span className="th-mast-logo th-mast-logo-fallback">{team.name.slice(0, 1)}</span>
+            )}
+            <h1>{team.name}</h1>
+          </div>
+          <p className="th-mast-desc">
+            Welcome back, {firstName}. {memberCount} member{memberCount === 1 ? '' : 's'} ·{' '}
+            {team.is_active ? 'active' : 'inactive'}.
           </p>
         </div>
-
-        <div className="hq-page-head-action hq-page-head-action-lead">
-          <Link href="/dashboard/purchases" className="button">
+        <div className="th-mast-side">
+          <Link href="/dashboard/purchases" className="th-btn-light">
             Log purchase
           </Link>
+          <Link href={`/dashboard/teams/${team.id}`} className="th-mast-link">
+            Team page →
+          </Link>
         </div>
-      </section>
+      </header>
 
-      <div className="hq-lead-dashboard">
-        <aside className="hq-panel hq-lead-sidebar">
-          <div className="hq-section-head">
-            <div className="hq-section-head-copy">
-              <p className="hq-eyebrow">Team summary</p>
-              <div className="hq-team-title-row">
-                {team.logo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={team.logo_url} alt="" className="hq-team-logo hq-team-logo-large" />
-                ) : (
-                  <div className="hq-team-logo hq-team-logo-large hq-team-logo-fallback">{team.name.slice(0, 1)}</div>
-                )}
-                <h2 className="hq-section-title hq-section-title-compact">{team.name}</h2>
-              </div>
-              <Link href={`/dashboard/teams/${team.id}`} className="hq-inline-link">
-                Open team page →
+      {/* Scoreboard */}
+      <div className="th-stats">
+        <div className="th-stat">
+          <span>Annual budget</span>
+          <strong>{usd(annualBudget)}</strong>
+        </div>
+        <div className="th-stat">
+          <span>Spent</span>
+          <strong>{usd(spent)}</strong>
+        </div>
+        <div className="th-stat">
+          <span>Remaining</span>
+          <strong className={annualBudget - spent < 0 ? 'th-bad' : undefined}>{usd(annualBudget - spent)}</strong>
+        </div>
+        <div className="th-stat">
+          <span>Utilization</span>
+          <strong>{spentPercent}%</strong>
+          <div className="th-stat-bar">
+            <div style={{ width: `${spentPercent}%` }} />
+          </div>
+        </div>
+        <div className="th-stat">
+          <span>Pending reimb.</span>
+          <strong className={pendingReimbursements.length > 0 ? 'th-warn' : undefined}>
+            {pendingReimbursements.length}
+          </strong>
+        </div>
+        <div className="th-stat">
+          <span>Receipts owed</span>
+          <strong className={overdueReceiptCount > 0 ? 'th-bad' : pendingReceipts.length > 0 ? 'th-warn' : undefined}>
+            {pendingReceipts.length}
+          </strong>
+        </div>
+        <div className="th-stat">
+          <span>Members</span>
+          <strong>{memberCount}</strong>
+        </div>
+        <div className="th-stat th-stat-text">
+          <span>Next report</span>
+          <strong className={reportDue ? 'th-bad' : undefined}>
+            {reportRecord?.status === 'submitted'
+              ? 'Submitted'
+              : reportState.reportState === 'open'
+                ? `${reportState.countdownLabel} left`
+                : `Opens in ${reportState.countdownLabel}`}
+          </strong>
+        </div>
+      </div>
+
+      {/* Needs attention */}
+      {attentionCount > 0 ? (
+        <details className="th-section th-section-alert" open>
+          <summary>
+            <span className="th-sec-label">Needs attention</span>
+            <span className="th-sec-preview">
+              {[
+                reportDue ? `${formatQuarterReportTitle(reportState.targetQuarter)} due` : null,
+                eoyDue ? 'year-end report due' : null,
+                pendingReimbursements.length > 0
+                  ? `${pendingReimbursements.length} reimbursement${pendingReimbursements.length === 1 ? '' : 's'} to decide`
+                  : null,
+                pendingReceipts.length > 0
+                  ? `${pendingReceipts.length} receipt${pendingReceipts.length === 1 ? '' : 's'} owed${overdueReceiptCount > 0 ? ` (${overdueReceiptCount} overdue)` : ''}`
+                  : null
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            <span className="th-sec-count">{attentionCount}</span>
+          </summary>
+          <div className="th-body">
+            <div className="table-wrap">
+              <table>
+                <tbody>
+                  {reportDue ? (
+                    <tr>
+                      <td className="th-bad" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        Report due
+                      </td>
+                      <td>
+                        {formatQuarterReportTitle(reportState.targetQuarter)} — {reportState.countdownLabel} remaining
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Link href="/dashboard/reports" className="th-link">
+                          Open report →
+                        </Link>
+                      </td>
+                    </tr>
+                  ) : null}
+                  {eoyDue ? (
+                    <tr>
+                      <td className="th-bad" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        Year-end due
+                      </td>
+                      <td>
+                        {EOY_REPORT_TITLE} — {eoyState.countdownLabel} remaining
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Link href="/dashboard/reports/eoy" className="th-link">
+                          Open report →
+                        </Link>
+                      </td>
+                    </tr>
+                  ) : null}
+                  {pendingReimbursements.map((reimbursement) => (
+                    <tr key={reimbursement.id}>
+                      <td className="th-warn" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        Reimbursement
+                      </td>
+                      <td>
+                        {reimbursement.submitter_name} — {reimbursement.item_name} (
+                        {usd(reimbursement.amount_cents / 100)}, {reimbursement.reimbursement_number})
+                        {reimbursement.requires_signature ? ' · needs signature' : ''}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Link href="/dashboard/reimbursements" className="th-link">
+                          Decide →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                  {receiptStates.map(({ purchase, state }) => (
+                    <tr key={purchase.id}>
+                      <td
+                        className={state.overdue ? 'th-bad' : 'th-warn'}
+                        style={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                      >
+                        {state.overdue ? 'Receipt overdue' : 'Receipt owed'}
+                      </td>
+                      <td>
+                        {purchase.description || 'Untitled purchase'} —{' '}
+                        {formatDateLabel(new Date(purchase.purchased_at))}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Link href="/dashboard/purchases" className="th-link">
+                          Upload →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      ) : null}
+
+      {/* Spending */}
+      <details className="th-section" open>
+        <summary>
+          <span className="th-sec-label">Spending</span>
+          <span className="th-sec-preview">
+            {usd(spent)} of {usd(annualBudget)} this cycle
+            {recentPurchases[0]
+              ? ` · latest: ${recentPurchases[0].description || 'Untitled'} (${usd(recentPurchases[0].amount_cents / 100)})`
+              : ''}
+          </span>
+          <span className="th-sec-count">{purchases.length}</span>
+        </summary>
+        <div className="th-body">
+          <div className="th-minigrid">
+            {quarterlySpend.map((entry) => {
+              const visual = getQuarterVisual(entry.quarter);
+              return (
+                <div key={entry.quarter} className="th-stat">
+                  <span>
+                    {visual.label} {visual.mark}
+                  </span>
+                  <strong>{usd(entry.total)}</strong>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="th-block">
+            <div className="th-block-head">
+              <h3>Recent purchases</h3>
+              <Link href={`/dashboard/teams/${team.id}`} className="th-link">
+                Full ledger →
               </Link>
             </div>
+            {recentPurchases.length === 0 ? (
+              <p className="empty-note">No purchases logged this cycle yet.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Item</th>
+                      <th>Person</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentPurchases.map((purchase) => (
+                      <tr key={purchase.id}>
+                        <td>{formatDateLabel(new Date(purchase.purchased_at))}</td>
+                        <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
+                        <td>{purchase.person_name || '—'}</td>
+                        <td>{usd(purchase.amount_cents / 100)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
+        </div>
+      </details>
 
-          <div className="hq-summary-list">
-            <div className="hq-summary-row">
-              <span>Description</span>
-              <strong>{team.description || 'No description added yet.'}</strong>
-            </div>
-            <div className="hq-summary-row">
-              <span>Members</span>
-              <strong>{memberCount}</strong>
-            </div>
-            <div className="hq-summary-row">
-              <span>Date created</span>
-              <strong>{formatDateLabel(new Date(team.created_at))}</strong>
-            </div>
-            <div className="hq-summary-row">
-              <span>Status</span>
-              <strong>{team.is_active ? 'Active' : 'Inactive'}</strong>
+      {/* Events */}
+      {teamAnnouncements.length > 0 ? (
+        <details className="th-section">
+          <summary>
+            <span className="th-sec-label">Events</span>
+            <span className="th-sec-preview">
+              {nextEvent
+                ? `Next: ${nextEvent.title} · ${new Date(nextEvent.event_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })}`
+                : ''}
+            </span>
+            <span className="th-sec-count">{teamAnnouncements.length}</span>
+          </summary>
+          <div className="th-body">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Event</th>
+                    <th>Location</th>
+                    <th>RSVPs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamAnnouncements.map((announcement) => {
+                    const stats = announcementRsvpStats.get(announcement.id) || { yes: 0, maybe: 0, no: 0 };
+                    return (
+                      <tr key={announcement.id}>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {new Date(announcement.event_at).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            timeZone: 'America/Los_Angeles'
+                          })}
+                        </td>
+                        <td style={{ fontWeight: 700 }}>
+                          {announcement.title}
+                          {announcement.details ? (
+                            <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>
+                              {announcement.details}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td>{announcement.location}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {stats.yes} yes · {stats.maybe} maybe · {stats.no} no
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
+        </details>
+      ) : null}
 
-          <form action={updateLeadTeamDescriptionAction} className="form-stack hq-compact-form">
+      {/* Tasks */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">Tasks</span>
+          <span className="th-sec-preview">
+            {teamTasks.length > 0 ? `${teamTasks[0].title}${teamTasks.length > 1 ? ` · +${teamTasks.length - 1} more` : ''}` : 'No open tasks'}
+          </span>
+          <span className="th-sec-count">{teamTasks.length}</span>
+        </summary>
+        <div className="th-body">
+          <div className="th-block-head">
+            <h3>Open tasks</h3>
+            <Link href="/dashboard/tasks" className="th-link">
+              Open tasks →
+            </Link>
+          </div>
+          {teamTasks.length === 0 ? (
+            <p className="empty-note">No tasks assigned right now.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <tbody>
+                  {teamTasks.map((task) => (
+                    <tr key={task.id}>
+                      <td style={{ fontWeight: 700 }}>{task.title}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {task.recipient_scope === 'all_teams' ? 'All teams' : team.name}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </details>
+
+      {/* Reports */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">Reports</span>
+          <span className="th-sec-preview">
+            {formatQuarterReportTitle(reportState.targetQuarter)}:{' '}
+            {reportRecord?.status === 'submitted'
+              ? 'submitted'
+              : reportState.reportState === 'open'
+                ? `due in ${reportState.countdownLabel}`
+                : `opens in ${reportState.countdownLabel}`}
+            {showEoyCard
+              ? ` · Year-end: ${eoyRecord?.status === 'submitted' ? 'submitted' : eoyState.reportState === 'open' ? `due in ${eoyState.countdownLabel}` : `opens in ${eoyState.countdownLabel}`}`
+              : ''}
+          </span>
+          <span className="th-sec-count">{showEoyCard ? 2 : 1}</span>
+        </summary>
+        <div className="th-body">
+          <div className="th-cols">
+            <div className="th-block">
+              <div className="th-block-head">
+                <h3>{formatQuarterReportTitle(reportState.targetQuarter)}</h3>
+                <Link href="/dashboard/reports" className="th-link">
+                  Open →
+                </Link>
+              </div>
+              <p className="helper">{reportState.message}</p>
+              <p className="helper">
+                {reportRecord?.status === 'submitted'
+                  ? 'Submitted for this quarter.'
+                  : reportState.reportState === 'open'
+                    ? `Deadline in ${reportState.countdownLabel}.`
+                    : `${reportState.countdownLabel} until reporting opens.`}
+              </p>
+            </div>
+            {showEoyCard ? (
+              <div className="th-block">
+                <div className="th-block-head">
+                  <h3>{EOY_REPORT_TITLE}</h3>
+                  <Link href="/dashboard/reports/eoy" className="th-link">
+                    Open →
+                  </Link>
+                </div>
+                <p className="helper">{eoyState.message}</p>
+                <p className="helper">
+                  {eoyRecord?.status === 'submitted'
+                    ? `Submitted for ${eoyState.academicYear}.`
+                    : eoyState.reportState === 'open'
+                      ? `Deadline in ${eoyState.countdownLabel}.`
+                      : `${eoyState.countdownLabel} until reporting opens.`}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </details>
+
+      {/* Equipment */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">Equipment</span>
+          <span className="th-sec-preview">
+            {leadAssetViews.length > 0
+              ? `${leadAssetViews.length} high value item${leadAssetViews.length === 1 ? '' : 's'} on record`
+              : 'No high value equipment recorded'}
+          </span>
+          <span className="th-sec-count">{leadAssetViews.length}</span>
+        </summary>
+        <div className="th-body">
+          <HighValueAssetPanel
+            teams={myTeams}
+            loggedByName={me.full_name || ''}
+            initialAssets={leadAssetViews}
+            listTitle="Your team's high value equipment"
+          />
+        </div>
+      </details>
+
+      {/* Team settings */}
+      <details className="th-section">
+        <summary>
+          <span className="th-sec-label">Team settings</span>
+          <span className="th-sec-preview">Description and logo</span>
+          <span className="th-sec-count">{''}</span>
+        </summary>
+        <div className="th-body">
+          <form action={updateLeadTeamDescriptionAction} className="form-stack hq-compact-form" style={{ maxWidth: 560 }}>
             <input type="hidden" name="team_id" value={team.id} />
             <div className="field">
               <label className="label" htmlFor="lead-team-description">
-                Edit description
+                Description
               </label>
               <textarea
                 className="input hq-textarea"
@@ -594,7 +1006,7 @@ export default async function DashboardPage() {
                 maxLength={300}
                 defaultValue={team.description || ''}
                 placeholder="Summarize what your team is building this year."
-                rows={5}
+                rows={4}
               />
               <span className="helper">Maximum 300 characters.</span>
             </div>
@@ -615,253 +1027,12 @@ export default async function DashboardPage() {
 
             <div className="button-row">
               <button className="button" type="submit">
-                Save description
+                Save
               </button>
             </div>
           </form>
-        </aside>
-
-        <section className="hq-panel hq-lead-main">
-          <div className="hq-lead-overview">
-            <div className="hq-lead-overview-copy">
-              <p className="hq-eyebrow">Operations</p>
-              <h2 className="hq-section-title hq-section-title-compact">Annual summary</h2>
-              <p className="hq-subtitle">
-                A quick snapshot of cycle timing, reporting readiness, and spending.
-              </p>
-            </div>
-
-            <div className="hq-budget-ring-wrap">
-              <div
-                className="hq-budget-ring"
-                style={{ '--budget-fill': `${spentPercent}%` } as CSSProperties}
-              >
-                <div className="hq-budget-ring-inner">
-                  <strong>{spentPercent}%</strong>
-                  <span>spent</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="hq-lead-metrics">
-            <div className="hq-lead-metric">
-              <span>Annual cycle</span>
-              <strong>{cycle}</strong>
-            </div>
-            <div className="hq-lead-metric">
-              <span>Total budget</span>
-              <strong>${annualBudget.toLocaleString()}</strong>
-            </div>
-            <div className="hq-lead-metric">
-              <span>Spent so far</span>
-              <strong>${spent.toLocaleString()}</strong>
-            </div>
-          </div>
-
-          {teamAnnouncements.length > 0 ? (
-            <section className="hq-lead-block hq-lead-announcements-block">
-              <div className="hq-block-head">
-                <h3>Upcoming events</h3>
-                <Link href="/dashboard/tasks" className="hq-inline-link">
-                  View all
-                </Link>
-              </div>
-
-              <div className="hq-task-stack">
-                {teamAnnouncements.slice(0, 3).map((announcement) => (
-                  <article key={announcement.id} className="hq-task-card hq-task-card-announcement">
-                    <div className="hq-task-card-head">
-                      <div>
-                        <span className="hq-task-kicker">Event notification</span>
-                        <h4>{announcement.title}</h4>
-                      </div>
-                    </div>
-                    <div className="hq-task-card-meta">
-                      <span>{announcement.location}</span>
-                      <span>{new Date(announcement.event_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })}</span>
-                    </div>
-                    <p>{announcement.details || 'Open HQ for the event details.'}</p>
-                    <div className="hq-task-card-meta">
-                      <span>RSVPs: {announcementRsvpStats.get(announcement.id)?.yes || 0} yes</span>
-                      <span>{announcementRsvpStats.get(announcement.id)?.maybe || 0} maybe</span>
-                      <span>{announcementRsvpStats.get(announcement.id)?.no || 0} no</span>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <div className="hq-lead-grid hq-lead-grid-secondary">
-            <section className="hq-lead-block">
-              <div className="hq-block-head">
-                <h3>Tasks</h3>
-                <Link href="/dashboard/tasks" className="hq-inline-link">
-                  Open tasks
-                </Link>
-              </div>
-              <div className="hq-report-card">
-                {reportState.reportState === 'open' && reportRecord?.status !== 'submitted' ? (
-                  <div className="hq-summary-row">
-                    <span style={{ color: '#8c1515' }}>Report due</span>
-                    <strong>{formatQuarterReportTitle(reportState.targetQuarter)}</strong>
-                    <strong>{reportState.countdownLabel} remaining</strong>
-                  </div>
-                ) : null}
-
-                {teamTasks.length > 0 ? (
-                  <div className="hq-summary-list">
-                    {pendingReceipts.slice(0, 2).map((purchase) => {
-                      const receiptState = getReceiptTaskState({
-                        paymentMethod: purchase.payment_method,
-                        purchasedAt: purchase.purchased_at,
-                        receiptPath: purchase.receipt_path,
-                        receiptNotNeeded: purchase.receipt_not_needed
-                      });
-
-                      return (
-                        <div key={purchase.id} className="hq-summary-row">
-                          <span style={{ color: receiptState.overdue ? '#8c1515' : undefined }}>
-                            {receiptState.overdue ? 'Receipt overdue' : 'Receipt pending'}
-                          </span>
-                          <strong>Upload receipt for {purchase.description}</strong>
-                          <strong>{formatDateLabel(new Date(purchase.purchased_at))}</strong>
-                        </div>
-                      );
-                    })}
-                    {teamTasks.slice(0, 3).map((task) => (
-                      <div key={task.id} className="hq-summary-row">
-                        <span>{task.recipient_scope === 'all_teams' ? 'All teams' : team.name}</span>
-                        <strong>{task.title}</strong>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  pendingReceipts.length > 0 ? (
-                    <div className="hq-summary-list">
-                      {pendingReceipts.slice(0, 3).map((purchase) => {
-                        const receiptState = getReceiptTaskState({
-                          paymentMethod: purchase.payment_method,
-                          purchasedAt: purchase.purchased_at,
-                          receiptPath: purchase.receipt_path,
-                          receiptNotNeeded: purchase.receipt_not_needed
-                        });
-
-                        return (
-                          <div key={purchase.id} className="hq-summary-row">
-                            <span style={{ color: receiptState.overdue ? '#8c1515' : undefined }}>
-                              {receiptState.overdue ? 'Receipt overdue' : 'Receipt pending'}
-                            </span>
-                            <strong>Upload receipt for {purchase.description}</strong>
-                            <strong>{formatDateLabel(new Date(purchase.purchased_at))}</strong>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="empty-note">No tasks yet.</p>
-                  )
-                )}
-              </div>
-            </section>
-
-            <div className="hq-lead-col">
-            <section className="hq-lead-block">
-              <div className="hq-block-head">
-                <h3>Next report due</h3>
-                <span
-                  className={`hq-status-chip hq-status-${reportState.reportState === 'open' ? 'open' : 'pending'}`}
-                >
-                  {reportState.reportState === 'open' ? 'Open now' : 'Not open yet'}
-                </span>
-              </div>
-
-              <div className="hq-report-card">
-                <strong>{formatQuarterReportTitle(reportState.targetQuarter)}</strong>
-                <span>{reportState.message}</span>
-                <p>{reportState.reportState === 'open' ? `Deadline in ${reportState.countdownLabel}.` : `${reportState.countdownLabel} until reporting opens.`}</p>
-                {reportState.reportState === 'open' && reportRecord?.status !== 'submitted' ? (
-                  <div className="button-row">
-                    <Link href="/dashboard/reports" className="button">
-                      Open report
-                    </Link>
-                  </div>
-                ) : null}
-                {reportRecord?.status === 'submitted' ? <p>Submitted for this quarter.</p> : null}
-              </div>
-            </section>
-
-            {showEoyCard ? (
-              <section className="hq-lead-block">
-                <div className="hq-block-head">
-                  <h3>Year-end report</h3>
-                  <span
-                    className={`hq-status-chip hq-status-${eoyState.reportState === 'open' ? 'open' : 'pending'}`}
-                  >
-                    {eoyRecord?.status === 'submitted'
-                      ? 'Submitted'
-                      : eoyState.reportState === 'open'
-                        ? 'Open now'
-                        : 'Not open yet'}
-                  </span>
-                </div>
-
-                <div className="hq-report-card">
-                  <strong>{EOY_REPORT_TITLE}</strong>
-                  <span>{eoyState.message}</span>
-                  <p>
-                    {eoyState.reportState === 'open'
-                      ? `Deadline in ${eoyState.countdownLabel}.`
-                      : `${eoyState.countdownLabel} until reporting opens.`}
-                  </p>
-                  {eoyState.reportState === 'open' && eoyRecord?.status !== 'submitted' ? (
-                    <div className="button-row">
-                      <Link href="/dashboard/reports/eoy" className="button">
-                        Open report
-                      </Link>
-                    </div>
-                  ) : null}
-                  {eoyRecord?.status === 'submitted' ? <p>Submitted for {eoyState.academicYear}.</p> : null}
-                </div>
-              </section>
-            ) : null}
-            </div>
-          </div>
-
-          <section className="hq-lead-block hq-quarter-spend-block">
-            <div className="hq-block-head">
-              <h3>Money spent per quarter</h3>
-              <span className="hq-inline-note">{cycle} cycle</span>
-            </div>
-
-            <div className="hq-quarter-spend-grid">
-              {quarterlySpend.map((entry) => {
-                const visual = getQuarterVisual(entry.quarter);
-
-                return (
-                <div key={entry.quarter} className={`hq-quarter-spend-card hq-quarter-spend-card-${visual.tone}`}>
-                  <div className="hq-quarter-spend-head">
-                    <span>{visual.label}</span>
-                    <small>{visual.mark}</small>
-                  </div>
-                  <strong>
-                    ${entry.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </strong>
-                </div>
-              );
-              })}
-            </div>
-          </section>
-
-          <HighValueAssetPanel
-            teams={myTeams}
-            loggedByName={me.full_name || ''}
-            initialAssets={leadAssetViews}
-            listTitle="Your team's high value equipment"
-          />
-        </section>
-      </div>
+        </div>
+      </details>
     </div>
   );
 }
