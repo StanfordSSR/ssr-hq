@@ -2721,7 +2721,7 @@ tr:last-child td {
   display: block;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 8px 0 64px;
+  padding: 4px 0 48px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2735,8 +2735,8 @@ tr:last-child td {
 .th-mast {
   background: var(--th-cardinal);
   color: #fff;
-  padding: 30px 34px 26px;
-  border-bottom: 5px solid var(--th-ink);
+  padding: 18px 22px 15px;
+  border-bottom: 4px solid var(--th-ink);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -2745,8 +2745,8 @@ tr:last-child td {
 }
 
 .th-mast-eyebrow {
-  margin: 0 0 10px;
-  font-size: 11px;
+  margin: 0 0 6px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -2756,13 +2756,13 @@ tr:last-child td {
 .th-mast-title {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
 .th-mast-title h1 {
   margin: 0;
   font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
-  font-size: clamp(2rem, 4.5vw, 3rem);
+  font-size: clamp(1.45rem, 3vw, 2.1rem);
   line-height: 1.05;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -2770,11 +2770,11 @@ tr:last-child td {
 }
 
 .th-mast-logo {
-  width: 60px;
-  height: 60px;
+  width: 44px;
+  height: 44px;
   object-fit: cover;
   background: #fff;
-  border: 3px solid #fff;
+  border: 2px solid #fff;
   flex-shrink: 0;
 }
 
@@ -2783,32 +2783,32 @@ tr:last-child td {
   align-items: center;
   justify-content: center;
   font-family: 'Source Serif 4', Georgia, serif;
-  font-size: 30px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--th-cardinal);
 }
 
 .th-mast-desc {
-  margin: 12px 0 0;
+  margin: 7px 0 0;
   max-width: 60ch;
   color: #f2dfdf;
-  font-size: 0.95rem;
-  line-height: 1.55;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .th-mast-side {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 12px;
+  gap: 8px;
 }
 
 .th-status {
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  padding: 5px 10px;
+  padding: 3px 8px;
   border: 1.5px solid #fff;
   color: #fff;
 }
@@ -2819,7 +2819,7 @@ tr:last-child td {
 
 .th-mast-link {
   color: #fff;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 700;
   text-decoration: none;
   border-bottom: 1.5px solid rgba(255, 255, 255, 0.55);
@@ -2844,18 +2844,18 @@ tr:last-child td {
 
 .th-stat {
   background: var(--th-paper);
-  padding: 16px 18px 14px;
+  padding: 10px 13px 9px;
   min-width: 0;
 }
 
 .th-stat span {
   display: block;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--th-muted);
-  margin-bottom: 7px;
+  margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2864,7 +2864,7 @@ tr:last-child td {
 .th-stat strong {
   display: block;
   font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
-  font-size: 26px;
+  font-size: 20px;
   line-height: 1;
   font-weight: 700;
   color: var(--th-ink);
@@ -2879,8 +2879,8 @@ tr:last-child td {
 }
 
 .th-stat-bar {
-  margin-top: 9px;
-  height: 5px;
+  margin-top: 6px;
+  height: 4px;
   background: #e8e1de;
 }
 
@@ -2901,8 +2901,8 @@ tr:last-child td {
   cursor: pointer;
   display: flex;
   align-items: baseline;
-  gap: 16px;
-  padding: 18px 22px;
+  gap: 12px;
+  padding: 11px 16px;
   user-select: none;
 }
 
@@ -2920,7 +2920,7 @@ tr:last-child td {
 }
 
 .th-sec-label {
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -2931,7 +2931,7 @@ tr:last-child td {
 .th-sec-preview {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: 12.5px;
   color: var(--th-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -2940,10 +2940,10 @@ tr:last-child td {
 
 .th-sec-count {
   font-family: 'Source Serif 4', Georgia, serif;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--th-cardinal);
-  min-width: 26px;
+  min-width: 22px;
   text-align: right;
 }
 
@@ -2951,11 +2951,11 @@ tr:last-child td {
 .th-section summary::after {
   content: '+';
   font-family: 'Source Serif 4', Georgia, serif;
-  font-size: 24px;
+  font-size: 19px;
   line-height: 1;
   font-weight: 700;
   color: var(--th-cardinal);
-  width: 20px;
+  width: 16px;
   text-align: center;
   flex-shrink: 0;
   align-self: center;
@@ -2970,28 +2970,28 @@ tr:last-child td {
 }
 
 .th-section-alert {
-  border-left: 6px solid var(--th-cardinal);
+  border-left: 5px solid var(--th-cardinal);
 }
 
 .th-body {
-  padding: 20px 22px 26px;
+  padding: 14px 16px 18px;
 }
 
 .th-body > * + * {
-  margin-top: 20px;
+  margin-top: 14px;
 }
 
 .th-block-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 7px;
 }
 
 .th-block-head h3 {
   margin: 0;
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -2999,11 +2999,11 @@ tr:last-child td {
 }
 
 .th-block + .th-block {
-  margin-top: 22px;
+  margin-top: 15px;
 }
 
 .th-link {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--th-cardinal);
   text-decoration: none;
@@ -3017,7 +3017,7 @@ tr:last-child td {
 .th-cols {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 26px;
+  gap: 18px;
   align-items: start;
 }
 
@@ -3026,11 +3026,11 @@ tr:last-child td {
   display: inline-block;
   background: #fff;
   color: var(--th-cardinal);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 11px 18px;
+  padding: 8px 14px;
   text-decoration: none;
   border: 2px solid #fff;
 }
@@ -3046,19 +3046,19 @@ tr:last-child td {
   gap: 1px;
   background: var(--th-hairline);
   border: 1px solid var(--th-hairline);
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .th-minigrid .th-stat {
-  padding: 12px 14px 11px;
+  padding: 8px 11px 7px;
 }
 
 .th-minigrid .th-stat strong {
-  font-size: 21px;
+  font-size: 17px;
 }
 
 .th-stat-text strong {
-  font-size: 16px;
+  font-size: 13.5px;
   line-height: 1.3;
 }
 
@@ -3066,9 +3066,9 @@ tr:last-child td {
 .th-spend-viz {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 30px;
+  gap: 22px;
   align-items: center;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 }
 
 /* Charts are the one round thing in the hub: out-specify the square rule. */
@@ -3078,16 +3078,16 @@ tr:last-child td {
 }
 
 .th-donut {
-  width: 168px;
-  height: 168px;
+  width: 132px;
+  height: 132px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .th-donut-inner {
-  width: 106px;
-  height: 106px;
+  width: 84px;
+  height: 84px;
   background: var(--th-paper);
   display: flex;
   flex-direction: column;
@@ -3098,7 +3098,7 @@ tr:last-child td {
 
 .th-donut-inner strong {
   font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
-  font-size: 27px;
+  font-size: 21px;
   line-height: 1;
   color: var(--th-ink);
 }
@@ -3113,7 +3113,7 @@ tr:last-child td {
 
 .th-catbars {
   display: grid;
-  gap: 13px;
+  gap: 9px;
   min-width: 0;
 }
 
@@ -3122,14 +3122,14 @@ tr:last-child td {
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 
 .th-catbar-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
+  gap: 7px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -3143,7 +3143,7 @@ tr:last-child td {
 }
 
 .th-catbar-line strong {
-  font-size: 14px;
+  font-size: 12.5px;
   color: var(--th-ink);
   white-space: nowrap;
 }
@@ -3151,12 +3151,12 @@ tr:last-child td {
 .th-catbar-line em {
   font-style: normal;
   font-weight: 400;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--th-muted);
 }
 
 .th-catbar-track {
-  height: 8px;
+  height: 6px;
   background: #efe9e6;
 }
 
@@ -3180,7 +3180,12 @@ tr:last-child td {
 }
 
 .th-page table {
-  font-size: 0.88rem;
+  font-size: 0.82rem;
+}
+
+.th-page th,
+.th-page td {
+  padding: 6px 10px;
 }
 
 @media (max-width: 860px) {
