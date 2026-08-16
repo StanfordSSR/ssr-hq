@@ -192,39 +192,23 @@ function getActionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 }
 
-async function getActionReturnPath(fallbackPath: string) {
-  const referer = (await headers()).get('referer');
-
-  if (!referer) {
-    return fallbackPath;
-  }
-
-  try {
-    const current = new URL(referer, env.siteUrl);
-    const site = new URL(env.siteUrl);
-
-    if (current.origin !== site.origin) {
-      return fallbackPath;
-    }
-
-    return `${current.pathname}${current.search}`;
-  } catch {
-    return fallbackPath;
-  }
+// Set a short-lived flash cookie for the global ActionToast in the dashboard
+// layout. Setting a cookie from a server action makes Next re-render the
+// current route in place — so the user gets an instant toast with no
+// navigation, no ?status=… URL, and no history entry.
+async function setActionFlash(status: 'success' | 'error', message: string) {
+  (await cookies()).set('hq_flash', JSON.stringify({ status, message, ts: Date.now() }), {
+    path: '/',
+    maxAge: 20,
+    httpOnly: false,
+    sameSite: 'lax'
+  });
 }
 
-function buildStatusPath(path: string, status: 'success' | 'error', message: string) {
-  const url = new URL(path, env.siteUrl);
-  url.searchParams.set('status', status);
-  url.searchParams.set('message', message);
-  return `${url.pathname}${url.search}`;
-}
-
-async function redirectWithActionStatus(status: 'success' | 'error', message: string, fallbackPath: string) {
-  const nextPath = await getActionReturnPath(fallbackPath);
-  redirect(buildStatusPath(nextPath, status, message));
-}
-
+// Historical name kept so all ~70 call sites stay unchanged: it no longer
+// redirects — it records the outcome in the flash cookie and lets the page
+// re-render in place. Real navigations (redirect() inside the action) still
+// pass through.
 async function runRedirectingAction(options: {
   fallbackPath: string;
   successMessage: string;
@@ -237,10 +221,11 @@ async function runRedirectingAction(options: {
       throw error;
     }
 
-    await redirectWithActionStatus('error', getActionErrorMessage(error), options.fallbackPath);
+    await setActionFlash('error', getActionErrorMessage(error));
+    return;
   }
 
-  await redirectWithActionStatus('success', options.successMessage, options.fallbackPath);
+  await setActionFlash('success', options.successMessage);
 }
 
 async function requireActiveProfile() {

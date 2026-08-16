@@ -4,7 +4,7 @@ import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { formatDateLabel } from '@/lib/academic-calendar';
-import { FinanceFileToggle, PortalDecideButtons } from '@/components/reimbursement-actions';
+import { CopyRNumber, FinanceFileToggle, PortalDecideButtons } from '@/components/reimbursement-actions';
 import {
   getReimbursementAttachments,
   PURCHASE_TYPE_LABELS,
@@ -42,6 +42,9 @@ function purchaseTypeLabel(row: Pick<ReimbursementRow, 'purchase_type' | 'travel
   }
   return base;
 }
+
+// Where FOs actually approve reimbursements. Overridable per deployment.
+const GRANTED_URL = process.env.NEXT_PUBLIC_GRANTED_URL || 'https://granted.stanford.edu';
 
 function money(cents: number) {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -162,6 +165,47 @@ export default async function ReimbursementsPage() {
         </div>
       </div>
 
+      {isFinance ? (
+        <section className="hq-panel hq-surface-muted">
+          <div className="hq-block-head">
+            <h2>Approved — ready for Granted ({approvedToFile.length})</h2>
+          </div>
+          <p className="helper">
+            The loop: copy the R-number, approve it in Stanford Granted, come back, and mark it filed —
+            the row drops off this list.
+          </p>
+          {approvedToFile.length === 0 ? (
+            <p className="empty-note">No approved reimbursements waiting to be filed.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Approved</th>
+                    <th>Team</th>
+                    <th>Person</th>
+                    <th>Item</th>
+                    <th>Amount</th>
+                    <th>Granted #</th>
+                    <th>Approved by</th>
+                    <th>Receipt</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvedToFile.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}</td>
+                      <td>{teamName.get(r.team_id) || '—'}</td>
+                      <td>{r.submitter_name}</td>
+                      <td style={{ fontWeight: 700 }}>
+                        {r.item_name}
+                        {purchaseTypeLabel(r) ? (
+                          <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>
+                            {purchaseTypeLabel(r)}
+                          </span>
+                        ) : null}
+
       <section className="hq-panel hq-surface-muted">
         <div className="hq-block-head">
           <h2>Pending approval ({pending.length})</h2>
@@ -233,42 +277,6 @@ export default async function ReimbursementsPage() {
         )}
       </section>
 
-      {isFinance ? (
-        <section className="hq-panel hq-surface-muted">
-          <div className="hq-block-head">
-            <h2>Approved — ready for Granted ({approvedToFile.length})</h2>
-          </div>
-          {approvedToFile.length === 0 ? (
-            <p className="empty-note">No approved reimbursements waiting to be filed.</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Approved</th>
-                    <th>Team</th>
-                    <th>Person</th>
-                    <th>Item</th>
-                    <th>Amount</th>
-                    <th>Granted #</th>
-                    <th>Approved by</th>
-                    <th>Receipt</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {approvedToFile.map((r) => (
-                    <tr key={r.id}>
-                      <td>{r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}</td>
-                      <td>{teamName.get(r.team_id) || '—'}</td>
-                      <td>{r.submitter_name}</td>
-                      <td style={{ fontWeight: 700 }}>
-                        {r.item_name}
-                        {purchaseTypeLabel(r) ? (
-                          <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>
-                            {purchaseTypeLabel(r)}
-                          </span>
-                        ) : null}
                       </td>
                       <td>{money(r.amount_cents)}</td>
                       <td style={{ fontWeight: 700 }}>{r.reimbursement_number}</td>
