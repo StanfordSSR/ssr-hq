@@ -556,6 +556,9 @@ export default async function DashboardPage() {
                 )}
                 <h2 className="hq-section-title hq-section-title-compact">{team.name}</h2>
               </div>
+              <Link href={`/dashboard/teams/${team.id}`} className="hq-inline-link">
+                Open team page →
+              </Link>
             </div>
           </div>
 
