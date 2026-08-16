@@ -11,6 +11,15 @@ import { getLeadTeamIds } from '@/lib/lead-state';
 import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel, LEADERSHIP_STEWARD_LABEL } from '@/lib/high-value-assets';
 import { getPendingCardAgreements } from '@/lib/credit-card';
 import { getSummerSpendSummary } from '@/lib/summer-spend';
+import {
+  CATEGORY_COLORS,
+  PURCHASE_CATEGORIES,
+  categoryTotals as computeCategoryTotals,
+  chartDenominator,
+  donutGradient,
+  donutSlices,
+  sumAmounts
+} from '@/lib/finance-math';
 import { SummerSpendPanel } from '@/components/summer-spend-panel';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
 import { TeamExpenseLogger } from '@/components/team-expense-logger';
@@ -958,37 +967,23 @@ export default async function DashboardPage() {
   // travel, and registration. The donut is shares of the annual budget with the
   // unused remainder in grey; when spend exceeds budget (or none is set), it
   // falls back to shares of total spend.
-  const CATEGORY_META = [
-    { key: 'equipment', label: 'Equipment', color: '#8c1515' },
-    { key: 'food', label: 'Food', color: '#d17c3f' },
-    { key: 'travel', label: 'Travel', color: '#3f6e8f' },
-    { key: 'registration', label: 'Registration', color: '#5b8c5a' }
-  ] as const;
+  const CATEGORY_LABELS: Record<(typeof PURCHASE_CATEGORIES)[number], string> = {
+    equipment: 'Equipment',
+    food: 'Food',
+    travel: 'Travel',
+    registration: 'Registration'
+  };
   const budgetCents = teamBudget?.annual_budget_cents || 0;
-  const spentCents = purchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
-  const categoryTotals = CATEGORY_META.map((meta) => ({
-    ...meta,
-    cents: purchases
-      .filter((purchase) => (purchase.category || 'equipment') === meta.key)
-      .reduce((sum, purchase) => sum + purchase.amount_cents, 0)
+  const spentCents = sumAmounts(purchases);
+  const totalsByCategory = computeCategoryTotals(purchases);
+  const categoryTotals = PURCHASE_CATEGORIES.map((key) => ({
+    key,
+    label: CATEGORY_LABELS[key],
+    color: CATEGORY_COLORS[key],
+    cents: totalsByCategory[key]
   }));
-  const donutDenominator = Math.max(budgetCents, spentCents);
-  let donutCursor = 0;
-  const donutSlices: string[] = [];
-  if (donutDenominator > 0) {
-    for (const entry of categoryTotals) {
-      if (entry.cents <= 0) continue;
-      const start = donutCursor;
-      const end = donutCursor + (entry.cents / donutDenominator) * 100;
-      donutCursor = end;
-      donutSlices.push(`${entry.color} ${start}% ${end}%`);
-    }
-    if (donutCursor < 100) {
-      donutSlices.push(`#e8e1de ${donutCursor}% 100%`);
-    }
-  }
-  const donutBackground =
-    donutSlices.length > 0 ? `conic-gradient(${donutSlices.join(', ')})` : 'conic-gradient(#e8e1de 0 100%)';
+  const donutDenominator = chartDenominator(budgetCents, spentCents);
+  const donutBackground = donutGradient(donutSlices(totalsByCategory, donutDenominator));
 
   const pendingReceipts = (pendingReceiptsData || []) as PendingReceipt[];
   const spentPercent = annualBudget > 0 ? Math.min(100, Math.round((spent / annualBudget) * 100)) : 0;

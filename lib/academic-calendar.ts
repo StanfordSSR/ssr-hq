@@ -60,8 +60,11 @@ function formatAcademicYearFromStartYear(startYear: number) {
 }
 
 function parseAcademicYearStartYear(academicYear: string) {
-  const parsed = Number(academicYear.slice(0, 4));
-  return Number.isFinite(parsed) ? parsed : null;
+  // Require a real 4-digit start year. Number('') and Number('  ') are both 0,
+  // which would otherwise make an empty cycle string parse as year zero and
+  // produce nonsense like '-1-00' from getPreviousAcademicYear.
+  const match = /^(\d{4})/.exec(academicYear.trim());
+  return match ? Number(match[1]) : null;
 }
 
 function maxAcademicYear(left: string, right: string) {

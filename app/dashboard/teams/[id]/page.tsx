@@ -6,6 +6,7 @@ import { getLeadTeamIds } from '@/lib/lead-state';
 import { getCurrentAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getSummerSpendSummary } from '@/lib/summer-spend';
+import { remainingCents, utilizationPercent, sumAmounts } from '@/lib/finance-math';
 import { getHighValueAssetsForTeams, storageLocationLabel } from '@/lib/high-value-assets';
 import { EOY_REPORT_TITLE } from '@/lib/eoy-report';
 import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
@@ -184,12 +185,9 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
 
   // Budget math for the current cycle.
   const annualBudgetCents = budgetData?.annual_budget_cents || 0;
-  const cycleSpentCents = purchases
-    .filter((p) => p.academic_year === cycle)
-    .reduce((sum, p) => sum + p.amount_cents, 0);
-  const remainingCents = annualBudgetCents - cycleSpentCents;
-  const utilizationPercent =
-    annualBudgetCents > 0 ? Math.min(100, Math.round((cycleSpentCents / annualBudgetCents) * 100)) : 0;
+  const cycleSpentCents = sumAmounts(purchases.filter((p) => p.academic_year === cycle));
+  const remaining = remainingCents(annualBudgetCents, cycleSpentCents);
+  const utilization = utilizationPercent(annualBudgetCents, cycleSpentCents);
   const summerRow = summerSummary.teams.find((row) => row.teamId === teamId) || null;
 
   // Receipts owed: credit card purchases with no receipt on file.
@@ -282,13 +280,13 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
         </div>
         <div className="th-stat">
           <span>Remaining</span>
-          <strong className={remainingCents < 0 ? 'th-bad' : undefined}>{money(remainingCents)}</strong>
+          <strong className={remaining < 0 ? 'th-bad' : undefined}>{money(remaining)}</strong>
         </div>
         <div className="th-stat">
           <span>Utilization</span>
-          <strong>{utilizationPercent}%</strong>
+          <strong>{utilization}%</strong>
           <div className="th-stat-bar">
-            <div style={{ width: `${utilizationPercent}%` }} />
+            <div style={{ width: `${utilization}%` }} />
           </div>
         </div>
         {summerRow ? (
