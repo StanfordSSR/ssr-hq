@@ -19,10 +19,14 @@ export function LoginForm() {
     const params = new URLSearchParams(window.location.hash.slice(1));
     const errorDescription = params.get('error_description');
 
-    if (errorDescription) {
-      setError(errorDescription.replace(/\+/g, ' '));
-      window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    if (!errorDescription) {
+      return;
     }
+
+    window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    // Defer past the commit so the effect doesn't set state synchronously.
+    const frame = requestAnimationFrame(() => setError(errorDescription.replace(/\+/g, ' ')));
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {

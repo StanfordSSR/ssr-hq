@@ -184,17 +184,25 @@ export function BudgetPlanEditor(props: Props) {
   const [cols, setCols] = useState<number[]>(DEFAULT_COLS);
   // Load saved column widths after mount (avoids hydration mismatch).
   useEffect(() => {
+    let saved: number[] | null = null;
     try {
-      const saved = window.localStorage.getItem('ssr-budget-cols');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const raw = window.localStorage.getItem('ssr-budget-cols');
+      if (raw) {
+        const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length === DEFAULT_COLS.length && parsed.every((n) => typeof n === 'number')) {
-          setCols(parsed);
+          saved = parsed;
         }
       }
     } catch {
       /* ignore */
     }
+    if (!saved) {
+      return;
+    }
+    // Defer past the commit so the effect doesn't set state synchronously.
+    const restored = saved;
+    const frame = requestAnimationFrame(() => setCols(restored));
+    return () => cancelAnimationFrame(frame);
   }, []);
   useEffect(() => {
     try {

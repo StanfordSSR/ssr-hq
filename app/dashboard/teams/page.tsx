@@ -38,6 +38,15 @@ type Profile = {
   active: boolean;
 };
 
+// Module scope: the add-team captcha is deliberately random per render, but
+// the randomness must not sit in the component body.
+function nextCaptcha() {
+  return {
+    captchaLeft: Math.floor(Math.random() * 5) + 4,
+    captchaRight: Math.floor(Math.random() * 5) + 3
+  };
+}
+
 export default async function ManageTeamsPage() {
   const admin = createAdminClient();
   const { currentRole } = await getViewerContext();
@@ -74,8 +83,7 @@ export default async function ManageTeamsPage() {
   const unassignedLeadProfiles = leadProfiles.filter((profile) => !assignedLeadIds.has(profile.id));
 
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
-  const captchaLeft = Math.floor(Math.random() * 5) + 4;
-  const captchaRight = Math.floor(Math.random() * 5) + 3;
+  const { captchaLeft, captchaRight } = nextCaptcha();
   const leadsByTeam = new Map<
     string,
     Array<{

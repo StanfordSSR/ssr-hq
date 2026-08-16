@@ -80,6 +80,11 @@ function buildQueryString(current: Record<string, string>, updates: Record<strin
   return params.toString();
 }
 
+// Module scope so the clock read stays out of the component body.
+function msDaysAgo(days: number) {
+  return Date.now() - days * 24 * 60 * 60 * 1000;
+}
+
 export default async function ExpenseLogPage({
   searchParams
 }: {
@@ -190,13 +195,15 @@ export default async function ExpenseLogPage({
       return new Date(a.purchased_at).getTime() - new Date(b.purchased_at).getTime();
     });
 
+  // Single clock read for the whole filter pass (also keeps the render pure).
+  const ninetyDaysAgoMs = msDaysAgo(90);
   const filteredPurchases = purchases.filter((purchase) => {
     if (rawRange === 'all_time') {
       return true;
     }
 
     if (rawRange === 'last_90_days') {
-      return new Date(purchase.purchased_at).getTime() >= Date.now() - 90 * 24 * 60 * 60 * 1000;
+      return new Date(purchase.purchased_at).getTime() >= ninetyDaysAgoMs;
     }
 
     if (rawRange === 'academic_year') {
