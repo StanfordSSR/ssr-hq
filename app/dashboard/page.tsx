@@ -396,7 +396,7 @@ export default async function DashboardPage() {
         .maybeSingle(),
       admin
         .from('purchase_logs')
-        .select('id, description, person_name, amount_cents, purchased_at')
+        .select('id, description, person_name, amount_cents, purchased_at, category')
         .eq('team_id', team.id)
         .eq('academic_year', cycle),
       admin
@@ -471,6 +471,7 @@ export default async function DashboardPage() {
     person_name: string | null;
     amount_cents: number;
     purchased_at: string;
+    category: 'equipment' | 'food' | 'travel' | 'registration' | null;
   }>;
   const spent = purchases.reduce(
     (sum, purchase) => sum + purchase.amount_cents / 100,
@@ -493,6 +494,42 @@ export default async function DashboardPage() {
       total: totalCents / 100
     };
   });
+  // Category breakdown for the cycle: how much budget went to equipment, food,
+  // travel, and registration. The donut is shares of the annual budget with the
+  // unused remainder in grey; when spend exceeds budget (or none is set), it
+  // falls back to shares of total spend.
+  const CATEGORY_META = [
+    { key: 'equipment', label: 'Equipment', color: '#8c1515' },
+    { key: 'food', label: 'Food', color: '#d17c3f' },
+    { key: 'travel', label: 'Travel', color: '#3f6e8f' },
+    { key: 'registration', label: 'Registration', color: '#5b8c5a' }
+  ] as const;
+  const budgetCents = teamBudget?.annual_budget_cents || 0;
+  const spentCents = purchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
+  const categoryTotals = CATEGORY_META.map((meta) => ({
+    ...meta,
+    cents: purchases
+      .filter((purchase) => (purchase.category || 'equipment') === meta.key)
+      .reduce((sum, purchase) => sum + purchase.amount_cents, 0)
+  }));
+  const donutDenominator = Math.max(budgetCents, spentCents);
+  let donutCursor = 0;
+  const donutSlices: string[] = [];
+  if (donutDenominator > 0) {
+    for (const entry of categoryTotals) {
+      if (entry.cents <= 0) continue;
+      const start = donutCursor;
+      const end = donutCursor + (entry.cents / donutDenominator) * 100;
+      donutCursor = end;
+      donutSlices.push(`${entry.color} ${start}% ${end}%`);
+    }
+    if (donutCursor < 100) {
+      donutSlices.push(`#e8e1de ${donutCursor}% 100%`);
+    }
+  }
+  const donutBackground =
+    donutSlices.length > 0 ? `conic-gradient(${donutSlices.join(', ')})` : 'conic-gradient(#e8e1de 0 100%)';
+
   const pendingReceipts = (pendingReceiptsData || []) as PendingReceipt[];
   const spentPercent = annualBudget > 0 ? Math.min(100, Math.round((spent / annualBudget) * 100)) : 0;
 
@@ -760,6 +797,49 @@ export default async function DashboardPage() {
           <span className="th-sec-count">{purchases.length}</span>
         </summary>
         <div className="th-body">
+          <div className="th-spend-viz">
+            <div className="th-donut-wrap">
+              <div className="th-donut" style={{ background: donutBackground }}>
+                <div className="th-donut-inner">
+                  <strong>{spentPercent}%</strong>
+                  <span>used</span>
+                </div>
+              </div>
+            </div>
+            <div className="th-catbars">
+              {categoryTotals.map((entry) => {
+                const percentOfBudget =
+                  donutDenominator > 0 ? Math.round((entry.cents / donutDenominator) * 100) : 0;
+                return (
+                  <div key={entry.key} className="th-catbar">
+                    <div className="th-catbar-line">
+                      <span className="th-catbar-label">
+                        <i style={{ background: entry.color }} aria-hidden="true" />
+                        {entry.label}
+                      </span>
+                      <strong>
+                        {usd(entry.cents / 100)}
+                        <em> · {percentOfBudget}% of {budgetCents > 0 && spentCents <= budgetCents ? 'budget' : 'spend'}</em>
+                      </strong>
+                    </div>
+                    <div className="th-catbar-track">
+                      <div style={{ width: `${Math.min(100, percentOfBudget)}%`, background: entry.color }} />
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="th-catbar">
+                <div className="th-catbar-line">
+                  <span className="th-catbar-label">
+                    <i style={{ background: '#e8e1de' }} aria-hidden="true" />
+                    Unspent
+                  </span>
+                  <strong>{usd(Math.max(0, budgetCents - spentCents) / 100)}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="th-minigrid">
             {quarterlySpend.map((entry) => {
               const visual = getQuarterVisual(entry.quarter);
