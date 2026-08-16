@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -142,7 +143,7 @@ export default async function ManageTeamsPage() {
               return (
                 <article key={team.id} className="hq-team-row">
                   <div className="hq-team-row-head">
-                    <div className="hq-team-heading">
+                    <Link href={`/dashboard/teams/${team.id}`} className="hq-team-heading hq-team-heading-link">
                       <div className="hq-team-title-row">
                         {team.logo_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -155,7 +156,7 @@ export default async function ManageTeamsPage() {
                         <h3>{team.name}</h3>
                       </div>
                       <p>{team.description || team.slug}</p>
-                    </div>
+                    </Link>
 
                     <span className={`badge ${team.is_active ? 'badge-team' : 'badge-off'}`}>
                       {team.is_active ? 'Active' : 'Inactive'}
