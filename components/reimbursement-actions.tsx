@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import {
   decideReimbursementInPortalAction,
   setReimbursementProcessedAction
@@ -65,5 +65,29 @@ export function PortalDecideButtons({
         </span>
       ) : null}
     </div>
+  );
+}
+
+// One-click copy of the Granted R-number, for pasting into the Granted portal
+// search. Feedback swaps the label briefly; no toast needed.
+export function CopyRNumber({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="hq-copy-chip"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1400);
+        } catch {
+          // Clipboard unavailable (permissions/http) — leave the number visible.
+        }
+      }}
+      title={`Copy ${value}`}
+    >
+      {copied ? 'Copied ✓' : value}
+    </button>
   );
 }

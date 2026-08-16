@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
@@ -32,43 +32,22 @@ function getActionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 }
 
-async function getActionReturnPath(fallbackPath: string) {
-  const referer = (await headers()).get('referer');
-
-  if (!referer) {
-    return fallbackPath;
-  }
-
-  try {
-    const current = new URL(referer, env.siteUrl);
-    const site = new URL(env.siteUrl);
-
-    if (current.origin !== site.origin) {
-      return fallbackPath;
-    }
-
-    return `${current.pathname}${current.search}`;
-  } catch {
-    return fallbackPath;
-  }
-}
-
-function buildStatusPath(path: string, status: 'success' | 'error', message: string) {
-  const url = new URL(path, env.siteUrl);
-  url.searchParams.set('status', status);
-  url.searchParams.set('message', message);
-  return `${url.pathname}${url.search}`;
-}
-
 function revalidatePaths(paths: string[]) {
   for (const path of new Set(paths)) {
     revalidatePath(path);
   }
 }
 
-async function redirectWithActionStatus(status: 'success' | 'error', message: string, fallbackPath: string) {
-  const nextPath = await getActionReturnPath(fallbackPath);
-  redirect(buildStatusPath(nextPath, status, message));
+// Same flash-cookie contract as app/dashboard/actions.ts: record the outcome
+// for the global ActionToast and let the page re-render in place instead of
+// redirecting with ?status=… in the URL.
+async function setActionFlash(status: 'success' | 'error', message: string) {
+  (await cookies()).set('hq_flash', JSON.stringify({ status, message, ts: Date.now() }), {
+    path: '/',
+    maxAge: 20,
+    httpOnly: false,
+    sameSite: 'lax'
+  });
 }
 
 async function runRedirectingAction(options: {
@@ -83,10 +62,11 @@ async function runRedirectingAction(options: {
       throw error;
     }
 
-    await redirectWithActionStatus('error', getActionErrorMessage(error), options.fallbackPath);
+    await setActionFlash('error', getActionErrorMessage(error));
+    return;
   }
 
-  await redirectWithActionStatus('success', options.successMessage, options.fallbackPath);
+  await setActionFlash('success', options.successMessage);
 }
 
 async function requireAdminProfile() {

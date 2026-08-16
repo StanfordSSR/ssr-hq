@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { signOutAction } from '@/app/dashboard/teams/actions';
 import { switchActiveRoleAction } from '@/app/dashboard/actions';
-import { DashboardStatusBanner } from '@/components/dashboard-status-banner';
+import { cookies } from 'next/headers';
+import { ActionToast, type ActionFlash } from '@/components/action-toast';
 import { getRoleLabel, getViewerContext, holdsSigningRole } from '@/lib/auth';
 import { getLeadTaskIndicatorState } from '@/lib/lead-state';
 
@@ -160,6 +161,20 @@ export default async function DashboardLayout({
       .slice(0, 2)
       .toUpperCase() || 'U';
 
+  // Result of the most recent server action, if any — shown as a toast.
+  let actionFlash: ActionFlash | null = null;
+  const flashCookie = (await cookies()).get('hq_flash')?.value;
+  if (flashCookie) {
+    try {
+      const parsed = JSON.parse(flashCookie) as ActionFlash;
+      if ((parsed.status === 'success' || parsed.status === 'error') && typeof parsed.message === 'string') {
+        actionFlash = parsed;
+      }
+    } catch {
+      actionFlash = null;
+    }
+  }
+
   return (
     <div className="hq-shell">
       <header className="hq-topbar">
@@ -252,7 +267,7 @@ export default async function DashboardLayout({
       </header>
 
       <main className="hq-main">
-        <DashboardStatusBanner />
+        <ActionToast flash={actionFlash} />
         {children}
       </main>
     </div>
