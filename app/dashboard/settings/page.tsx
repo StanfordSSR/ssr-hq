@@ -300,7 +300,7 @@ export default async function SettingsPage() {
     : null;
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{canEdit ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : 'President'}</p>

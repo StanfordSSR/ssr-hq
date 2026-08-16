@@ -36,7 +36,7 @@ export default async function CreditCardPage() {
   // No access at all.
   if (!grantEnabled) {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         <div className="hq-page-head">
           <div className="hq-page-head-copy">
             <p className="hq-eyebrow">Finances</p>
@@ -59,7 +59,7 @@ export default async function CreditCardPage() {
     const today = formatDateLabel(new Date());
 
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         <div className="hq-page-head">
           <div className="hq-page-head-copy">
             <p className="hq-eyebrow">Finances</p>
@@ -102,7 +102,7 @@ export default async function CreditCardPage() {
   // Signed, waiting on the Financial Officer.
   if (agreement.status === 'pending_fo') {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         <div className="hq-page-head">
           <div className="hq-page-head-copy">
             <p className="hq-eyebrow">Finances</p>
@@ -142,7 +142,7 @@ export default async function CreditCardPage() {
   // Outside North America (or country unknown) → never show the card.
   if (gate.state === 'blocked_na') {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         {pageHead}
         <section
           className="hq-panel"
@@ -184,7 +184,7 @@ export default async function CreditCardPage() {
     }
 
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         {pageHead}
         <section
           className="hq-panel"
@@ -204,7 +204,7 @@ export default async function CreditCardPage() {
   const card = await getDecryptedCard();
   if (!card) {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         {pageHead}
         <section className="hq-panel hq-surface-muted">
           <p className="empty-note">No card is on file yet. Ask an admin to add one in Club Settings.</p>
@@ -220,7 +220,7 @@ export default async function CreditCardPage() {
   // card plus the sign-to-view form.
   if (gate.state === 'require_sign') {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         {pageHead}
         <section className="hq-panel hq-surface-muted">
           <p className="helper" style={{ fontWeight: 600 }}>
@@ -296,7 +296,7 @@ export default async function CreditCardPage() {
   // own identity are passed; the real digits are fetched on demand.
   if (gate.state === 'ok') {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         {pageHead}
         <section className="hq-panel hq-surface-muted">
           <p className="helper" style={{ color: '#1f7a4d', fontWeight: 700, marginTop: 0 }}>
@@ -318,7 +318,7 @@ export default async function CreditCardPage() {
   // Defensive fallback: the gate lost access between the Phase-2 check above and
   // here (shouldn't normally happen since we're already approved/overridden).
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       {pageHead}
       <section className="hq-panel hq-surface-muted">
         <p className="empty-note">You don&apos;t currently have access to view the card.</p>

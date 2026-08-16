@@ -313,7 +313,7 @@ export default async function ExpenseLogPage({
   };
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{isAdmin ? 'Admin' : isPresident ? 'President' : isVicePresident ? 'Vice president' : isFinancialOfficer ? 'Financial officer' : 'Lead portal'}</p>

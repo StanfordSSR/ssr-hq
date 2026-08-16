@@ -54,7 +54,7 @@ export default async function CreditCardApprovePage({
   // No agreement on file at all.
   if (!agreement) {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         {head}
         <section className="hq-panel hq-surface-muted">
           <p className="empty-note">This person has not signed the credit card agreement.</p>
@@ -66,7 +66,7 @@ export default async function CreditCardApprovePage({
   // Already decided — show the current status instead of the approve controls.
   if (agreement.status !== 'pending_fo') {
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         {head}
         <section className="hq-panel hq-surface-muted">
           <p className="helper" style={{ color: '#1f7a4d', fontWeight: 700 }}>
@@ -80,7 +80,7 @@ export default async function CreditCardApprovePage({
   }
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       {head}
 
       <section className="hq-panel hq-surface-muted">

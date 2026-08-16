@@ -31,7 +31,7 @@ export default async function PersonalProfilePage() {
   const signatureSampleCount = sig?.sample_count || 0;
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       <section className="hq-page-head">
         <div>
           <p className="hq-eyebrow">Personal settings</p>

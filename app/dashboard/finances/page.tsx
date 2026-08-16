@@ -343,7 +343,7 @@ export default async function FinancesPage({
   const chartBackground = slices.length > 0 ? `conic-gradient(${slices.join(', ')})` : 'conic-gradient(#e5e1e1 0 100%)';
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{canEdit ? 'Admin' : currentRole === 'president' ? 'President' : currentRole === 'vice_president' ? 'Vice president' : 'Financial officer'}</p>

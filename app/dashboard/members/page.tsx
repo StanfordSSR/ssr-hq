@@ -223,7 +223,7 @@ export default async function ManageMembersPage() {
     });
 
     return (
-      <div className="hq-page">
+      <div className="hq-page th-page">
         <section className="hq-page-head">
           <div className="hq-page-head-copy">
             <p className="hq-eyebrow">{isAdmin ? 'Admin' : currentRole === 'vice_president' ? 'Vice president' : 'President'}</p>
@@ -362,7 +362,7 @@ export default async function ManageMembersPage() {
   const totalCount = teamMemberships.length + rosterMembers.length;
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">Lead portal</p>

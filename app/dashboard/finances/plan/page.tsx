@@ -113,7 +113,7 @@ export default async function BudgetPlanPage() {
     : null;
 
   return (
-    <div className="hq-page">
+    <div className="hq-page th-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{canEdit ? 'Admin' : isPresident ? 'President' : currentRole === 'vice_president' ? 'Vice president' : 'Financial officer'}</p>
