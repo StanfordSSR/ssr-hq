@@ -4,21 +4,20 @@ import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getViewerContext } from '@/lib/auth';
 import { recordAuditEvent } from '@/lib/audit';
-import { getReimbursementById, finalizeReimbursementDecision } from '@/lib/reimbursements';
+import { getReimbursementById, finalizeReimbursementDecision, canFileInGranted } from '@/lib/reimbursements';
 import { getLeadTeamIds } from '@/lib/lead-state';
 
 type ActionResult = { ok: boolean; message: string };
 
-const FINANCE_ROLES = new Set(['admin', 'president', 'financial_officer']);
-
-// Financial officers (and admins/presidents) mark an approved reimbursement as
-// filed in the Stanford Granted portal so it drops off the to-do list.
+// Financial officers mark an approved reimbursement as filed in the Stanford
+// Granted portal so it drops off the to-do list. See canFileInGranted for who
+// is allowed and why.
 export async function setReimbursementProcessedAction(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
   const { user, currentRole } = await getViewerContext();
-  if (!FINANCE_ROLES.has(currentRole)) {
+  if (!canFileInGranted(currentRole)) {
     return { ok: false, message: 'Only financial officers can update Granted status.' };
   }
 

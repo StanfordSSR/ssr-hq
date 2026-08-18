@@ -5,7 +5,8 @@ import {
   extractSubmissionFootprint,
   isPurchaseType,
   isTravelSubtype,
-  categoryForReimbursement
+  categoryForReimbursement,
+  canFileInGranted
 } from '@/lib/reimbursements';
 
 describe('isPurchaseType', () => {
@@ -142,5 +143,40 @@ describe('extractSubmissionFootprint', () => {
     expect(fp.ip).toBeNull();
     expect(fp.geo.latitude).toBeNull();
     expect(fp.geo.outsideBayArea).toBe(false);
+  });
+});
+
+describe('canFileInGranted', () => {
+  it('allows the financial officer — filing in Granted is their job', () => {
+    expect(canFileInGranted('financial_officer')).toBe(true);
+  });
+
+  it('allows admin as break-glass', () => {
+    expect(canFileInGranted('admin')).toBe(true);
+  });
+
+  it('does NOT allow the president', () => {
+    // Presidents get the read-only finance view; recording "filed in Granted"
+    // would claim work they have no portal access to verify.
+    expect(canFileInGranted('president')).toBe(false);
+  });
+
+  it('does NOT allow the vice president', () => {
+    expect(canFileInGranted('vice_president')).toBe(false);
+  });
+
+  it('does NOT allow a team lead', () => {
+    expect(canFileInGranted('team_lead')).toBe(false);
+  });
+
+  it('denies unknown or empty roles by default', () => {
+    expect(canFileInGranted('')).toBe(false);
+    expect(canFileInGranted('member')).toBe(false);
+    expect(canFileInGranted('FINANCIAL_OFFICER')).toBe(false);
+  });
+
+  it('grants filing to exactly two roles out of every role in the portal', () => {
+    const allRoles = ['admin', 'president', 'vice_president', 'financial_officer', 'team_lead'];
+    expect(allRoles.filter(canFileInGranted)).toEqual(['admin', 'financial_officer']);
   });
 });
