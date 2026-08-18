@@ -2725,10 +2725,27 @@ tr:last-child td {
   font-variant-numeric: tabular-nums;
 }
 
-/* Square everything inside the hub, including reused components. */
+/* Square everything inside the hub, including reused components — panels,
+   cards, inputs, buttons, chips, tables. Things that are round *by nature*
+   (charts, avatars, toggles) are exempted immediately below; without that
+   exemption this rule turns pie charts into squares. */
 .th-page,
 .th-page * {
   border-radius: 0 !important;
+}
+
+/* Circles stay circles. Higher specificity than the blanket rule above, so
+   these win. Chart rings, the account avatar, and switch tracks are circular
+   in meaning, not decoration. */
+.th-page .hq-budget-ring,
+.th-page .hq-budget-ring-inner,
+.th-page .hq-budget-ring-large,
+.th-page .hq-budget-ring-inner-large,
+.th-page .th-donut,
+.th-page .th-donut-inner,
+.th-page .hq-avatar,
+.th-page .hq-switch-track {
+  border-radius: 999px !important;
 }
 
 /* --- masthead --- */
@@ -3069,12 +3086,6 @@ tr:last-child td {
   gap: 22px;
   align-items: center;
   margin-bottom: 16px;
-}
-
-/* Charts are the one round thing in the hub: out-specify the square rule. */
-.th-page .th-donut,
-.th-page .th-donut-inner {
-  border-radius: 50% !important;
 }
 
 .th-donut {
