@@ -186,6 +186,18 @@ export function categoryForReimbursement(
   return detectPurchaseCategory(itemName);
 }
 
+// Who may mark an approved reimbursement as filed in Stanford Granted.
+//
+// This is the Financial Officer's job: they are the ones with Granted portal
+// access who actually file the claim, so recording "filed" is theirs alone.
+// Presidents and vice presidents get the read-only finance VIEW but must not
+// record filing — the status would then claim work they cannot verify.
+// Admin is retained as break-glass (they hold every other write in the portal),
+// so filing is never blocked if the FO seat is vacant mid-year.
+export function canFileInGranted(role: string): boolean {
+  return role === 'financial_officer' || role === 'admin';
+}
+
 export type ReimbursementSettings = {
   signatureThresholdCents: number;
   intakeEnabled: boolean;

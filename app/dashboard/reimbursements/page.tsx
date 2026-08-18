@@ -6,6 +6,7 @@ import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { formatDateLabel } from '@/lib/academic-calendar';
 import { CopyRNumber, FinanceFileToggle, PortalDecideButtons } from '@/components/reimbursement-actions';
 import {
+  canFileInGranted,
   getReimbursementAttachments,
   PURCHASE_TYPE_LABELS,
   TRAVEL_SUBTYPE_LABELS,
@@ -70,11 +71,11 @@ export default async function ReimbursementsPage() {
     currentRole === 'president' ||
     currentRole === 'vice_president' ||
     currentRole === 'financial_officer';
-  // Marking a reimbursement filed in Granted is a finance WRITE action. Vice
-  // presidents get the same read-only finance VIEW as presidents, but cannot
-  // perform this write (the server action also rejects them).
-  const canFileReimbursements =
-    currentRole === 'admin' || currentRole === 'president' || currentRole === 'financial_officer';
+  // Marking a reimbursement filed in Granted is the Financial Officer's write.
+  // Presidents and vice presidents keep the read-only finance VIEW. Same
+  // predicate the server action enforces, so the UI can never offer a button
+  // the action would reject.
+  const canFileReimbursements = canFileInGranted(currentRole);
   const isLead = currentRole === 'team_lead';
 
   if (!isFinance && !isLead) {

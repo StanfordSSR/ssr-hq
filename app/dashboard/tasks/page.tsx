@@ -76,6 +76,11 @@ type ReceiptPurchase = {
   receipt_not_needed: boolean;
 };
 
+// Module scope so the clock read stays out of the component body.
+function hoursAgoIso(hours: number) {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
 export default async function TasksPage() {
   const admin = createAdminClient();
   const { user, currentRole } = await getViewerContext();
@@ -98,7 +103,7 @@ export default async function TasksPage() {
     .from('announcements')
     .select('id, title, details, location, event_at, recipient_scope, created_at')
     .eq('is_active', true)
-    .gte('event_at', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+    .gte('event_at', hoursAgoIso(12))
     .order('event_at', { ascending: true });
   const announcements = (announcementsData || []) as Announcement[];
 
