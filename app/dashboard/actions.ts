@@ -4452,6 +4452,104 @@ async function setPortalUserPasswordCore(formData: FormData) {
   return { profileId };
 }
 
+// Re-send a portal invite whose emailed link expired or was lost.
+//
+// Supabase invite links are single-use and time-limited, so once one lapses the
+// invitee is stuck with no way back in — there was no way to re-issue it without
+// deleting and re-creating the account (which would drop their team assignment).
+// This regenerates a fresh link for the SAME account and emails it again. The
+// profile, role flags, and team memberships are left exactly as they are.
+async function resendPortalInviteCore(formData: FormData) {
+  const { user } = await requireAdmin();
+  const profileId = String(formData.get('profile_id') || '').trim();
+  if (!profileId) {
+    throw new Error('Select a person to re-invite.');
+  }
+
+  const admin = createAdminClient();
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id, full_name, email, active')
+    .eq('id', profileId)
+    .maybeSingle();
+
+  if (!profile) {
+    throw new Error('That person was not found.');
+  }
+  if (!profile.email) {
+    throw new Error('That account has no email address to send an invite to.');
+  }
+  if (!profile.active) {
+    throw new Error('That account is deactivated. Reactivate it before re-inviting.');
+  }
+
+  // Don't re-invite someone who already signed in — their account works and a
+  // fresh invite link would just be confusing.
+  const { data: authUser } = await admin.auth.admin.getUserById(profileId);
+  if (authUser?.user?.last_sign_in_at) {
+    throw new Error('That person has already accepted their invite and signed in.');
+  }
+
+  // An unaccepted invite means the auth user exists but has never confirmed, so
+  // 'invite' would be rejected as already-registered. A magic link is the
+  // working equivalent and lands on the same callback.
+  const magic = await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: profile.email,
+    options: { redirectTo: `${env.siteUrl}/auth/callback` }
+  });
+
+  const actionLink = magic.data?.properties?.action_link;
+  if (magic.error || !actionLink) {
+    throw new Error(magic.error?.message || 'Could not generate a fresh invite link.');
+  }
+
+  // Name the team(s) they were invited to lead, so the email reads the same as
+  // the original invite rather than a bare login link.
+  const { data: memberships } = await admin
+    .from('team_memberships')
+    .select('team_id')
+    .eq('user_id', profileId)
+    .eq('team_role', 'lead')
+    .eq('is_active', true);
+  const teamIds = (memberships || []).map((row) => row.team_id as string);
+  let teamName: string | null = null;
+  if (teamIds.length > 0) {
+    const { data: teams } = await admin.from('teams').select('name').in('id', teamIds);
+    const names = (teams || []).map((row) => row.name as string).filter(Boolean);
+    if (names.length > 0) {
+      teamName = names.join(', ');
+    }
+  }
+
+  await sendInviteEmail({
+    to: profile.email,
+    fullName: profile.full_name || '',
+    teamName,
+    actionLink
+  });
+
+  await recordAuditEvent({
+    actorId: user.id,
+    action: 'member.invite_resent',
+    targetType: 'profile',
+    targetId: profileId,
+    summary: `Re-sent the portal invite to ${profile.email}.`,
+    details: { email: profile.email, teamName }
+  });
+
+  revalidatePaths(REVALIDATE_PATHS.members);
+  return { email: profile.email };
+}
+
+export async function resendPortalInviteInlineAction(formData: FormData) {
+  const email = String(formData.get('email') || '').trim();
+  return runInlineAction(
+    () => resendPortalInviteCore(formData),
+    email ? `Invite re-sent to ${email}.` : 'Invite re-sent.'
+  );
+}
+
 export async function setPortalUserPasswordInlineAction(formData: FormData) {
   return runInlineAction(() => setPortalUserPasswordCore(formData), 'Updated the portal password.');
 }

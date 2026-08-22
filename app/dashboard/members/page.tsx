@@ -186,6 +186,9 @@ export default async function ManageMembersPage() {
       accessLabel: loginMap.get(profile.id) ? 'Active' : 'Inactive',
       accessDetail: loginMap.get(profile.id) ? `Last login ${formatLastSeen(loginMap.get(profile.id)!)}` : 'Invite not accepted yet',
       canManagePassword: isAdmin && Boolean(profile.email),
+      // Their invite link expired or never arrived: the account exists but has
+      // never been signed into. Admins can email a fresh link.
+      canResendInvite: isAdmin && Boolean(profile.email) && !loginMap.get(profile.id),
       canDeletePortal:
         isAdmin &&
         !profileHasAdminRole(profile) &&

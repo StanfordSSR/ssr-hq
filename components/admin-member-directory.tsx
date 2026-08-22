@@ -1,9 +1,20 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { deletePortalLeadInlineAction, setPortalUserPasswordInlineAction } from '@/app/dashboard/actions';
+import { useRouter } from 'next/navigation';
+import {
+  deletePortalLeadInlineAction,
+  resendPortalInviteInlineAction,
+  setPortalUserPasswordInlineAction
+} from '@/app/dashboard/actions';
 import { confirmationMatches } from '@/lib/confirmation';
+
+// Module scope so the clock read stays out of the component body.
+function writeFlashCookie(status: 'success' | 'error', message: string) {
+  document.cookie = `hq_flash=${encodeURIComponent(
+    JSON.stringify({ status, message, ts: Date.now() })
+  )}; path=/; max-age=20; samesite=lax`;
+}
 
 type AdminMemberRow = {
   id: string;
@@ -17,6 +28,7 @@ type AdminMemberRow = {
   accessDetail?: string;
   canDeletePortal?: boolean;
   canManagePassword?: boolean;
+  canResendInvite?: boolean;
   signatureEnrolled?: boolean;
 };
 
@@ -26,8 +38,6 @@ type AdminMemberDirectoryProps = {
 
 export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [tableRows, setTableRows] = useState(rows);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedMode, setExpandedMode] = useState<'delete' | 'password' | null>(null);
@@ -37,12 +47,23 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
   const [passwordConfirmValue, setPasswordConfirmValue] = useState('');
   const [isPending, startTransition] = useTransition();
 
+  // Feed the global ActionToast the same way server actions do: a short-lived
+  // hq_flash cookie, then refresh so the layout re-reads it. (This used to push
+  // ?status=&message= into the URL, which nothing renders any more.)
   const showStatus = (status: 'success' | 'error', message: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('status', status);
-    params.set('message', message);
-    const next = params.toString();
-    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    writeFlashCookie(status, message);
+    router.refresh();
+  };
+
+  const handleResendInvite = (row: AdminMemberRow) => {
+    if (!row.profileId) return;
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.set('profile_id', row.profileId as string);
+      formData.set('email', row.email);
+      const result = await resendPortalInviteInlineAction(formData);
+      showStatus(result.ok ? 'success' : 'error', result.message);
+    });
   };
 
   const handleDelete = (formData: FormData) => {
@@ -133,8 +154,20 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                   <td>{row.permissions}</td>
                   <td>{row.teams}</td>
                   <td>
-                    {row.canDeletePortal && row.profileId ? (
+                    {row.profileId && (row.canResendInvite || row.canManagePassword || row.canDeletePortal) ? (
                       <div className="hq-inline-editor-actions">
+                        {row.canResendInvite ? (
+                          <button
+                            className="hq-inline-link"
+                            type="button"
+                            disabled={isPending}
+                            onClick={() => handleResendInvite(row)}
+                            title="Their invite link expired or was lost — email a fresh one"
+                          >
+                            {isPending ? 'Sending…' : 'Resend invite'}
+                          </button>
+                        ) : null}
+
                         {row.canManagePassword ? (
                           <button
                             className="hq-inline-link"
@@ -149,34 +182,24 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                             Set password
                           </button>
                         ) : null}
-                        <button
-                          className="hq-inline-link hq-inline-link-danger"
-                          type="button"
-                          onClick={() => {
-                            setExpandedId(expanded && expandedMode === 'delete' ? null : row.id);
-                            setExpandedMode(expanded && expandedMode === 'delete' ? null : 'delete');
-                            setConfirmationPhrase('');
-                            setConfirmationName('');
-                          }}
-                        >
-                          Remove lead
-                        </button>
+
+                        {row.canDeletePortal ? (
+                          <button
+                            className="hq-inline-link hq-inline-link-danger"
+                            type="button"
+                            onClick={() => {
+                              setExpandedId(expanded && expandedMode === 'delete' ? null : row.id);
+                              setExpandedMode(expanded && expandedMode === 'delete' ? null : 'delete');
+                              setConfirmationPhrase('');
+                              setConfirmationName('');
+                            }}
+                          >
+                            Remove lead
+                          </button>
+                        ) : null}
                       </div>
                     ) : (
-                      row.canManagePassword && row.profileId ? (
-                        <button
-                          className="hq-inline-link"
-                          type="button"
-                          onClick={() => {
-                            setExpandedId(expanded && expandedMode === 'password' ? null : row.id);
-                            setExpandedMode(expanded && expandedMode === 'password' ? null : 'password');
-                            setPasswordValue('');
-                            setPasswordConfirmValue('');
-                          }}
-                        >
-                          Set password
-                        </button>
-                      ) : <span className="hq-member-static-note">No action</span>
+                      <span className="hq-member-static-note">No action</span>
                     )}
                   </td>
                 </tr>
