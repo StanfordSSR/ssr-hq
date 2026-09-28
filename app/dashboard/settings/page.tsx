@@ -42,6 +42,7 @@ import { setCreditCardAction } from '@/app/dashboard/actions';
 import { CreditCardGrantToggle } from '@/components/credit-card-grant-toggle';
 import { CreditCardDeleteButton } from '@/components/credit-card-delete-button';
 import { CreditCardAccessTable } from '@/components/credit-card-access-table';
+import { CREDIT_CARD_ENABLED, CREDIT_CARD_PAUSED_MESSAGE } from '@/lib/credit-card-status';
 import {
   getRoleLabel,
   getViewerContext,
@@ -126,10 +127,10 @@ export default async function SettingsPage() {
         .eq('status', 'signed')
         .order('signed_at', { ascending: false })
         .limit(200),
-      getCreditCardMeta(),
-      getCardGrants(),
-      getEligibleCardUsers(),
-      getCardAccessOverview()
+      CREDIT_CARD_ENABLED ? getCreditCardMeta() : Promise.resolve({ exists: false, label: null, createdAt: null }),
+      CREDIT_CARD_ENABLED ? getCardGrants() : Promise.resolve([]),
+      CREDIT_CARD_ENABLED ? getEligibleCardUsers() : Promise.resolve([]),
+      CREDIT_CARD_ENABLED ? getCardAccessOverview() : Promise.resolve([])
     ]);
   const cardIsConfigured = cardConfigured();
   const cardGrantMap = new Map(creditCardGrants.map((grant) => [grant.user_id, grant.enabled]));
@@ -1159,7 +1160,7 @@ export default async function SettingsPage() {
             {
               id: 'credit-card',
               label: 'Credit card',
-              content: (
+              content: CREDIT_CARD_ENABLED ? (
                 <div className="hq-lead-grid">
                   <section className="hq-lead-block">
                     <div className="hq-block-head">
@@ -1308,6 +1309,12 @@ export default async function SettingsPage() {
                     </section>
                   ) : null}
                 </div>
+              ) : (
+                <section className="hq-panel hq-surface-muted">
+                  <h3>Shared club credit card</h3>
+                  <p className="empty-note">{CREDIT_CARD_PAUSED_MESSAGE}</p>
+                  <p className="helper">Existing card information and access records are preserved.</p>
+                </section>
               )
             }
           ]}

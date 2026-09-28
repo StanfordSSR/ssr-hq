@@ -21,11 +21,14 @@ import { CreditCardAgreementBody } from '@/components/credit-card-agreement-body
 import { CreditCardAgreementForm } from '@/components/credit-card-agreement-form';
 import { SecureCreditCard } from '@/components/secure-credit-card';
 import { SignCardViewForm } from '@/components/sign-card-view-form';
+import { CreditCardPaused } from '@/components/credit-card-paused';
+import { CREDIT_CARD_ENABLED } from '@/lib/credit-card-status';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CreditCardPage() {
   const { user, profile: me, currentRole } = await getViewerContext();
+  if (!CREDIT_CARD_ENABLED) return <CreditCardPaused />;
   const canGovernCard = currentRole === 'admin' || currentRole === 'financial_officer';
 
   const [grantEnabled, agreement] = await Promise.all([

@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
 import { env } from '@/lib/env';
 import { getCreditCardApproverEmails } from '@/lib/credit-card';
+import { CREDIT_CARD_ENABLED, pausedCardResponse } from '@/lib/credit-card-status';
 import {
   sendSlackbotNotification,
   SLACKBOT_SYSTEM_TEAM_ID,
@@ -19,6 +20,7 @@ export const runtime = 'nodejs';
 // value here is the deterrent + the audit trail: any detected attempt is logged
 // and reported to the Financial Officers / admins.
 export async function POST(_request: NextRequest) {
+  if (!CREDIT_CARD_ENABLED) return pausedCardResponse();
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const sub = claimsData?.claims?.sub as string | undefined;

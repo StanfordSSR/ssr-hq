@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { recordAuditEvent } from '@/lib/audit';
 import { evaluateCardViewGate, getDecryptedCard } from '@/lib/credit-card';
+import { CREDIT_CARD_ENABLED, pausedCardResponse } from '@/lib/credit-card-status';
 
 export const runtime = 'nodejs';
 
@@ -17,6 +18,7 @@ export const runtime = 'nodejs';
 // transport. Single-field requests ('number' | 'cvv' | 'expiry') are also still
 // supported.
 export async function POST(request: NextRequest) {
+  if (!CREDIT_CARD_ENABLED) return pausedCardResponse();
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const sub = claimsData?.claims?.sub as string | undefined;

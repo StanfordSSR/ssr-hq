@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { markCardFirstViewed } from '@/lib/credit-card';
+import { CREDIT_CARD_ENABLED, pausedCardResponse } from '@/lib/credit-card-status';
 
 export const runtime = 'nodejs';
 
 // Tiny endpoint the secure card view calls when the user dismisses the one-time
 // first-view reminder, so it only ever shows once. No card data involved.
 export async function POST() {
+  if (!CREDIT_CARD_ENABLED) return pausedCardResponse();
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const sub = claimsData?.claims?.sub as string | undefined;
