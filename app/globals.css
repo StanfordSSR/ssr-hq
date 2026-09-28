@@ -8087,3 +8087,242 @@ a.th-stat:focus-visible {
 .th-page .hq-question-card {
   border-color: var(--th-hairline);
 }
+
+.budget-app-head-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.budget-app-form {
+  border: 1px solid var(--th-ink);
+  background: var(--th-paper);
+}
+
+.budget-app-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--th-ink);
+}
+
+.budget-app-overview > div {
+  padding: 14px 18px;
+  min-width: 0;
+}
+
+.budget-app-overview > div + div {
+  border-left: 1px solid var(--th-hairline);
+}
+
+.budget-app-overview-label {
+  display: block;
+  color: var(--th-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.budget-app-overview strong {
+  display: block;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.budget-app-category {
+  padding: 22px 18px;
+  border-bottom: 1px solid var(--th-hairline);
+}
+
+.budget-app-category-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.budget-app-category-head h2 {
+  margin: 0 0 3px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.budget-app-category-head p {
+  margin: 0;
+  color: var(--th-muted);
+  font-size: 12px;
+}
+
+.budget-app-category-head > strong {
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.budget-app-notice {
+  margin: 8px 0;
+  border-left: 3px solid currentColor;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.budget-app-notice-warning {
+  color: #865d06;
+  background: #fff8e5;
+}
+
+.budget-app-notice-error,
+.budget-app-feedback-error {
+  color: #9d2323;
+  background: #fff0ef;
+}
+
+.budget-app-lines {
+  border-top: 1px solid var(--th-hairline);
+}
+
+.budget-app-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 190px) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--th-hairline);
+}
+
+.budget-app-line label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.budget-app-line label > span:first-child {
+  color: var(--th-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.budget-app-line input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--th-hairline);
+  border-radius: 0;
+  background: #fff;
+  padding: 8px 10px;
+  color: var(--th-ink);
+  font: inherit;
+}
+
+.budget-app-line input:focus-visible {
+  outline: 2px solid var(--th-cardinal);
+  outline-offset: 1px;
+}
+
+.budget-app-money-input {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--th-hairline);
+  background: #fff;
+}
+
+.budget-app-money-input > span {
+  padding-left: 10px;
+  color: var(--th-muted);
+}
+
+.budget-app-money-input input {
+  border: 0;
+  text-align: right;
+}
+
+.budget-app-readonly {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.budget-app-remove {
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--th-cardinal);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.budget-app-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.budget-app-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 18px;
+}
+
+.budget-app-submit-note {
+  margin: 0;
+  max-width: 54ch;
+  color: var(--th-muted);
+  font-size: 12px;
+}
+
+.budget-app-feedback {
+  margin: 0 18px 18px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+.budget-app-feedback-success {
+  color: #176a44;
+  background: #eaf7ef;
+}
+
+@media (max-width: 640px) {
+  .budget-app-overview > div {
+    padding: 10px;
+  }
+
+  .budget-app-overview strong {
+    font-size: 17px;
+  }
+
+  .budget-app-category {
+    padding: 16px 12px;
+  }
+
+  .budget-app-category-head {
+    display: block;
+  }
+
+  .budget-app-category-head > strong {
+    display: block;
+    margin-top: 7px;
+  }
+
+  .budget-app-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .budget-app-line label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .budget-app-actions {
+    padding: 14px 12px;
+  }
+}
