@@ -45,6 +45,10 @@ from a local folder so the deploy always reflects the merged code:
 CARD_ENCRYPTION_KEY=...
 ```
 
+Card access is temporarily paused in `lib/credit-card-status.ts` while ASSU
+disables the cards. The encrypted card and access records remain stored; restoring
+access requires changing that server-side switch and deploying the change.
+
 ## 2. Run the SQL migrations
 
 In Supabase SQL Editor, run:

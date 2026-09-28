@@ -9,6 +9,8 @@ import {
   CreditCardApprovePanel,
   CreditCardOverrideButton
 } from '@/components/credit-card-approval-actions';
+import { CreditCardPaused } from '@/components/credit-card-paused';
+import { CREDIT_CARD_ENABLED } from '@/lib/credit-card-status';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +28,8 @@ export default async function CreditCardApprovePage({
   if (!isAdmin && !isFinancialOfficer) {
     redirect('/dashboard');
   }
+
+  if (!CREDIT_CARD_ENABLED) return <CreditCardPaused />;
 
   const agreement = await getCardAgreement(userId);
 

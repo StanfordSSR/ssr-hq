@@ -10,6 +10,7 @@ import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { getAllHighValueAssets, getHighValueAssetsForTeams, storageLocationLabel, LEADERSHIP_STEWARD_LABEL } from '@/lib/high-value-assets';
 import { getPendingCardAgreements } from '@/lib/credit-card';
+import { CREDIT_CARD_ENABLED } from '@/lib/credit-card-status';
 import { getSummerSpendSummary } from '@/lib/summer-spend';
 import {
   CATEGORY_COLORS,
@@ -196,7 +197,7 @@ export default async function DashboardPage() {
 
   // Only Financial Officers and admins act on credit card access requests, so
   // only fetch the pending count for them.
-  const showCardApprovalBanner = isAdmin || isFinancialOfficer;
+  const showCardApprovalBanner = CREDIT_CARD_ENABLED && (isAdmin || isFinancialOfficer);
 
   if (isAdmin || isPresident || isVicePresident || isFinancialOfficer) {
     const academicYear = await getCurrentAcademicYear();

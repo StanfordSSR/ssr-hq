@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { encryptCard, decryptCard } from '@/lib/card-crypto';
+import { CREDIT_CARD_ENABLED, requireCreditCardEnabled } from '@/lib/credit-card-status';
 import { env } from '@/lib/env';
 import {
   getRoleLabel,
@@ -96,6 +97,7 @@ export async function getCreditCardMeta(): Promise<{
 // admin must delete it first. The plaintext is encrypted before it touches the
 // database; only the resulting `cipher` is persisted.
 export async function setCreditCard(fields: CreditCardFields, label: string, createdBy: string): Promise<void> {
+  requireCreditCardEnabled();
   const admin = createAdminClient();
   const { data: existing } = await admin.from('credit_card').select('id').eq('id', 1).maybeSingle();
   if (existing) {
@@ -118,6 +120,7 @@ export async function setCreditCard(fields: CreditCardFields, label: string, cre
 // Deletes the card record only. Per-user grants are intentionally left in place
 // so the admin's access decisions survive re-entering a card later.
 export async function deleteCreditCard(): Promise<void> {
+  requireCreditCardEnabled();
   const admin = createAdminClient();
   const { error } = await admin.from('credit_card').delete().eq('id', 1);
   if (error) {
@@ -130,6 +133,7 @@ export async function deleteCreditCard(): Promise<void> {
 // approval gating is built in a later phase). It must NOT be surfaced in any
 // admin/settings UI.
 export async function getDecryptedCard(): Promise<CreditCardFields | null> {
+  requireCreditCardEnabled();
   const admin = createAdminClient();
   const { data } = await admin.from('credit_card').select('cipher').eq('id', 1).maybeSingle();
   if (!data?.cipher) {
@@ -151,6 +155,7 @@ export async function getCardGrants(): Promise<Array<{ user_id: string; enabled:
 
 // Flips a single user's access switch (the "slider").
 export async function setCardGrant(userId: string, enabled: boolean, grantedBy: string): Promise<void> {
+  requireCreditCardEnabled();
   const admin = createAdminClient();
   const { error } = await admin.from('credit_card_grants').upsert(
     {
@@ -290,6 +295,7 @@ export async function getCardAgreement(userId: string): Promise<CreditCardAgreem
 
 // Whether the admin's per-user access switch ("slider") is on for this user.
 export async function isCardGrantEnabled(userId: string): Promise<boolean> {
+  if (!CREDIT_CARD_ENABLED) return false;
   const admin = createAdminClient();
   const { data } = await admin
     .from('credit_card_grants')
@@ -302,6 +308,7 @@ export async function isCardGrantEnabled(userId: string): Promise<boolean> {
 // The Phase 3 gate: a user can actually view the card only when the admin's
 // grant is on AND their agreement has cleared approval (FO-signed or overridden).
 export async function canAccessCard(userId: string): Promise<boolean> {
+  if (!CREDIT_CARD_ENABLED) return false;
   const [enabled, agreement] = await Promise.all([isCardGrantEnabled(userId), getCardAgreement(userId)]);
   if (!enabled || !agreement) return false;
   return agreement.status === 'approved' || agreement.status === 'overridden';
@@ -494,6 +501,7 @@ async function getCardViewState(userId: string): Promise<CardViewStateRow | null
 // headers (Vercel edge geo, reused from the reimbursement footprint extractor),
 // then applies the access → North America → region → re-sign rules in order.
 export async function evaluateCardViewGate(userId: string, headers: Headers): Promise<CardViewGate> {
+  if (!CREDIT_CARD_ENABLED) return { state: 'no_access' };
   const { country, rawRegion, regionKey, inCalifornia, inNorthAmerica } = resolveCardGeo(headers);
 
   // 1. Phase-2 gate: admin slider on AND agreement approved/overridden.
@@ -553,6 +561,7 @@ export async function recordCardViewSignature(
   regionKey: string,
   country: string
 ): Promise<void> {
+  requireCreditCardEnabled();
   const admin = createAdminClient();
   const now = new Date().toISOString();
   const existing = await getCardViewState(userId);
@@ -575,6 +584,7 @@ export async function recordCardViewSignature(
 // Marks that the viewer has opened the card at least once, so the one-time
 // first-view reminder doesn't show again. No-op if already set.
 export async function markCardFirstViewed(userId: string): Promise<void> {
+  requireCreditCardEnabled();
   const admin = createAdminClient();
   const existing = await getCardViewState(userId);
   if (existing?.first_viewed_at) {
@@ -670,6 +680,7 @@ export async function approveCardRegion(
   regionKey: string,
   approverId: string
 ): Promise<void> {
+  requireCreditCardEnabled();
   const admin = createAdminClient();
   const { error } = await admin
     .from('credit_card_region_approvals')

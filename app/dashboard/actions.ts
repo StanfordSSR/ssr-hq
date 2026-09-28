@@ -123,6 +123,7 @@ import {
   verifyUserSignature,
   type CreditCardFields
 } from '@/lib/credit-card';
+import { requireCreditCardEnabled } from '@/lib/credit-card-status';
 
 const REVALIDATE_PATHS = {
   dashboard: ['/dashboard'],
@@ -497,6 +498,7 @@ export async function setCreditCardAction(formData: FormData) {
     fallbackPath: '/dashboard/settings',
     successMessage: 'Saved the card securely.',
     action: async () => {
+      requireCreditCardEnabled();
       const { user } = await requireAdmin();
 
       const number = normalizeCardDigits(String(formData.get('card_number') || '').trim());
@@ -544,6 +546,7 @@ export async function deleteCreditCardAction(_formData: FormData) {
     fallbackPath: '/dashboard/settings',
     successMessage: 'Deleted the card.',
     action: async () => {
+      requireCreditCardEnabled();
       const { user } = await requireAdmin();
       await deleteCreditCard();
 
@@ -565,6 +568,7 @@ export async function setCreditCardGrantAction(formData: FormData) {
     fallbackPath: '/dashboard/settings',
     successMessage: 'Updated card access.',
     action: async () => {
+      requireCreditCardEnabled();
       const { user } = await requireAdmin();
       const userId = String(formData.get('user_id') || '').trim();
       const rawEnabled = String(formData.get('enabled') || '').trim().toLowerCase();
@@ -615,6 +619,7 @@ export async function signCreditCardAgreementAction(formData: FormData) {
     fallbackPath: '/dashboard/credit-card',
     successMessage: 'Signed — sent to the Financial Officer for approval.',
     action: async () => {
+      requireCreditCardEnabled();
       const { user, profile } = await requireActiveProfile();
 
       if (!(await isCardGrantEnabled(user.id))) {
@@ -697,6 +702,7 @@ export async function approveCreditCardAgreementAction(formData: FormData) {
     fallbackPath: CREDIT_CARD_APPROVALS_PATH,
     successMessage: 'Approved — access granted.',
     action: async () => {
+      requireCreditCardEnabled();
       const { user, profile, currentRole } = await requireActiveProfile();
       const isFinancialOfficer =
         currentRole === 'financial_officer' || profileHasFinancialOfficerRole(profile);
@@ -781,6 +787,7 @@ export async function overrideCreditCardAgreementAction(formData: FormData) {
     fallbackPath: CREDIT_CARD_APPROVALS_PATH,
     successMessage: 'Override applied — access granted.',
     action: async () => {
+      requireCreditCardEnabled();
       const { user } = await requireAdmin();
 
       const targetUserId = String(formData.get('user_id') || '').trim();
@@ -856,6 +863,7 @@ export async function signCardViewAction(formData: FormData) {
     fallbackPath: CREDIT_CARD_PATH,
     successMessage: 'Verified — you can view the card.',
     action: async () => {
+      requireCreditCardEnabled();
       const { user } = await requireActiveProfile();
 
       const gate = await evaluateCardViewGate(user.id, await headers());
@@ -890,6 +898,7 @@ export async function approveCardRegionAction(formData: FormData) {
     fallbackPath: CREDIT_CARD_APPROVALS_PATH,
     successMessage: 'Approved this location.',
     action: async () => {
+      requireCreditCardEnabled();
       const { user, profile, currentRole } = await requireActiveProfile();
       const isFinancialOfficer =
         currentRole === 'financial_officer' || profileHasFinancialOfficerRole(profile);

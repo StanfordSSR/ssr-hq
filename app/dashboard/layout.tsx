@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { ActionToast, type ActionFlash } from '@/components/action-toast';
 import { getRoleLabel, getViewerContext, holdsSigningRole } from '@/lib/auth';
 import { getLeadTaskIndicatorState } from '@/lib/lead-state';
+import { CREDIT_CARD_ENABLED } from '@/lib/credit-card-status';
 
 type NavItem = {
   href?: string;
@@ -24,6 +25,10 @@ const reportsNav: NavItem = {
   ]
 };
 
+const creditCardNavItems = CREDIT_CARD_ENABLED
+  ? [{ href: '/dashboard/credit-card', label: 'Credit card' }]
+  : [];
+
 const adminNav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/teams', label: 'Teams' },
@@ -34,7 +39,7 @@ const adminNav: NavItem[] = [
       { href: '/dashboard/finances', label: 'Manage Finances' },
       { href: '/dashboard/finances/plan', label: 'Budget Plan' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
-      { href: '/dashboard/credit-card', label: 'Credit card' }
+      ...creditCardNavItems
     ]
   },
   reportsNav,
@@ -54,7 +59,7 @@ const presidentNav: NavItem[] = [
       { href: '/dashboard/purchases', label: 'Purchases' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
-      { href: '/dashboard/credit-card', label: 'Credit card' }
+      ...creditCardNavItems
     ]
   },
   reportsNav,
@@ -74,7 +79,7 @@ const vicePresidentNav: NavItem[] = [
       { href: '/dashboard/purchases', label: 'Purchases' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
-      { href: '/dashboard/credit-card', label: 'Credit card' }
+      ...creditCardNavItems
     ]
   },
   reportsNav,
@@ -91,7 +96,7 @@ const financialOfficerNav: NavItem[] = [
       { href: '/dashboard/purchases', label: 'Purchases' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
-      { href: '/dashboard/credit-card', label: 'Credit card' }
+      ...creditCardNavItems
     ]
   },
   { href: '/dashboard/receipts', label: 'Receipts' }
@@ -105,7 +110,7 @@ const leadNav: NavItem[] = [
       { href: '/dashboard/purchases', label: 'Log Purchase' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
-      { href: '/dashboard/credit-card', label: 'Credit card' }
+      ...creditCardNavItems
     ]
   },
   { href: '/dashboard/members', label: 'Manage Members' },

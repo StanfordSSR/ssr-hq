@@ -5,6 +5,8 @@ import { formatDateLabel } from '@/lib/academic-calendar';
 import { getPendingCardAgreements, getPendingRegionApprovals, getCardAccessOverview } from '@/lib/credit-card';
 import { ApproveCardRegionButton } from '@/components/approve-card-region-button';
 import { CreditCardAccessTable } from '@/components/credit-card-access-table';
+import { CreditCardPaused } from '@/components/credit-card-paused';
+import { CREDIT_CARD_ENABLED } from '@/lib/credit-card-status';
 
 function formatRegion(country: string | null, region: string | null, regionKey: string) {
   if (country && region) return `${region}, ${country}`;
@@ -21,6 +23,8 @@ export default async function CreditCardApprovalsPage() {
   if (!isAdmin && !isFinancialOfficer) {
     redirect('/dashboard');
   }
+
+  if (!CREDIT_CARD_ENABLED) return <CreditCardPaused />;
 
   const [pending, pendingRegions, accessOverview] = await Promise.all([
     getPendingCardAgreements(),
