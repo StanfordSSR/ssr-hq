@@ -919,9 +919,10 @@ export default async function SettingsPage() {
                       </div>
                     </div>
                     <p className="helper">
-                      Next year&apos;s budgets are now built and approved in the Budget Plan, which writes team and club
-                      budgets through on approval. The portal advances to {nextAcademicYear} automatically on the cycle
-                      start date — no manual reset is needed.
+                      Next year&apos;s budgets are built and approved in the Budget Plan.{' '}
+                      {calendarSettings.autoRolloverEnabled
+                        ? `The portal advances to ${nextAcademicYear} automatically after summer ends.`
+                        : `An admin starts ${nextAcademicYear} from the dashboard after summer ends.`}
                     </p>
                     <div className="button-row">
                       <Link href="/dashboard/finances/plan" className="button">

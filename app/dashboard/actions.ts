@@ -42,6 +42,7 @@ import {
   formatDateLabel,
   formatAcademicYear,
   formatPacificDateKey,
+  getManualRolloverTarget,
   getNextAcademicYear,
   getPreviousAcademicYear,
   getReportingWindow
@@ -1305,22 +1306,25 @@ export async function updateAcademicRolloverSettingsAction(formData: FormData) {
 
 export async function rolloverAcademicYearAction(formData: FormData) {
   await runRedirectingAction({
-    fallbackPath: '/dashboard/settings',
+    fallbackPath: '/dashboard',
     successMessage: 'Rolled over to the next academic year.',
     action: async () => {
       const { user } = await requireAdmin();
       const settings = await getAcademicCalendarSettings();
       const currentAcademicYear = settings.effectiveAcademicYear;
-      const nextAcademicYear = getNextAcademicYear(currentAcademicYear);
+      const nextAcademicYear = getManualRolloverTarget(settings);
+      if (!nextAcademicYear) {
+        throw new Error('The next academic year is not ready for manual rollover.');
+      }
       const confirmPhrase = String(formData.get('confirm_rollover') || '').trim();
       const confirmYear = String(formData.get('confirm_next_academic_year') || '').trim();
 
       if (confirmPhrase !== 'ROLLOVER') {
-        throw new Error('Type ROLLOVER to confirm the year transition.');
+        throw new Error('Rollover confirmation is missing. Refresh and try again.');
       }
 
       if (confirmYear !== nextAcademicYear) {
-        throw new Error(`Type ${nextAcademicYear} exactly to confirm the new cycle.`);
+        throw new Error('The rollover target changed. Refresh and try again.');
       }
 
       const admin = createAdminClient();
@@ -1340,12 +1344,6 @@ export async function rolloverAcademicYearAction(formData: FormData) {
         admin.from('purchase_logs').select('amount_cents').eq('academic_year', currentAcademicYear)
       ]);
 
-      if (nextClubBudget || (nextTeamBudgets || []).length > 0) {
-        throw new Error(
-          `${nextAcademicYear} budget setup already exists. That cycle has already been rolled over.`
-        );
-      }
-
       const activeTeams = teamsData || [];
       const previousAllocatedCents = (currentTeamBudgets || []).reduce(
         (sum, budget) => sum + budget.annual_budget_cents,
@@ -1361,39 +1359,23 @@ export async function rolloverAcademicYearAction(formData: FormData) {
         (currentClubBudget?.total_budget_cents || 0) - previousAllocatedCents
       );
 
-      const { error: settingsError } = await admin.from('academic_calendar_settings').upsert({
-        id: 1,
-        current_academic_year: nextAcademicYear,
-        auto_rollover_enabled: settings.autoRolloverEnabled,
-        updated_at: new Date().toISOString()
-      });
+      const { data: updatedSettings, error: settingsError } = await admin
+        .from('academic_calendar_settings')
+        .update({
+          current_academic_year: nextAcademicYear,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', 1)
+        .eq('current_academic_year', settings.storedAcademicYear)
+        .eq('auto_rollover_enabled', false)
+        .select('id')
+        .maybeSingle();
 
       if (settingsError) {
         throw new Error(settingsError.message);
       }
-
-      const { error: clubBudgetError } = await admin.from('club_budgets').upsert({
-        academic_year: nextAcademicYear,
-        total_budget_cents: 0
-      });
-
-      if (clubBudgetError) {
-        throw new Error(clubBudgetError.message);
-      }
-
-      if (activeTeams.length > 0) {
-        const { error: teamBudgetError } = await admin.from('team_budgets').upsert(
-          activeTeams.map((team) => ({
-            team_id: team.id,
-            academic_year: nextAcademicYear,
-            annual_budget_cents: 0
-          })),
-          { onConflict: 'team_id,academic_year' }
-        );
-
-        if (teamBudgetError) {
-          throw new Error(teamBudgetError.message);
-        }
+      if (!updatedSettings) {
+        throw new Error('The academic year changed while you were confirming rollover. Refresh and try again.');
       }
 
       await recordAuditEvent({
@@ -1406,7 +1388,8 @@ export async function rolloverAcademicYearAction(formData: FormData) {
           previousAcademicYear: currentAcademicYear,
           nextAcademicYear,
           activeTeamCount: activeTeams.length,
-          nextClubBudgetCents: 0,
+          nextClubBudgetCents: nextClubBudget?.total_budget_cents || 0,
+          nextTeamBudgetCount: (nextTeamBudgets || []).length,
           previousClubBudgetCents: currentClubBudget?.total_budget_cents || 0,
           previousAllocatedCents,
           previousSpentCents,
@@ -1422,7 +1405,8 @@ export async function rolloverAcademicYearAction(formData: FormData) {
           REVALIDATE_PATHS.dashboard,
           REVALIDATE_PATHS.reports,
           REVALIDATE_PATHS.tasks,
-          REVALIDATE_PATHS.purchases
+          REVALIDATE_PATHS.purchases,
+          REVALIDATE_PATHS.budgetPlan
         )
       );
     }
@@ -5425,6 +5409,12 @@ export async function createBudgetPlanAction(formData: FormData) {
       const { user } = await requireAdmin();
       const setup = await getBudgetSetupState();
       const academicYear = String(formData.get('academic_year') || setup.nextAcademicYear).trim();
+      if (academicYear !== setup.academicYear && academicYear !== setup.nextAcademicYear) {
+        throw new Error('Budget plans can only be created for the current or next academic year.');
+      }
+      if (academicYear === setup.nextAcademicYear && setup.setupState === 'upcoming') {
+        throw new Error(`Budget setup for ${academicYear} has not opened yet.`);
+      }
 
       const admin = createAdminClient();
       const existing = await getActiveBudgetPlan(academicYear);

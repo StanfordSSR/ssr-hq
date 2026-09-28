@@ -101,6 +101,13 @@ export function getPreviousAcademicYear(academicYear: string) {
   return formatAcademicYearFromStartYear(startYear - 1);
 }
 
+export function getManualRolloverTarget(settings: AcademicCalendarSettings): string | null {
+  if (settings.autoRolloverEnabled) return null;
+  const nextYear = getNextAcademicYear(settings.effectiveAcademicYear);
+  if (nextYear === settings.effectiveAcademicYear) return null;
+  return nextYear <= settings.derivedAcademicYear ? nextYear : null;
+}
+
 export function formatDateLabel(date: Date) {
   return new Intl.DateTimeFormat('en-US', {
     month: 'long',

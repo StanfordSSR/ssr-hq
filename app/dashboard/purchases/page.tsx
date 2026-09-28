@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
@@ -40,7 +41,12 @@ const categoryLabel: Record<Purchase['category'], string> = {
   registration: 'Registration'
 };
 
-export default async function PurchasesPage() {
+export default async function PurchasesPage({
+  searchParams
+}: {
+  searchParams?: Promise<{ scope?: string | string[] }>;
+}) {
+  const showAllYears = (await searchParams)?.scope === 'all';
   const admin = createAdminClient();
   const { user, profile: me, currentRole } = await getViewerContext();
   const isAdmin = currentRole === 'admin';
@@ -77,18 +83,24 @@ export default async function PurchasesPage() {
 
   const purchaseColumns =
     'id, team_id, expense_type, description, amount_cents, purchased_at, person_name, payment_method, category, receipt_path, receipt_not_needed';
+  const teamPurchasesQuery = admin
+    .from('purchase_logs')
+    .select(purchaseColumns)
+    .in('team_id', accessibleTeamIds)
+    .order('purchased_at', { ascending: false });
+  const leadershipPurchasesQuery = admin
+    .from('purchase_logs')
+    .select(purchaseColumns)
+    .eq('expense_type', 'leadership')
+    .order('purchased_at', { ascending: false });
+  if (!showAllYears) {
+    teamPurchasesQuery.eq('academic_year', academicYear);
+    leadershipPurchasesQuery.eq('academic_year', academicYear);
+  }
   const [{ data: purchasesData }, { data: leadershipPurchasesData }] = await Promise.all([
-    admin
-      .from('purchase_logs')
-      .select(purchaseColumns)
-      .in('team_id', accessibleTeamIds)
-      .order('purchased_at', { ascending: false }),
+    teamPurchasesQuery,
     isPrivilegedViewer
-      ? admin
-          .from('purchase_logs')
-          .select(purchaseColumns)
-          .eq('expense_type', 'leadership')
-          .order('purchased_at', { ascending: false })
+      ? leadershipPurchasesQuery
       : Promise.resolve({ data: [] as Purchase[] })
   ]);
 
@@ -112,10 +124,27 @@ export default async function PurchasesPage() {
         </div>
       </section>
 
+      <nav className="hq-tab-row" aria-label="Purchase year">
+        <Link
+          href="/dashboard/purchases"
+          className={`hq-tab-button ${showAllYears ? '' : 'hq-tab-button-active'}`}
+          aria-current={showAllYears ? undefined : 'page'}
+        >
+          {academicYear}
+        </Link>
+        <Link
+          href="/dashboard/purchases?scope=all"
+          className={`hq-tab-button ${showAllYears ? 'hq-tab-button-active' : ''}`}
+          aria-current={showAllYears ? 'page' : undefined}
+        >
+          All years
+        </Link>
+      </nav>
+
       <section className="hq-purchase-overview">
         <div className="hq-purchase-stat">
-          <span>Current cycle</span>
-          <strong>{academicYear}</strong>
+          <span>Scope</span>
+          <strong>{showAllYears ? 'All years' : academicYear}</strong>
         </div>
         <div className="hq-purchase-stat">
           <span>Purchases logged</span>
@@ -144,7 +173,7 @@ export default async function PurchasesPage() {
 
       <section className="hq-panel hq-surface-muted">
         <div className="hq-block-head">
-          <h3>Recent purchases</h3>
+          <h3>{showAllYears ? 'Recent purchases · all years' : `${academicYear} purchases`}</h3>
         </div>
 
         {purchases.length > 0 ? (
@@ -202,7 +231,9 @@ export default async function PurchasesPage() {
             </table>
           </div>
         ) : (
-          <p className="empty-note">No purchases logged yet.</p>
+          <p className="empty-note">
+            {showAllYears ? 'No purchases logged yet.' : `No purchases logged for ${academicYear} yet.`}
+          </p>
         )}
       </section>
     </div>

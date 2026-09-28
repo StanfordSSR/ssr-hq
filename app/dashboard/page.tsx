@@ -1,7 +1,16 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getNextReportState, getCurrentAcademicYear, getReportingWindows, formatDateLabel, formatPacificDateKey } from '@/lib/academic-calendar';
+import {
+  formatDateLabel,
+  formatPacificDateKey,
+  getAcademicCalendarSettings,
+  getCurrentAcademicYear,
+  getManualRolloverTarget,
+  getNextAcademicYear,
+  getNextReportState,
+  getReportingWindows
+} from '@/lib/academic-calendar';
 import { updateLeadTeamDescriptionAction } from '@/app/dashboard/teams/actions';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { formatQuarterReportTitle } from '@/lib/reports';
@@ -27,6 +36,7 @@ import { TeamExpenseLogger } from '@/components/team-expense-logger';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
 import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
+import { AcademicYearRolloverButton } from '@/components/academic-year-rollover-button';
 
 type Team = {
   id: string;
@@ -200,7 +210,12 @@ export default async function DashboardPage() {
   const showCardApprovalBanner = CREDIT_CARD_ENABLED && (isAdmin || isFinancialOfficer);
 
   if (isAdmin || isPresident || isVicePresident || isFinancialOfficer) {
-    const academicYear = await getCurrentAcademicYear();
+    const [academicYear, calendarSettings] = await Promise.all([
+      getCurrentAcademicYear(),
+      isAdmin ? getAcademicCalendarSettings() : Promise.resolve(null)
+    ]);
+    const manualRolloverTarget = calendarSettings ? getManualRolloverTarget(calendarSettings) : null;
+    const nextAcademicYear = getNextAcademicYear(academicYear);
     const [
       { data: teamsData },
       { data: membershipsData },
@@ -397,6 +412,25 @@ export default async function DashboardPage() {
             </Link>
           </div>
         </header>
+
+        {isAdmin && calendarSettings && !calendarSettings.autoRolloverEnabled ? (
+          <details className={`th-section ${manualRolloverTarget ? 'th-section-alert' : ''}`} open>
+            <summary>
+              <span className="th-sec-label">Academic year</span>
+              <span className="th-sec-preview">
+                {manualRolloverTarget ? `${manualRolloverTarget} is ready to start` : `${academicYear} active · manual rollover`}
+              </span>
+            </summary>
+            <div className="th-body">
+              <p className="helper">
+                {manualRolloverTarget
+                  ? `Start ${manualRolloverTarget} when the club is ready. Existing plans and prior-year records will remain available.`
+                  : `The ${nextAcademicYear} rollover becomes available after the current summer quarter ends.`}
+              </p>
+              <AcademicYearRolloverButton nextYear={nextAcademicYear} available={Boolean(manualRolloverTarget)} />
+            </div>
+          </details>
+        ) : null}
 
         {/* Scoreboard */}
         <div className="th-stats">
