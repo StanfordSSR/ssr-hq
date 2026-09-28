@@ -5,6 +5,7 @@ import {
   getAcademicCalendarSettings,
   getAcademicCalendarTemplate,
   getCurrentAcademicYear,
+  getPreviousAcademicYear,
   getReportingWindows,
   type ReportingWindow
 } from '@/lib/academic-calendar';
@@ -37,6 +38,17 @@ export type BudgetSetupState = {
   message: string;
   countdownLabel: string;
 };
+
+export function selectBudgetPlanYear(
+  setup: Pick<BudgetSetupState, 'academicYear' | 'nextAcademicYear' | 'setupState'>,
+  requestedYear: string | string[] | undefined
+): string {
+  const defaultYear = setup.setupState === 'open' ? setup.nextAcademicYear : setup.academicYear;
+  const allowedYears = [getPreviousAcademicYear(setup.academicYear), setup.academicYear, setup.nextAcademicYear];
+  return typeof requestedYear === 'string' && allowedYears.includes(requestedYear)
+    ? requestedYear
+    : defaultYear;
+}
 
 export type QuarterDeclarationState = {
   academicYear: string;

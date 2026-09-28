@@ -2,18 +2,23 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getViewerContext } from '@/lib/auth';
-import { formatDateLabel } from '@/lib/academic-calendar';
+import { formatDateLabel, getPreviousAcademicYear } from '@/lib/academic-calendar';
 import {
   computePlanRollup,
   getActiveBudgetPlan,
   getBudgetSetupState,
   getPlanBundle,
-  getQuarterDeclarationState
+  getQuarterDeclarationState,
+  selectBudgetPlanYear
 } from '@/lib/budget-plan';
 import { createBudgetPlanAction, openQuarterDeclarationAction } from '@/app/dashboard/actions';
 import { BudgetPlanEditor, QuarterlyDeclarationPanel } from '@/components/budget-plan-editor';
 
-export default async function BudgetPlanPage() {
+export default async function BudgetPlanPage({
+  searchParams
+}: {
+  searchParams?: Promise<{ year?: string | string[] }>;
+}) {
   const admin = createAdminClient();
   const { user, currentRole, profile } = await getViewerContext();
   if (
@@ -30,7 +35,10 @@ export default async function BudgetPlanPage() {
   const isPresident = currentRole === 'president' || profile.role === 'president' || Boolean(profile.is_president);
 
   const [setup, quarterState] = await Promise.all([getBudgetSetupState(), getQuarterDeclarationState()]);
-  const targetYear = setup.setupState === 'open' ? setup.nextAcademicYear : setup.academicYear;
+  const requestedYear = (await searchParams)?.year;
+  const targetYear = selectBudgetPlanYear(setup, requestedYear);
+  const isPastYear = targetYear === getPreviousAcademicYear(setup.academicYear);
+  const setupNotOpen = targetYear === setup.nextAcademicYear && setup.setupState === 'upcoming';
 
   const [{ data: teamsData }, { data: presidentsData }, plan] = await Promise.all([
     admin.from('teams').select('id, name').eq('is_active', true).order('name'),
@@ -44,7 +52,7 @@ export default async function BudgetPlanPage() {
 
   // Quarterly declaration (current year's approved plan), if a window is open.
   let quarterlySection: React.ReactNode = null;
-  if (quarterState) {
+  if (quarterState && targetYear === setup.academicYear) {
     const currentPlan = await getActiveBudgetPlan(setup.academicYear);
     if (currentPlan && currentPlan.status === 'approved') {
       const { data: decl } = await admin
@@ -109,7 +117,13 @@ export default async function BudgetPlanPage() {
   }
 
   const planSection = plan
-    ? await renderPlan(plan, { canEdit, isPresident, userId: user.id, teams, presidents })
+    ? await renderPlan(plan, {
+        canEdit: canEdit && !isPastYear,
+        isPresident: isPresident && !isPastYear,
+        userId: user.id,
+        teams,
+        presidents
+      })
     : null;
 
   return (
@@ -118,7 +132,9 @@ export default async function BudgetPlanPage() {
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{canEdit ? 'Admin' : isPresident ? 'President' : currentRole === 'vice_president' ? 'Vice president' : 'Financial officer'}</p>
           <h1 className="hq-page-title">Budget plan</h1>
-          <p className="hq-subtitle">{setup.message}</p>
+          <p className="hq-subtitle">
+            {targetYear === setup.nextAcademicYear ? setup.message : `${targetYear} academic year`}
+          </p>
         </div>
         <div className="hq-page-head-action">
           <Link href="/dashboard/finances" className="button-secondary">
@@ -127,13 +143,26 @@ export default async function BudgetPlanPage() {
         </div>
       </section>
 
+      <nav className="hq-tab-row" aria-label="Budget plan year">
+        {[getPreviousAcademicYear(setup.academicYear), setup.academicYear, setup.nextAcademicYear].map((year) => (
+          <Link
+            key={year}
+            href={`/dashboard/finances/plan?year=${year}`}
+            className={`hq-tab-button ${targetYear === year ? 'hq-tab-button-active' : ''}`}
+            aria-current={targetYear === year ? 'page' : undefined}
+          >
+            {year}
+          </Link>
+        ))}
+      </nav>
+
       {!plan ? (
         <section className="hq-panel hq-surface-muted">
           <div className="hq-block-head">
             <h3>{targetYear} budget</h3>
             <span className="hq-inline-note">no plan yet</span>
           </div>
-          {canEdit && setup.setupState !== 'upcoming' ? (
+          {canEdit && !isPastYear && !setupNotOpen ? (
             <>
               <p className="helper">
                 Start the {targetYear} budget plan. You&apos;ll add funding sources and per-team category sub-budgets,
@@ -148,7 +177,7 @@ export default async function BudgetPlanPage() {
             </>
           ) : (
             <p className="empty-note">
-              {setup.setupState === 'upcoming'
+              {setupNotOpen
                 ? `Budget setup for ${targetYear} opens on ${formatDateLabel(setup.openAt)}.`
                 : `No budget plan exists for ${targetYear} yet.`}
             </p>

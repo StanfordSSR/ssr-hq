@@ -3,6 +3,7 @@ import {
   formatAcademicYear,
   getNextAcademicYear,
   getPreviousAcademicYear,
+  getManualRolloverTarget,
   formatPacificDateKey,
   formatPacificDateLabel,
   formatCountdown
@@ -48,6 +49,28 @@ describe('academic year navigation', () => {
 
   it('crosses a decade boundary', () => {
     expect(getNextAcademicYear('2029-30')).toBe('2030-31');
+  });
+});
+
+describe('manual academic year rollover', () => {
+  const settings = {
+    storedAcademicYear: '2025-26',
+    effectiveAcademicYear: '2025-26',
+    derivedAcademicYear: '2026-27',
+    nextAcademicYear: '2026-27',
+    autoRolloverEnabled: false
+  };
+
+  it('offers the next year once the cycle has ended', () => {
+    expect(getManualRolloverTarget(settings)).toBe('2026-27');
+  });
+
+  it('does not offer a rollover before the next year begins', () => {
+    expect(getManualRolloverTarget({ ...settings, derivedAcademicYear: '2025-26' })).toBeNull();
+  });
+
+  it('does not offer a manual rollover when automatic mode is on', () => {
+    expect(getManualRolloverTarget({ ...settings, autoRolloverEnabled: true })).toBeNull();
   });
 });
 
