@@ -136,7 +136,10 @@ export default async function BudgetPlanPage({
             {targetYear === setup.nextAcademicYear ? setup.message : `${targetYear} academic year`}
           </p>
         </div>
-        <div className="hq-page-head-action">
+        <div className="hq-page-head-action budget-app-head-actions">
+          <Link href="/dashboard/finances/applications" className="button-secondary">
+            Team applications
+          </Link>
           <Link href="/dashboard/finances" className="button-secondary">
             ← Manage finances
           </Link>

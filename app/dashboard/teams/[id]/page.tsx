@@ -260,6 +260,9 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
           <span className={`th-status ${team.is_active ? 'th-status-live' : 'th-status-off'}`}>
             {team.is_active ? 'Active' : 'Inactive'}
           </span>
+          <Link href={`/dashboard/teams/${team.id}/budget-application`} className="th-mast-link">
+            Budget application →
+          </Link>
           {isOfficer && currentRole !== 'financial_officer' ? (
             <Link href="/dashboard/teams" className="th-mast-link">
               ← All teams

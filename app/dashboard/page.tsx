@@ -1118,6 +1118,9 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="th-mast-side">
+          <Link href={`/dashboard/teams/${team.id}/budget-application`} className="th-btn-light">
+            Budget application
+          </Link>
           <Link href="/dashboard/purchases" className="th-btn-light">
             Log purchase
           </Link>
