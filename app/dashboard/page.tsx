@@ -1109,6 +1109,9 @@ export default async function DashboardPage() {
   const recentPurchases = [...purchases]
     .sort((a, b) => Date.parse(b.purchased_at) - Date.parse(a.purchased_at))
     .slice(0, 8);
+  const eventNow = hoursAgoIso(0);
+  const upcomingEvents = teamAnnouncements.filter((event) => Date.parse(event.event_at) >= Date.parse(eventNow)).slice(0, 2);
+  const previewTasks = teamTasks.slice(0, 2);
   const nextEvent = teamAnnouncements[0] || null;
   const usd = (value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -1292,22 +1295,26 @@ export default async function DashboardPage() {
         </details>
       ) : null}
 
-      {/* Spending */}
-      <details className="th-section">
-        <summary>
-          <span className="th-sec-label">Spending</span>
-          <span className="th-sec-preview">
-            {usd(spent)} of {usd(annualBudget)} this cycle
-            {recentPurchases[0]
-              ? ` · latest: ${recentPurchases[0].description || 'Untitled'} (${usd(recentPurchases[0].amount_cents / 100)})`
-              : ''}
-          </span>
-          <span className="th-sec-count">{purchases.length}</span>
-        </summary>
-        <div className="th-body">
+      {/* At-a-glance spending stays visible; the detailed sections below remain collapsed. */}
+      <section className="th-section th-lead-overview" aria-labelledby="lead-spending-title">
+        <div className="th-lead-section-head">
+          <div>
+            <h2 id="lead-spending-title">Spending</h2>
+            <span>{usd(spent)} of {usd(annualBudget)} this cycle</span>
+          </div>
+          <strong className={annualBudget - spent < 0 ? 'th-bad' : undefined}>
+            {usd(annualBudget - spent)} left
+          </strong>
+        </div>
+        <div className="th-lead-finance-grid">
           <div className="th-spend-viz">
             <div className="th-donut-wrap">
-              <div className="th-donut" style={{ background: donutBackground }}>
+              <div
+                className="th-donut"
+                role="img"
+                aria-label={`${usd(spent)} spent of ${usd(annualBudget)} annual budget`}
+                style={{ background: donutBackground }}
+              >
                 <div className="th-donut-inner">
                   <strong>{spentPercent}%</strong>
                   <span>used</span>
@@ -1347,57 +1354,109 @@ export default async function DashboardPage() {
               </div>
             </div>
           </div>
-
-          <div className="th-minigrid">
-            {quarterlySpend.map((entry) => {
-              const visual = getQuarterVisual(entry.quarter);
-              return (
-                <div key={entry.quarter} className="th-stat">
-                  <span>
-                    {visual.label} {visual.mark}
-                  </span>
-                  <strong>{usd(entry.total)}</strong>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="th-block">
-            <div className="th-block-head">
-              <h3>Recent purchases</h3>
-              <Link href={`/dashboard/teams/${team.id}`} className="th-link">
-                Full ledger →
-              </Link>
+          <div className="th-lead-quarter-panel">
+            <h3>Quarterly spend</h3>
+            <div className="th-minigrid">
+              {quarterlySpend.map((entry) => {
+                const visual = getQuarterVisual(entry.quarter);
+                return (
+                  <div key={entry.quarter} className="th-stat">
+                    <span>
+                      {visual.label} {visual.mark}
+                    </span>
+                    <strong>{usd(entry.total)}</strong>
+                  </div>
+                );
+              })}
             </div>
-            {recentPurchases.length === 0 ? (
-              <p className="empty-note">No purchases logged this cycle yet.</p>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Item</th>
-                      <th>Person</th>
-                      <th>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentPurchases.map((purchase) => (
-                      <tr key={purchase.id}>
-                        <td>{formatDateLabel(new Date(purchase.purchased_at))}</td>
-                        <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
-                        <td>{purchase.person_name || '—'}</td>
-                        <td>{usd(purchase.amount_cents / 100)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
         </div>
-      </details>
+      </section>
+
+      <section className="th-section th-lead-activity" aria-label="Recent activity and upcoming work">
+        <div className="th-lead-activity-column">
+          <div className="th-block-head">
+            <h2>Recent transactions</h2>
+            <Link href={`/dashboard/teams/${team.id}`} className="th-link">
+              Full ledger →
+            </Link>
+          </div>
+          {recentPurchases.length === 0 ? (
+            <p className="empty-note">No purchases logged this cycle yet.</p>
+          ) : (
+            <div className="th-lead-activity-list">
+              {recentPurchases.slice(0, 5).map((purchase) => (
+                <div key={purchase.id} className="th-lead-activity-row">
+                  <div>
+                    <strong>{purchase.description || 'Untitled purchase'}</strong>
+                    <span>
+                      {formatDateLabel(new Date(purchase.purchased_at))} · {purchase.person_name || 'Unknown'}
+                    </span>
+                  </div>
+                  <b>{usd(purchase.amount_cents / 100)}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="th-lead-activity-column">
+          <div className="th-block-head">
+            <h2>Coming up</h2>
+            <Link href="/dashboard/tasks" className="th-link">
+              All tasks →
+            </Link>
+          </div>
+          <div className="th-lead-activity-list">
+            {upcomingEvents.map((event) => (
+              <div key={event.id} className="th-lead-activity-row">
+                <div>
+                  <span className="th-lead-activity-type">Event</span>
+                  <strong>{event.title}</strong>
+                  <span>
+                    {new Date(event.event_at).toLocaleString('en-US', {
+                      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles'
+                    })} · {event.location}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {hasBudgetApplicationTask ? (
+              <div className="th-lead-activity-row">
+                <div>
+                  <span className="th-lead-activity-type">Due {formatTeamBudgetDeadline()}</span>
+                  <Link href={`/dashboard/teams/${team.id}/budget-application?year=${TEAM_BUDGET_ACADEMIC_YEAR}`}>
+                    Annual budget application
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+            {previewTasks.map((task) => (
+              <div key={task.id} className="th-lead-activity-row">
+                <div>
+                  <span className="th-lead-activity-type">Task</span>
+                  <Link href="/dashboard/tasks">{task.title}</Link>
+                </div>
+              </div>
+            ))}
+            {reportRecord?.status !== 'submitted' && reportState.reportState !== 'closed' ? (
+              <div className="th-lead-activity-row">
+                <div>
+                  <span className="th-lead-activity-type">Report</span>
+                  <Link href="/dashboard/reports">{formatQuarterReportTitle(reportState.targetQuarter)}</Link>
+                  <span>
+                    {reportState.reportState === 'open'
+                      ? `Due in ${reportState.countdownLabel}`
+                      : `Opens in ${reportState.countdownLabel}`}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+            {upcomingEvents.length === 0 && openTaskCount === 0 && reportState.reportState === 'closed' ? (
+              <p className="empty-note">Nothing scheduled right now.</p>
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       {/* Events */}
       {teamAnnouncements.length > 0 ? (
