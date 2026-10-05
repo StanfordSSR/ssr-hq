@@ -185,7 +185,7 @@ export default async function TasksPage() {
 
   let visibleTasks = tasks;
   let visibleAnnouncements = announcements;
-  let selectableTeams = teams;
+  let selectableTeams = teams.filter((team) => team.is_active);
   let pendingReceipts: ReceiptPurchase[] = [];
   let budgetApplicationTeams: Team[] = [];
   let reportTask: {
@@ -206,7 +206,7 @@ export default async function TasksPage() {
         .filter((completion) => myTeamIds.has(completion.team_id))
         .map((completion) => completion.task_id)
     );
-    selectableTeams = teams.filter((team) => myTeamIds.has(team.id));
+    selectableTeams = teams.filter((team) => team.is_active && myTeamIds.has(team.id));
     budgetApplicationTeams = outstandingBudgetTeams.filter((team) => myTeamIds.has(team.id));
     visibleTasks = tasks.filter((task) => {
       if (completedTaskIds.has(task.id)) {
@@ -560,7 +560,7 @@ export default async function TasksPage() {
           ) : (
             <div className="hq-task-stack">
               {budgetApplicationTeams.map((team) => (
-                <article key={`budget-${team.id}`} className={`hq-task-card hq-task-card-report ${isTeamBudgetApplicationClosed() ? 'hq-task-card-alert' : ''}`}>
+                <article key={`budget-${team.id}`} className={`hq-task-card hq-task-card-report ${isTeamBudgetApplicationClosed(TEAM_BUDGET_ACADEMIC_YEAR) ? 'hq-task-card-alert' : ''}`}>
                   <div className="hq-task-card-head">
                     <div>
                       <span className="hq-task-kicker">Budget task</span>
@@ -573,7 +573,7 @@ export default async function TasksPage() {
                   <div className="hq-task-card-meta">
                     <span>{team.name}</span>
                     <span>Due {formatTeamBudgetDeadline()}</span>
-                    {isTeamBudgetApplicationClosed() ? <strong className="hq-task-alert">CLOSED</strong> : null}
+                    {isTeamBudgetApplicationClosed(TEAM_BUDGET_ACADEMIC_YEAR) ? <strong className="hq-task-alert">CLOSED</strong> : null}
                   </div>
                 </article>
               ))}

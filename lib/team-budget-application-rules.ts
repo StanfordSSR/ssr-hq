@@ -22,8 +22,8 @@ export type BudgetCaps = Record<BudgetCategory, number>;
 export const TEAM_BUDGET_ACADEMIC_YEAR = '2026-27';
 export const TEAM_BUDGET_DEADLINE_AT = '2026-10-12T02:08:00.000Z';
 
-export function isTeamBudgetApplicationClosed(now = new Date()): boolean {
-  return now.getTime() >= Date.parse(TEAM_BUDGET_DEADLINE_AT);
+export function isTeamBudgetApplicationClosed(academicYear: string, now = new Date()): boolean {
+  return academicYear === TEAM_BUDGET_ACADEMIC_YEAR && now.getTime() >= Date.parse(TEAM_BUDGET_DEADLINE_AT);
 }
 
 export function canViewTeamBudgetApplication(role: string, isLead: boolean, isPresident: boolean): boolean {

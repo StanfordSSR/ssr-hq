@@ -4,7 +4,7 @@ import { getViewerContext } from '@/lib/auth';
 import { formatDateLabel } from '@/lib/academic-calendar';
 import { getBudgetSetupState } from '@/lib/budget-plan';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { formatBudgetMoney, formatTeamBudgetDeadline, normalizeApplicationItems, selectTeamApplicationYear } from '@/lib/team-budget-application-rules';
+import { formatBudgetMoney, formatTeamBudgetDeadline, normalizeApplicationItems, selectTeamApplicationYear, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 
 export default async function BudgetApplicationsPage({ searchParams }: { searchParams?: Promise<{ year?: string | string[] }> }) {
   const { currentRole } = await getViewerContext();
@@ -33,7 +33,7 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{academicYear}</p>
           <h1 className="hq-page-title">Team budget applications</h1>
-          <p className="hq-subtitle">{submittedCount} of {(teams || []).length} active teams submitted · Due {formatTeamBudgetDeadline()}</p>
+          <p className="hq-subtitle">{submittedCount} of {(teams || []).length} active teams submitted{academicYear === TEAM_BUDGET_ACADEMIC_YEAR ? ` · Due ${formatTeamBudgetDeadline()}` : ''}</p>
         </div>
         <div className="hq-page-head-action">
           <Link href="/dashboard/finances/plan" className="button-secondary">Budget plan</Link>

@@ -266,6 +266,15 @@ export async function assignExistingLeadAction(formData: FormData) {
       }
 
       const admin = createAdminClient();
+      const { data: team, error: teamError } = await admin
+        .from('teams')
+        .select('id')
+        .eq('id', teamId)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (teamError || !team) {
+        throw new Error('This team is no longer active.');
+      }
       const { data: targetProfile, error: profileError } = await admin
         .from('profiles')
         .select('id, role, active')
