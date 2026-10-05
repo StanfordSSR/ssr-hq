@@ -2,10 +2,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getViewerContext } from '@/lib/auth';
 import { formatDateLabel } from '@/lib/academic-calendar';
-import { getBudgetSetupState } from '@/lib/budget-plan';
+import { getActiveBudgetPlan, getBudgetSetupState } from '@/lib/budget-plan';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { formatBudgetMoney, formatTeamBudgetDeadline, normalizeApplicationItems, selectTeamApplicationYear, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
-import { FIXED_TRAVEL_ZERO_IDS, getFixedTravelItems, withFixedTravelItems } from '@/lib/team-budget-fixed-travel';
+import { FIXED_TRAVEL_ZERO_IDS, getFixedTravelItems, hasFixedTravelItems, withFixedTravelItems } from '@/lib/team-budget-fixed-travel';
+import { withFoodQuarterItems } from '@/lib/team-budget-food';
 
 export default async function BudgetApplicationsPage({ searchParams }: { searchParams?: Promise<{ year?: string | string[] }> }) {
   const { currentRole } = await getViewerContext();
@@ -16,14 +17,20 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
   const setup = await getBudgetSetupState();
   const academicYear = selectTeamApplicationYear(setup, (await searchParams)?.year);
   const admin = createAdminClient();
-  const [{ data: teams, error: teamsError }, { data: applications, error: applicationsError }] = await Promise.all([
+  const [{ data: teams, error: teamsError }, { data: applications, error: applicationsError }, plan] = await Promise.all([
     admin.from('teams').select('id, name, slug').eq('is_active', true).order('name'),
     admin
       .from('team_budget_applications')
       .select('team_id, status, line_items, updated_at, submitted_at')
-      .eq('academic_year', academicYear)
+      .eq('academic_year', academicYear),
+    getActiveBudgetPlan(academicYear)
   ]);
   if (teamsError || applicationsError) throw new Error('Could not load team budget applications.');
+  const { data: foodCaps, error: foodCapsError } = plan
+    ? await admin.from('budget_expense_items').select('team_id, amount_cents').eq('plan_id', plan.id).eq('kind', 'team').eq('category', 'food').is('parent_id', null)
+    : { data: [], error: null };
+  if (foodCapsError) throw new Error('Could not load team food budgets.');
+  const foodCapByTeam = new Map((foodCaps || []).map((row) => [row.team_id, row.amount_cents]));
 
   const byTeam = new Map((applications || []).map((application) => [application.team_id, application]));
   const submittedCount = (teams || []).filter((team) => byTeam.get(team.id)?.status === 'submitted').length;
@@ -63,15 +70,18 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
             {(teams || []).map((team) => {
               const application = byTeam.get(team.id);
               const fixedTravel = getFixedTravelItems(team.slug, academicYear);
-              const items = withFixedTravelItems(
-                application ? normalizeApplicationItems(application.line_items, FIXED_TRAVEL_ZERO_IDS) : [],
-                fixedTravel
-              );
+              const savedItems = application ? normalizeApplicationItems(application.line_items, FIXED_TRAVEL_ZERO_IDS) : [];
+              const foodItems = application?.status === 'submitted'
+                ? savedItems
+                : withFoodQuarterItems(savedItems, foodCapByTeam.get(team.id) || 0);
+              const items = application?.status === 'submitted' ? savedItems : withFixedTravelItems(foodItems, fixedTravel);
+              const prefillPending = application?.status !== 'submitted' &&
+                (foodItems !== savedItems || !hasFixedTravelItems(savedItems, fixedTravel));
               const totalCents = items.reduce((sum, item) => sum + item.amountCents, 0);
               return (
                 <tr key={team.id}>
                   <td style={{ fontWeight: 700 }}>{team.name}</td>
-                  <td>{application?.status === 'submitted' ? 'Submitted' : application ? 'Draft' : 'Not started'}</td>
+                  <td>{application?.status === 'submitted' ? 'Submitted' : application ? prefillPending ? 'Draft · pending save' : 'Draft' : 'Not started'}</td>
                   <td>{application ? formatBudgetMoney(totalCents) : '—'}</td>
                   <td>{items.length}</td>
                   <td>{application ? formatDateLabel(new Date(application.updated_at)) : '—'}</td>

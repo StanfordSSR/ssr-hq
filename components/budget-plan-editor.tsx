@@ -112,11 +112,6 @@ function dollars(cents: number) {
   return (cents / 100).toFixed(2);
 }
 
-// Autosave: submit the input/select's associated form when the user leaves it.
-function autoSave(event: { currentTarget: { form: HTMLFormElement | null } }) {
-  event.currentTarget.form?.requestSubmit();
-}
-
 const CATEGORY_RANK: Record<string, number> = { equipment: 0, food: 1, travel: 2, registration: 3, other: 4 };
 const AG_ABBR: Record<string, string> = { equipment: 'equi', food: 'food', travel: 'trav', registration: 'reg', other: 'other' };
 const SHEET_HEAD_LABELS = ['Type', 'Line item', 'Team / kind', 'Category', 'Lock', 'Amount', 'Funded by / notes', ''];
@@ -246,6 +241,57 @@ export function BudgetPlanEditor(props: Props) {
     });
   const [, startTransition] = useTransition();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const autoSaveTimers = useRef(new Map<HTMLFormElement, ReturnType<typeof setTimeout>>());
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const pendingSaves = useRef(0);
+  const saveFailed = useRef(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  useEffect(() => {
+    const timers = autoSaveTimers.current;
+    return () => { for (const timer of timers.values()) clearTimeout(timer); };
+  }, []);
+
+  const queueAutoSave = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const form = input.form;
+    if (!form) return;
+    const previous = autoSaveTimers.current.get(form);
+    if (previous) clearTimeout(previous);
+    autoSaveTimers.current.delete(form);
+    if (!input.validity.valid || (input.type === 'number' && !input.value)) return;
+    setSaveState('saving');
+    autoSaveTimers.current.set(form, setTimeout(() => {
+      autoSaveTimers.current.delete(form);
+      form.requestSubmit();
+    }, 800));
+  };
+
+  const flushAutoSave = (event: { currentTarget: { form: HTMLFormElement | null } }, force = false) => {
+    const form = event.currentTarget.form;
+    if (!form) return;
+    const timer = autoSaveTimers.current.get(form);
+    if (!timer && !force) return;
+    if (timer) clearTimeout(timer);
+    autoSaveTimers.current.delete(form);
+    form.requestSubmit();
+  };
+
+  const runAutoSave = async (save: () => Promise<unknown>) => {
+    if (pendingSaves.current === 0) saveFailed.current = false;
+    pendingSaves.current += 1;
+    setSaveState('saving');
+    const nextSave = saveQueue.current.catch(() => undefined).then(save);
+    saveQueue.current = nextSave;
+    try {
+      await nextSave;
+    } catch {
+      saveFailed.current = true;
+    } finally {
+      pendingSaves.current -= 1;
+      if (pendingSaves.current === 0) setSaveState(saveFailed.current ? 'error' : 'saved');
+    }
+  };
 
   const [optimisticSources, addOptimisticSource] = useOptimistic(sources, (state, item: Source) => [...state, item]);
   const [optimisticExpenses, mutateExpenses] = useOptimistic(
@@ -262,7 +308,10 @@ export function BudgetPlanEditor(props: Props) {
     if (id && formData.has('amount')) {
       mutateExpenses({ kind: 'setAmount', id, amountCents: Math.max(0, Math.round((Number(formData.get('amount')) || 0) * 100)) });
     }
-    await upsertExpenseItemAction(formData);
+    await runAutoSave(() => upsertExpenseItemAction(formData));
+  };
+  const commitSource = async (formData: FormData) => {
+    await runAutoSave(() => upsertFundingSourceAction(formData));
   };
   // Dedicated delete action so it never collides with the row's commit form.
   const deleteExpense = async (formData: FormData) => {
@@ -474,7 +523,7 @@ export function BudgetPlanEditor(props: Props) {
           {typeLabel}
         </span>
         {rowEditable && !isTeam ? (
-          <input form={rowId} className="hq-sheet-input" name="label" defaultValue={e.label} aria-label="Name" onBlur={autoSave} />
+          <input form={rowId} className="hq-sheet-input" name="label" defaultValue={e.label} aria-label="Name" required onChange={queueAutoSave} onBlur={flushAutoSave} />
         ) : (
           <span className="hq-sheet-cell">
             {isTeam ? `${teamName(e.teamId)} — ${CATEGORY_LABELS[e.category || 'other']}` : e.label}
@@ -482,7 +531,7 @@ export function BudgetPlanEditor(props: Props) {
         )}
         {isTeam ? (
           rowEditable ? (
-            <select form={rowId} className="hq-sheet-input" name="team_id" defaultValue={e.teamId || ''} aria-label="Team" onChange={autoSave}>
+            <select form={rowId} className="hq-sheet-input" name="team_id" defaultValue={e.teamId || ''} aria-label="Team" onChange={(event) => flushAutoSave(event, true)}>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
@@ -500,7 +549,7 @@ export function BudgetPlanEditor(props: Props) {
         )}
         {isTeam ? (
           rowEditable ? (
-            <select form={rowId} className="hq-sheet-input" name="category" defaultValue={e.category || 'other'} aria-label="Category" onChange={autoSave}>
+            <select form={rowId} className="hq-sheet-input" name="category" defaultValue={e.category || 'other'} aria-label="Category" onChange={(event) => flushAutoSave(event, true)}>
               {Object.entries(CATEGORY_LABELS).map(([v, l]) => (
                 <option key={v} value={v}>
                   {l}
@@ -514,9 +563,8 @@ export function BudgetPlanEditor(props: Props) {
           <span className="hq-sheet-dim">—</span>
         )}
         {rowEditable ? (
-          <select form={rowId} className="hq-sheet-input" name="lock_cadence" defaultValue={e.lockCadence} aria-label="Lock" onChange={autoSave}>
+          <select form={rowId} className="hq-sheet-input" name="lock_cadence" defaultValue={e.lockCadence === 'quarterly' ? 'yearly' : e.lockCadence} aria-label="Lock" onChange={(event) => flushAutoSave(event, true)}>
             <option value="yearly">Yearly</option>
-            <option value="quarterly">Quarterly</option>
             <option value="unlocked">Unlocked</option>
           </select>
         ) : (
@@ -525,7 +573,7 @@ export function BudgetPlanEditor(props: Props) {
         {rowEditable ? (
           <span className="hq-sheet-amount">
             <span>$</span>
-            <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(e.amountCents)} aria-label="Amount" onBlur={autoSave} />
+            <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(e.amountCents)} aria-label="Amount" required onChange={queueAutoSave} onBlur={flushAutoSave} />
           </span>
         ) : (
           <span className="hq-sheet-cell hq-sheet-num">{usd(e.effectiveCents)}</span>
@@ -607,7 +655,7 @@ export function BudgetPlanEditor(props: Props) {
         {rowEditable ? (
           <span className="hq-sheet-amount">
             <span>$</span>
-            <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(c.amountCents)} aria-label="Amount" onBlur={autoSave} />
+            <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(c.amountCents)} aria-label="Amount" required onChange={queueAutoSave} onBlur={flushAutoSave} />
           </span>
         ) : (
           <span className="hq-sheet-cell hq-sheet-num">{usd(c.effectiveCents)}</span>
@@ -707,7 +755,7 @@ export function BudgetPlanEditor(props: Props) {
               {open ? '▾' : '▸'}
             </button>
             {rowEditable ? (
-              <input form={rowId} className="hq-sheet-input" name="label" defaultValue={parent.label} aria-label="Name" onBlur={autoSave} />
+              <input form={rowId} className="hq-sheet-input" name="label" defaultValue={parent.label} aria-label="Name" required onChange={queueAutoSave} onBlur={flushAutoSave} />
             ) : (
               <span className="hq-sheet-cell">{parent.label}</span>
             )}
@@ -715,9 +763,8 @@ export function BudgetPlanEditor(props: Props) {
           <span className="hq-sheet-dim">—</span>
           <span className="hq-sheet-dim">{hasChildren ? `${children.length} cat.` : 'split…'}</span>
           {rowEditable ? (
-            <select form={rowId} className="hq-sheet-input" name="lock_cadence" defaultValue={parent.lockCadence} aria-label="Lock" onChange={autoSave}>
+            <select form={rowId} className="hq-sheet-input" name="lock_cadence" defaultValue={parent.lockCadence === 'quarterly' ? 'yearly' : parent.lockCadence} aria-label="Lock" onChange={(event) => flushAutoSave(event, true)}>
               <option value="yearly">Yearly</option>
-              <option value="quarterly">Quarterly</option>
               <option value="unlocked">Unlocked</option>
             </select>
           ) : (
@@ -731,7 +778,7 @@ export function BudgetPlanEditor(props: Props) {
           ) : rowEditable ? (
             <span className="hq-sheet-amount">
               <span>$</span>
-              <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(parent.amountCents)} aria-label="Amount" onBlur={autoSave} />
+              <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(parent.amountCents)} aria-label="Amount" required onChange={queueAutoSave} onBlur={flushAutoSave} />
             </span>
           ) : (
             <span className="hq-sheet-cell hq-sheet-num">{usd(parent.effectiveCents)}</span>
@@ -785,9 +832,12 @@ export function BudgetPlanEditor(props: Props) {
         <span className={uncoveredCents > 0 ? 'hq-sheet-warn' : ''}>
           <strong>{usd(uncoveredCents)}</strong> unfunded
         </span>
+        {saveState !== 'idle' ? <span className={`hq-sheet-save-state hq-sheet-save-state-${saveState}`} role="status" aria-live="polite">
+          {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : 'Save failed. Try editing again.'}
+        </span> : null}
         {draftEditable ? (
           <div className="hq-sheet-summary-actions">
-            <form action={applyFoodPerMemberAction} className="hq-food-rate" title="Set every team's food budget from roster size">
+            <form action={(formData) => runAutoSave(() => applyFoodPerMemberAction(formData))} className="hq-food-rate" title="Set every team's yearly food budget from member count">
               <input type="hidden" name="plan_id" value={planId} />
               <span className="hq-food-rate-label">Food $</span>
               <input
@@ -797,13 +847,10 @@ export function BudgetPlanEditor(props: Props) {
                 min="0"
                 step="0.01"
                 placeholder="0"
-                aria-label="Dollars per member"
+                required
+                aria-label="Yearly dollars per member"
               />
-              <span className="hq-food-rate-label">/ member /</span>
-              <select className="hq-sheet-input" name="period" defaultValue="quarter" aria-label="Period">
-                <option value="quarter">quarter</option>
-                <option value="year">year</option>
-              </select>
+              <span className="hq-food-rate-label">/ member / year</span>
               <button className="button-secondary" type="submit">
                 Apply
               </button>
@@ -856,7 +903,7 @@ export function BudgetPlanEditor(props: Props) {
                 role="row"
                 key={s.id}
               >
-                <form id={rowId} action={upsertFundingSourceAction} hidden />
+                <form id={rowId} action={commitSource} hidden />
                 <input form={rowId} type="hidden" name="plan_id" value={planId} />
                 <input form={rowId} type="hidden" name="source_id" value={s.id} />
                 <input form={rowId} type="hidden" name="is_default_pool" value={s.isDefaultPool ? 'on' : ''} />
@@ -869,7 +916,7 @@ export function BudgetPlanEditor(props: Props) {
                 <span className="hq-sheet-type hq-sheet-type-source">Source</span>
                 <div className="hq-sheet-src-name">
                   {draftEditable && !temp ? (
-                    <input form={rowId} className="hq-sheet-input" name="label" defaultValue={s.label} aria-label="Name" onBlur={autoSave} />
+                    <input form={rowId} className="hq-sheet-input" name="label" defaultValue={s.label} aria-label="Name" required onChange={queueAutoSave} onBlur={flushAutoSave} />
                   ) : (
                     <span className="hq-sheet-cell">{s.label}</span>
                   )}
@@ -878,7 +925,7 @@ export function BudgetPlanEditor(props: Props) {
                   </span>
                 </div>
                 {draftEditable && !temp && s.kind !== 'annual_grant' ? (
-                  <select form={rowId} className="hq-sheet-input" name="kind" defaultValue={s.kind} aria-label="Kind" onChange={autoSave}>
+                  <select form={rowId} className="hq-sheet-input" name="kind" defaultValue={s.kind} aria-label="Kind" onChange={(event) => flushAutoSave(event, true)}>
                     {Object.entries(SOURCE_KIND_LABELS).map(([v, l]) => (
                       <option key={v} value={v}>
                         {l}
@@ -889,7 +936,7 @@ export function BudgetPlanEditor(props: Props) {
                   <span className="hq-sheet-cell">{SOURCE_KIND_LABELS[s.kind] || s.kind}</span>
                 )}
                 {draftEditable && !temp && s.kind !== 'annual_grant' ? (
-                  <select form={rowId} className="hq-sheet-input" name="category" defaultValue={s.category || ''} aria-label="Category" onChange={autoSave}>
+                  <select form={rowId} className="hq-sheet-input" name="category" defaultValue={s.category || ''} aria-label="Category" onChange={(event) => flushAutoSave(event, true)}>
                     {CATEGORY_OPTIONS.map(([v, l]) => (
                       <option key={v} value={v}>
                         {l}
@@ -911,13 +958,13 @@ export function BudgetPlanEditor(props: Props) {
                 {draftEditable && !temp ? (
                   <span className="hq-sheet-amount">
                     <span>$</span>
-                    <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(s.amountCents)} aria-label="Amount" onBlur={autoSave} />
+                    <input form={rowId} name="amount" type="number" min="0" step="0.01" defaultValue={dollars(s.amountCents)} aria-label="Amount" required onChange={queueAutoSave} onBlur={flushAutoSave} />
                   </span>
                 ) : (
                   <span className="hq-sheet-cell hq-sheet-num">{usd(s.amountCents)}</span>
                 )}
                 {draftEditable && !temp ? (
-                  <input form={rowId} className="hq-sheet-input" name="notes" defaultValue={s.notes || ''} placeholder="Notes (e.g. from ASSU)" aria-label="Notes" onBlur={autoSave} />
+                  <input form={rowId} className="hq-sheet-input" name="notes" defaultValue={s.notes || ''} placeholder="Notes (e.g. from ASSU)" aria-label="Notes" onChange={queueAutoSave} onBlur={flushAutoSave} />
                 ) : (
                   <span className="hq-sheet-dim">{s.notes || '—'}</span>
                 )}
@@ -1069,7 +1116,6 @@ function AddRow({
       ) : (
         <select className="hq-sheet-input" name="lock_cadence" defaultValue={isTeam ? 'yearly' : 'unlocked'} aria-label="Lock">
           <option value="yearly">Yearly</option>
-          <option value="quarterly">Quarterly</option>
           <option value="unlocked">Unlocked</option>
         </select>
       )}

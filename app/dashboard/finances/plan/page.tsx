@@ -55,63 +55,71 @@ export default async function BudgetPlanPage({
   if (quarterState && targetYear === setup.academicYear) {
     const currentPlan = await getActiveBudgetPlan(setup.academicYear);
     if (currentPlan && currentPlan.status === 'approved') {
-      const { data: decl } = await admin
-        .from('budget_quarter_declarations')
-        .select('id, status')
+      const { count: quarterlyItemCount, error: quarterlyCountError } = await admin
+        .from('budget_expense_items')
+        .select('id', { count: 'exact', head: true })
         .eq('plan_id', currentPlan.id)
-        .eq('quarter', quarterState.quarter)
-        .neq('status', 'superseded')
-        .order('version', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .eq('lock_cadence', 'quarterly');
+      if (quarterlyCountError) throw new Error('Could not load quarterly budget items.');
+      if (quarterlyItemCount) {
+        const { data: decl } = await admin
+          .from('budget_quarter_declarations')
+          .select('id, status')
+          .eq('plan_id', currentPlan.id)
+          .eq('quarter', quarterState.quarter)
+          .neq('status', 'superseded')
+          .order('version', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (decl) {
-        const [{ data: values }, { data: items }, { data: approvals }] = await Promise.all([
-          admin.from('budget_quarterly_values').select('expense_item_id, amount_cents').eq('declaration_id', decl.id),
-          admin.from('budget_expense_items').select('id, label').eq('plan_id', currentPlan.id).eq('lock_cadence', 'quarterly'),
-          admin.from('budget_approvals').select('president_id, signature').eq('target_type', 'quarter').eq('target_id', decl.id)
-        ]);
-        const valueMap = new Map((values || []).map((v) => [v.expense_item_id, v.amount_cents]));
-        const declItems = ((items || []) as Array<{ id: string; label: string }>).map((item) => ({
-          expenseItemId: item.id,
-          label: item.label,
-          amountCents: valueMap.get(item.id) || 0
-        }));
-        quarterlySection = (
-          <QuarterlyDeclarationPanel
-            declarationId={decl.id}
-            quarter={quarterState.quarter}
-            status={decl.status as 'draft' | 'pending_approval' | 'approved' | 'superseded'}
-            canEdit={canEdit}
-            currentUserIsPresident={isPresident}
-            currentUserId={user.id}
-            items={declItems}
-            approvals={((approvals || []) as Array<{ president_id: string; signature: string | null }>).map((a) => ({
-              presidentId: a.president_id,
-              hasSignature: Boolean(a.signature),
-              source: 'portal'
-            }))}
-            presidents={presidents}
-          />
-        );
-      } else if (canEdit) {
-        quarterlySection = (
-          <section className="hq-panel hq-surface-muted">
-            <div className="hq-block-head">
-              <h3>{quarterState.quarter} re-declaration</h3>
-              <span className="hq-inline-note">window open</span>
-            </div>
-            <p className="helper">
-              Quarterly-locked sub-budgets need new amounts for {quarterState.quarter}. Open the declaration to set and
-              sign them.
-            </p>
-            <form action={openQuarterDeclarationAction} className="button-row">
-              <button className="button" type="submit">
-                Open {quarterState.quarter} declaration
-              </button>
-            </form>
-          </section>
-        );
+        if (decl) {
+          const [{ data: values }, { data: items }, { data: approvals }] = await Promise.all([
+            admin.from('budget_quarterly_values').select('expense_item_id, amount_cents').eq('declaration_id', decl.id),
+            admin.from('budget_expense_items').select('id, label').eq('plan_id', currentPlan.id).eq('lock_cadence', 'quarterly'),
+            admin.from('budget_approvals').select('president_id, signature').eq('target_type', 'quarter').eq('target_id', decl.id)
+          ]);
+          const valueMap = new Map((values || []).map((v) => [v.expense_item_id, v.amount_cents]));
+          const declItems = ((items || []) as Array<{ id: string; label: string }>).map((item) => ({
+            expenseItemId: item.id,
+            label: item.label,
+            amountCents: valueMap.get(item.id) || 0
+          }));
+          quarterlySection = (
+            <QuarterlyDeclarationPanel
+              declarationId={decl.id}
+              quarter={quarterState.quarter}
+              status={decl.status as 'draft' | 'pending_approval' | 'approved' | 'superseded'}
+              canEdit={canEdit}
+              currentUserIsPresident={isPresident}
+              currentUserId={user.id}
+              items={declItems}
+              approvals={((approvals || []) as Array<{ president_id: string; signature: string | null }>).map((a) => ({
+                presidentId: a.president_id,
+                hasSignature: Boolean(a.signature),
+                source: 'portal'
+              }))}
+              presidents={presidents}
+            />
+          );
+        } else if (canEdit) {
+          quarterlySection = (
+            <section className="hq-panel hq-surface-muted">
+              <div className="hq-block-head">
+                <h3>{quarterState.quarter} re-declaration</h3>
+                <span className="hq-inline-note">window open</span>
+              </div>
+              <p className="helper">
+                Quarterly-locked sub-budgets need new amounts for {quarterState.quarter}. Open the declaration to set and
+                sign them.
+              </p>
+              <form action={openQuarterDeclarationAction} className="button-row">
+                <button className="button" type="submit">
+                  Open {quarterState.quarter} declaration
+                </button>
+              </form>
+            </section>
+          );
+        }
       }
     }
   }
