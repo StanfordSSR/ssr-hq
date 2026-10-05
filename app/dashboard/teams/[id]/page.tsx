@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getViewerContext } from '@/lib/auth';
+import { getViewerContext, profileHasPresidentRole } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { getCurrentAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { getReceiptTaskState } from '@/lib/purchases';
@@ -12,6 +12,8 @@ import { EOY_REPORT_TITLE } from '@/lib/eoy-report';
 import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
+import { TimedBudgetApplicationLink } from '@/components/timed-budget-application-link';
+import { isTeamBudgetApplicationOpen } from '@/lib/team-budget-application-rules';
 
 type TeamRow = {
   id: string;
@@ -260,6 +262,13 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
           <span className={`th-status ${team.is_active ? 'th-status-live' : 'th-status-off'}`}>
             {team.is_active ? 'Active' : 'Inactive'}
           </span>
+          <TimedBudgetApplicationLink
+            href={`/dashboard/teams/${team.id}/budget-application`}
+            className="th-mast-link"
+            label="Budget application →"
+            initialOpen={isTeamBudgetApplicationOpen()}
+            canPreview={profileHasPresidentRole(profile)}
+          />
           {isOfficer && currentRole !== 'financial_officer' ? (
             <Link href="/dashboard/teams" className="th-mast-link">
               ← All teams

@@ -13,6 +13,7 @@ import {
 } from '@/lib/budget-plan';
 import { createBudgetPlanAction, openQuarterDeclarationAction } from '@/app/dashboard/actions';
 import { BudgetPlanEditor, QuarterlyDeclarationPanel } from '@/components/budget-plan-editor';
+import { isTeamBudgetApplicationOpen } from '@/lib/team-budget-application-rules';
 
 export default async function BudgetPlanPage({
   searchParams
@@ -30,6 +31,7 @@ export default async function BudgetPlanPage({
     redirect('/dashboard');
   }
   const canEdit = currentRole === 'admin';
+  const applicationsOpen = isTeamBudgetApplicationOpen();
   // NOTE: vice presidents can VIEW the budget plan but must NEVER sign it, so
   // isPresident (which drives signing) stays false for them.
   const isPresident = currentRole === 'president' || profile.role === 'president' || Boolean(profile.is_president);
@@ -136,7 +138,12 @@ export default async function BudgetPlanPage({
             {targetYear === setup.nextAcademicYear ? setup.message : `${targetYear} academic year`}
           </p>
         </div>
-        <div className="hq-page-head-action">
+        <div className="hq-page-head-action budget-app-head-actions">
+          {(applicationsOpen || isPresident) ? (
+            <Link href="/dashboard/finances/applications" className="button-secondary">
+              {applicationsOpen ? 'Team applications' : 'Preview team applications'}
+            </Link>
+          ) : null}
           <Link href="/dashboard/finances" className="button-secondary">
             ← Manage finances
           </Link>
