@@ -8217,6 +8217,14 @@ tr:last-child td {
   gap: 12px;
   flex-wrap: wrap;
 }
+.hq-sheet-save-state {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.hq-sheet-save-state-error {
+  color: var(--cardinal);
+}
 .hq-food-rate {
   display: flex;
   align-items: center;

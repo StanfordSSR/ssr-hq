@@ -7,6 +7,7 @@ import { getLeadTeamIds } from '@/lib/lead-state';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getTeamBudgetApplication, getTeamBudgetCaps } from '@/lib/team-budget-application';
 import { getFixedTravelItems, hasFixedTravelItems, withFixedTravelItems } from '@/lib/team-budget-fixed-travel';
+import { withFoodQuarterItems } from '@/lib/team-budget-food';
 import { canViewTeamBudgetApplication, formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, selectTeamApplicationYear, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 import { TeamBudgetApplicationEditor } from '@/components/team-budget-application-editor';
 
@@ -38,6 +39,10 @@ export default async function TeamBudgetApplicationPage({
 
   const canEdit = !isClosed && isLead && team.is_active && Boolean(plan);
   const fixedTravel = getFixedTravelItems(team.slug, academicYear);
+  const savedItems = application?.items || [];
+  const submitted = application?.status === 'submitted';
+  const foodItems = submitted ? savedItems : withFoodQuarterItems(savedItems, caps.food);
+  const initialItems = submitted ? savedItems : withFixedTravelItems(foodItems, fixedTravel);
   return (
     <div className="hq-page th-page">
       <section className="hq-page-head">
@@ -79,9 +84,9 @@ export default async function TeamBudgetApplicationPage({
           teamId={teamId}
           academicYear={academicYear}
           caps={caps}
-          initialItems={withFixedTravelItems(application?.items || [], fixedTravel)}
+          initialItems={initialItems}
           fixedTravelItems={fixedTravel}
-          initialPrefillPending={!hasFixedTravelItems(application?.items || [], fixedTravel)}
+          initialPrefillPending={!submitted && (foodItems !== savedItems || !hasFixedTravelItems(savedItems, fixedTravel))}
           initialVersion={application?.version || 0}
           initialStatus={application?.status || 'draft'}
           initialUpdatedAt={application?.updatedAt || null}

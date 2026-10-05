@@ -110,6 +110,7 @@ import {
   getQuarterDeclarationState
 } from '@/lib/budget-plan';
 import { LEADERSHIP_STEWARD_LABEL, storageLocationLabel } from '@/lib/high-value-assets';
+import { getAnnualFoodBudgetCents } from '@/lib/team-budget-food';
 import {
   approveCardRegion,
   cardReadTokenSatisfied,
@@ -5575,9 +5576,11 @@ export async function upsertFundingSourceAction(formData: FormData) {
 
   const payload = { plan_id: planId, label, kind, category, amount_cents: amountCents, is_default_pool: isDefaultPool, notes };
   if (sourceId) {
-    await admin.from('budget_funding_sources').update(payload).eq('id', sourceId);
+    const { error } = await admin.from('budget_funding_sources').update(payload).eq('id', sourceId);
+    if (error) throw new Error('Could not save the funding source.');
   } else {
-    await admin.from('budget_funding_sources').insert(payload);
+    const { error } = await admin.from('budget_funding_sources').insert(payload);
+    if (error) throw new Error('Could not add the funding source.');
   }
   revalidateBudgetPlan();
 }
@@ -5621,7 +5624,7 @@ export async function upsertExpenseItemAction(formData: FormData) {
 
   const isSubItem = Boolean(parentId);
   const kind = ['team', 'event', 'operations', 'general'].includes(kindRaw) ? kindRaw : 'general';
-  const lockCadence = ['yearly', 'quarterly', 'unlocked'].includes(lockCadenceRaw) ? lockCadenceRaw : 'yearly';
+  const lockCadence = ['yearly', 'unlocked'].includes(lockCadenceRaw) ? lockCadenceRaw : 'yearly';
   const category =
     (kind === 'team' || isSubItem) && ['equipment', 'food', 'travel', 'registration', 'other'].includes(categoryRaw) ? categoryRaw : null;
   const categoryLabels: Record<string, string> = { equipment: 'Equipment', food: 'Food', travel: 'Travel', registration: 'Registration', other: 'Other' };
@@ -5681,9 +5684,11 @@ export async function upsertExpenseItemAction(formData: FormData) {
   };
   let savedId = expenseId;
   if (expenseId) {
-    await admin.from('budget_expense_items').update(payload).eq('id', expenseId);
+    const { error } = await admin.from('budget_expense_items').update(payload).eq('id', expenseId);
+    if (error) throw new Error('Could not save the budget line.');
   } else {
-    const { data: inserted } = await admin.from('budget_expense_items').insert(payload).select('id').single();
+    const { data: inserted, error } = await admin.from('budget_expense_items').insert(payload).select('id').single();
+    if (error) throw new Error('Could not add the budget line.');
     savedId = (inserted?.id as string) || '';
   }
   // Once a parent has sub-items, its own amount/funding is replaced by the
@@ -5837,16 +5842,16 @@ export async function resetTeamBudgetsAction(formData: FormData) {
   revalidateBudgetPlan();
 }
 
-// Set every team's food sub-budget from a $/member rate and the team roster
-// size. Per-quarter -> quarterly lock; per-year -> yearly lock.
+// Set each team's yearly food budget from the same per-member rate.
 export async function applyFoodPerMemberAction(formData: FormData) {
   await requireAdmin();
   const planId = String(formData.get('plan_id') || '').trim();
-  const dollars = Number(formData.get('dollars')) || 0;
-  const period = String(formData.get('period') || 'quarter');
+  const dollars = String(formData.get('dollars') || '').trim();
   if (!planId) return;
-  const perMemberCents = Math.max(0, Math.round(dollars * 100));
-  const lockCadence = period === 'year' ? 'yearly' : 'quarterly';
+  if (!/^\d+(?:\.\d{1,2})?$/.test(dollars) || Number(dollars) > 1_000_000) {
+    throw new Error('Enter a valid yearly food amount per member.');
+  }
+  const perMemberCents = Math.round(Number(dollars) * 100);
 
   const admin = createAdminClient();
   const plan = await loadBudgetPlanRow(admin, planId);
@@ -5865,20 +5870,25 @@ export async function applyFoodPerMemberAction(formData: FormData) {
   }
 
   const teamIds = Array.from(new Set(rows.map((r) => r.team_id as string)));
-  const { data: members } = await admin.from('team_roster_members').select('team_id').in('team_id', teamIds);
+  const [{ data: rosterMembers, error: rosterError }, { data: portalMembers, error: portalError }] = await Promise.all([
+    admin.from('team_roster_members').select('team_id').in('team_id', teamIds),
+    admin.from('team_memberships').select('team_id').in('team_id', teamIds).eq('is_active', true)
+  ]);
+  if (rosterError || portalError) throw new Error('Could not load team member counts.');
   const countByTeam = new Map<string, number>();
-  for (const m of (members || []) as Array<{ team_id: string }>) {
+  for (const m of [...(rosterMembers || []), ...(portalMembers || [])]) {
     countByTeam.set(m.team_id, (countByTeam.get(m.team_id) || 0) + 1);
   }
 
-  await Promise.all(
+  const results = await Promise.all(
     rows.map((r) =>
       admin
         .from('budget_expense_items')
-        .update({ amount_cents: perMemberCents * (countByTeam.get(r.team_id as string) || 0), lock_cadence: lockCadence })
+        .update({ amount_cents: getAnnualFoodBudgetCents(perMemberCents, countByTeam.get(r.team_id as string) || 0), lock_cadence: 'yearly' })
         .eq('id', r.id)
     )
   );
+  if (results.some((result) => result.error)) throw new Error('Could not update every team food budget. Refresh and try again.');
   revalidateBudgetPlan();
 }
 
