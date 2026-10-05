@@ -99,7 +99,7 @@ export function getSubmissionError(items: BudgetApplicationItem[], caps: BudgetC
   for (const category of BUDGET_CATEGORIES) {
     const request = getCategoryRequest(items, category, caps[category]);
     if (request.overLimit) {
-      return `${BUDGET_CATEGORY_LABELS[category]} exceeds the 15% allowance. The maximum is ${formatBudgetMoney(request.maxCents)}.`;
+      return `${BUDGET_CATEGORY_LABELS[category]} is too far over its category cap. Reduce the request before submitting.`;
     }
     if (request.missingItems > 0) {
       return `${BUDGET_CATEGORY_LABELS[category]} needs ${request.missingItems} more line item${request.missingItems === 1 ? '' : 's'} (about one per $1,000 requested).`;

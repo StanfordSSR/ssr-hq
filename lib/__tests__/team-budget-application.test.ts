@@ -77,11 +77,13 @@ describe('team budget application limits', () => {
   it('blocks a request one cent past the 15% ceiling', () => {
     const items = [equipment(575_01), equipment(575_00, 2)];
     expect(getCategoryRequest(items, 'equipment', caps.equipment).overLimit).toBe(true);
-    expect(getSubmissionError(items, caps)).toContain('exceeds the 15% allowance');
+    expect(getSubmissionError(items, caps)).toContain('too far over its category cap');
+    expect(getSubmissionError(items, caps)).not.toContain('15%');
+    expect(getSubmissionError(items, caps)).not.toContain('$1,150.00');
   });
 
   it('blocks any positive request against a zero cap', () => {
-    expect(getSubmissionError([equipment(100_00)], emptyBudgetCaps())).toContain('maximum is $0.00');
+    expect(getSubmissionError([equipment(100_00)], emptyBudgetCaps())).toContain('too far over its category cap');
   });
 
   it('requires an average of at least one line per $1,000 in each category', () => {

@@ -58,6 +58,13 @@ function parseRows(rows: EditorRow[]): { items: BudgetApplicationItem[]; error: 
   return { items, error: null };
 }
 
+function formatSavedAt(value: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    timeZone: 'America/Los_Angeles', timeZoneName: 'short'
+  }).format(new Date(value));
+}
+
 export function TeamBudgetApplicationEditor({
   teamId,
   academicYear,
@@ -65,6 +72,7 @@ export function TeamBudgetApplicationEditor({
   initialItems,
   initialVersion,
   initialStatus,
+  initialUpdatedAt,
   canEdit
 }: {
   teamId: string;
@@ -73,12 +81,16 @@ export function TeamBudgetApplicationEditor({
   initialItems: BudgetApplicationItem[];
   initialVersion: number;
   initialStatus: 'draft' | 'submitted';
+  initialUpdatedAt: string | null;
   canEdit: boolean;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(() => initialRows(initialItems, canEdit && initialStatus === 'draft', caps));
   const [version, setVersion] = useState(initialVersion);
   const [status, setStatus] = useState(initialStatus);
+  const [savedAt, setSavedAt] = useState(initialUpdatedAt);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [hasConflict, setHasConflict] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'success'; message: string } | null>(null);
   const [isPending, startTransition] = useTransition();
   const editable = canEdit && status === 'draft';
@@ -88,6 +100,7 @@ export function TeamBudgetApplicationEditor({
 
   function changeRow(id: string, field: 'description' | 'amount', value: string) {
     setRows((current) => current.map((row) => row.id === id ? { ...row, [field]: value } : row));
+    setHasUnsavedChanges(true);
     setFeedback(null);
   }
 
@@ -98,11 +111,13 @@ export function TeamBudgetApplicationEditor({
         id: crypto.randomUUID(), category, description: '', amount: ''
       }))
     ]);
+    setHasUnsavedChanges(true);
     setFeedback(null);
   }
 
   function removeRow(id: string) {
     setRows((current) => current.filter((row) => row.id !== id));
+    setHasUnsavedChanges(true);
     setFeedback(null);
   }
 
@@ -126,11 +141,15 @@ export function TeamBudgetApplicationEditor({
           items: parsed.items
         });
         if (!result.ok) {
+          if (result.code === 'conflict') setHasConflict(true);
           setFeedback({ kind: 'error', message: result.error });
           return;
         }
         setVersion(result.version);
         setStatus(result.status);
+        setSavedAt(result.updatedAt);
+        setHasUnsavedChanges(false);
+        setHasConflict(false);
         setFeedback({ kind: 'success', message: result.status === 'submitted' ? 'Application submitted.' : 'Draft saved.' });
         router.refresh();
       } catch {
@@ -153,6 +172,11 @@ export function TeamBudgetApplicationEditor({
         <div>
           <span className="budget-app-overview-label">Status</span>
           <strong>{status === 'submitted' ? 'Submitted' : 'Draft'}</strong>
+          {editable ? (
+            <span className="budget-app-save-state" aria-live="polite">
+              {hasUnsavedChanges ? 'Unsaved changes' : savedAt ? `Saved ${formatSavedAt(savedAt)}` : 'Not saved yet'}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -165,7 +189,7 @@ export function TeamBudgetApplicationEditor({
             <div className="budget-app-category-head">
               <div>
                 <h2 id={`budget-app-${category}`}>{BUDGET_CATEGORY_LABELS[category]}</h2>
-                <p>Cap {formatBudgetMoney(caps[category])} · 15% ceiling {formatBudgetMoney(request.maxCents)}</p>
+                <p>Cap {formatBudgetMoney(caps[category])}</p>
               </div>
               <strong className={request.overLimit ? 'th-bad' : request.overCap ? 'th-warn' : undefined}>
                 {formatBudgetMoney(request.totalCents)} requested
@@ -174,11 +198,11 @@ export function TeamBudgetApplicationEditor({
 
             {request.overLimit ? (
               <p className="budget-app-notice budget-app-notice-error" role="alert">
-                Over the 15% ceiling by {formatBudgetMoney(request.totalCents - request.maxCents)}. Submission is blocked.
+                {formatBudgetMoney(request.totalCents - caps[category])} over the category cap. Reduce the request before submitting.
               </p>
             ) : request.overCap ? (
               <p className="budget-app-notice budget-app-notice-warning" role="status">
-                {formatBudgetMoney(request.totalCents - caps[category])} over the category cap. You can submit up to the 15% ceiling.
+                {formatBudgetMoney(request.totalCents - caps[category])} over the category cap. Review this category before submitting.
               </p>
             ) : null}
             {request.missingItems > 0 ? (
@@ -251,10 +275,10 @@ export function TeamBudgetApplicationEditor({
       {editable ? (
         <div className="budget-app-actions">
           <div className="button-row">
-            <button type="submit" className="button-secondary" name="intent" value="draft" disabled={isPending || Boolean(parsed.error)}>
+            <button type="submit" className="button-secondary" name="intent" value="draft" disabled={isPending || hasConflict || Boolean(parsed.error)}>
               {isPending ? 'Saving...' : 'Save draft'}
             </button>
-            <button type="submit" className="button" name="intent" value="submit" disabled={isPending || Boolean(submissionError)}>
+            <button type="submit" className="button" name="intent" value="submit" disabled={isPending || hasConflict || Boolean(submissionError)}>
               Submit application
             </button>
           </div>
@@ -262,6 +286,21 @@ export function TeamBudgetApplicationEditor({
         </div>
       ) : null}
       {feedback ? <p className={`budget-app-feedback budget-app-feedback-${feedback.kind}`} role="status">{feedback.message}</p> : null}
+      {hasConflict ? (
+        <div className="budget-app-conflict-action">
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => {
+              if (window.confirm('Load the latest saved draft? Your unsaved entries on this screen will be discarded.')) {
+                window.location.reload();
+              }
+            }}
+          >
+            Load latest draft
+          </button>
+        </div>
+      ) : null}
     </form>
   );
 }
