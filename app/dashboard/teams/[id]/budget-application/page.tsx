@@ -6,6 +6,7 @@ import { getBudgetSetupState } from '@/lib/budget-plan';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getTeamBudgetApplication, getTeamBudgetCaps } from '@/lib/team-budget-application';
+import { getFixedTravelItems, hasFixedTravelItems, withFixedTravelItems } from '@/lib/team-budget-fixed-travel';
 import { canViewTeamBudgetApplication, formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, selectTeamApplicationYear, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 import { TeamBudgetApplicationEditor } from '@/components/team-budget-application-editor';
 
@@ -29,13 +30,14 @@ export default async function TeamBudgetApplicationPage({
   const academicYear = selectTeamApplicationYear(setup, (await searchParams)?.year);
   const isClosed = isTeamBudgetApplicationClosed(academicYear);
   const [{ data: team, error: teamError }, { plan, caps }, application] = await Promise.all([
-    admin.from('teams').select('id, name, is_active').eq('id', teamId).maybeSingle(),
+    admin.from('teams').select('id, name, slug, is_active').eq('id', teamId).maybeSingle(),
     getTeamBudgetCaps(teamId, academicYear),
     getTeamBudgetApplication(teamId, academicYear)
   ]);
   if (teamError || !team) notFound();
 
   const canEdit = !isClosed && isLead && team.is_active && Boolean(plan);
+  const fixedTravel = getFixedTravelItems(team.slug, academicYear);
   return (
     <div className="hq-page th-page">
       <section className="hq-page-head">
@@ -77,7 +79,9 @@ export default async function TeamBudgetApplicationPage({
           teamId={teamId}
           academicYear={academicYear}
           caps={caps}
-          initialItems={application?.items || []}
+          initialItems={withFixedTravelItems(application?.items || [], fixedTravel)}
+          fixedTravelItems={fixedTravel}
+          initialPrefillPending={!hasFixedTravelItems(application?.items || [], fixedTravel)}
           initialVersion={application?.version || 0}
           initialStatus={application?.status || 'draft'}
           initialUpdatedAt={application?.updatedAt || null}

@@ -5,6 +5,7 @@ import { formatDateLabel } from '@/lib/academic-calendar';
 import { getBudgetSetupState } from '@/lib/budget-plan';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { formatBudgetMoney, formatTeamBudgetDeadline, normalizeApplicationItems, selectTeamApplicationYear, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
+import { FIXED_TRAVEL_ZERO_IDS, getFixedTravelItems, withFixedTravelItems } from '@/lib/team-budget-fixed-travel';
 
 export default async function BudgetApplicationsPage({ searchParams }: { searchParams?: Promise<{ year?: string | string[] }> }) {
   const { currentRole } = await getViewerContext();
@@ -16,7 +17,7 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
   const academicYear = selectTeamApplicationYear(setup, (await searchParams)?.year);
   const admin = createAdminClient();
   const [{ data: teams, error: teamsError }, { data: applications, error: applicationsError }] = await Promise.all([
-    admin.from('teams').select('id, name').eq('is_active', true).order('name'),
+    admin.from('teams').select('id, name, slug').eq('is_active', true).order('name'),
     admin
       .from('team_budget_applications')
       .select('team_id, status, line_items, updated_at, submitted_at')
@@ -61,7 +62,11 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
           <tbody>
             {(teams || []).map((team) => {
               const application = byTeam.get(team.id);
-              const items = application ? normalizeApplicationItems(application.line_items) : [];
+              const fixedTravel = getFixedTravelItems(team.slug, academicYear);
+              const items = withFixedTravelItems(
+                application ? normalizeApplicationItems(application.line_items, FIXED_TRAVEL_ZERO_IDS) : [],
+                fixedTravel
+              );
               const totalCents = items.reduce((sum, item) => sum + item.amountCents, 0);
               return (
                 <tr key={team.id}>

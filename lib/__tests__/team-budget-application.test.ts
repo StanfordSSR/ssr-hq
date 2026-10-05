@@ -108,10 +108,34 @@ describe('team budget application limits', () => {
     expect(getSubmissionError(items, teamCaps)).toContain('Equipment exceeds its category cap');
   });
 
-  it('requires an average of at least one line per $1,000 in each category', () => {
+  it('requires an average of at least one equipment line per $1,000 for smaller teams', () => {
     const wideCaps = { ...caps, equipment: 3_000_00 };
     expect(getSubmissionError([equipment(2_001_00)], wideCaps)).toContain('2 more line items');
     expect(getSubmissionError([equipment(1_000_00), equipment(1_000_00, 2), equipment(1_00, 3)], wideCaps)).toBeNull();
+  });
+
+  it('uses one equipment line per $1,500 when total team funding exceeds $10,000', () => {
+    const largeCaps = { ...emptyBudgetCaps(), equipment: 10_000_01 };
+    const threeLines = [equipment(1_500_00), equipment(1_500_00, 2), equipment(1_500_00, 3)];
+    expect(getCategoryRequest(threeLines, 'equipment', largeCaps)).toMatchObject({
+      lineItemTargetCents: 1_500_00,
+      requiredItemCount: 3,
+      missingItems: 0
+    });
+    expect(getSubmissionError(threeLines, largeCaps)).toBeNull();
+    expect(getSubmissionError([equipment(1_500_01)], largeCaps)).toContain('1 more line item');
+    expect(getSubmissionError([equipment(1_500_01)], largeCaps)).toContain('$1,500.00');
+  });
+
+  it('does not impose a line-count minimum on non-equipment categories', () => {
+    const otherCaps = { ...emptyBudgetCaps(), food: 4_000_00, travel: 4_000_00 };
+    const items: BudgetApplicationItem[] = [
+      { id: 'food-1', category: 'food', description: 'Team meals', amountCents: 4_000_00 },
+      { id: 'travel-1', category: 'travel', description: 'Competition travel', amountCents: 4_000_00 }
+    ];
+    expect(getCategoryRequest(items, 'food', otherCaps).missingItems).toBe(0);
+    expect(getCategoryRequest(items, 'travel', otherCaps).missingItems).toBe(0);
+    expect(getSubmissionError(items, otherCaps)).toBeNull();
   });
 
   it('rejects an empty submission', () => {

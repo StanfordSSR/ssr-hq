@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getActiveBudgetPlan } from '@/lib/budget-plan';
+import { FIXED_TRAVEL_ZERO_IDS } from '@/lib/team-budget-fixed-travel';
 import {
   emptyBudgetCaps,
   isBudgetCategory,
@@ -56,7 +57,7 @@ export async function getTeamBudgetApplication(teamId: string, academicYear: str
     academicYear: data.academic_year,
     planId: data.plan_id,
     status: data.status,
-    items: normalizeApplicationItems(data.line_items),
+    items: normalizeApplicationItems(data.line_items, FIXED_TRAVEL_ZERO_IDS),
     version: data.version,
     updatedAt: data.updated_at,
     submittedAt: data.submitted_at
