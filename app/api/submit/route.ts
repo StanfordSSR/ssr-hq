@@ -207,6 +207,8 @@ export async function POST(request: NextRequest) {
       receipt_path: receiptPath,
       receipt_file_name: receiptFileName,
       decision_token: decisionToken,
+      slack_delivery_status: 'pending',
+      slack_delivery_requested_at: new Date().toISOString(),
       requires_signature: requiresSignature,
       off_campus_ack: footprint.geo.outsideBayArea ? offCampusAck : false
     })
@@ -249,13 +251,20 @@ export async function POST(request: NextRequest) {
 
   await recordSubmissionFootprint(reimbursementId, footprint);
 
-  await sendReimbursementSlackPush(inserted as ReimbursementRow, reviewers, scopeName);
+  let deliveryConfirmed = false;
+  try {
+    deliveryConfirmed = (await sendReimbursementSlackPush(inserted as ReimbursementRow, reviewers, scopeName)) === 'delivered';
+  } catch (error) {
+    console.error('Reimbursement saved, but Slack delivery state could not be confirmed:', error);
+  }
 
   return NextResponse.json({
     ok: true,
     requiresSignature,
-    message: requiresSignature
-      ? `Submitted! Because this is over the approval threshold, ${expenseType === 'leadership' ? 'a president' : 'your lead'} will need to sign to approve it.`
-      : `Submitted! ${expenseType === 'leadership' ? 'A president' : 'Your team lead'} has been notified to approve it.`
+    message: deliveryConfirmed
+      ? requiresSignature
+        ? `Submitted! ${expenseType === 'leadership' ? 'A president' : 'Your team lead'} has been notified to review and sign it.`
+        : `Submitted! ${expenseType === 'leadership' ? 'A president' : 'Your team lead'} has been notified to approve it.`
+      : 'Submitted and saved. Slack delivery is not confirmed yet; the reviewer can still find it in HQ.'
   });
 }

@@ -2486,6 +2486,168 @@ tr:last-child td {
   color: #8a5f1f;
 }
 
+.hq-member-invite {
+  border-block: 1px solid var(--th-hairline);
+  padding: 12px 0;
+}
+
+.hq-member-invite-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(210px, 1.35fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.hq-member-invite-form .field {
+  min-width: 0;
+  gap: 4px;
+}
+
+.hq-member-invite-form .input,
+.hq-member-invite-form .select {
+  width: 100%;
+}
+
+.hq-member-invite-form .button-secondary {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.hq-member-directory {
+  min-width: 0;
+}
+
+.hq-member-table-wrap {
+  overflow-x: hidden;
+}
+
+.hq-member-table {
+  table-layout: fixed;
+}
+
+.hq-member-table th:nth-child(1) { width: 24%; }
+.hq-member-table th:nth-child(2) { width: 18%; }
+.hq-member-table th:nth-child(3) { width: 9%; }
+.hq-member-table th:nth-child(4) { width: 5%; }
+.hq-member-table th:nth-child(5) { width: 9%; }
+.hq-member-table th:nth-child(6) { width: 15%; }
+.hq-member-table th:nth-child(7) { width: 20%; }
+
+.th-page .hq-member-table th,
+.th-page .hq-member-table td {
+  padding: 8px 9px;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.hq-member-identity {
+  line-height: 1.25;
+}
+
+.hq-member-identity strong,
+.hq-member-identity span {
+  display: block;
+}
+
+.hq-member-identity span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  margin-top: 2px;
+}
+
+.hq-member-role,
+.hq-member-team,
+.hq-member-permissions {
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.hq-member-permissions {
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.hq-member-table .hq-inline-editor-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 3px 9px;
+}
+
+.hq-member-table .hq-inline-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 850px) {
+  .hq-member-invite-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hq-member-table-wrap {
+    border-inline: 0;
+  }
+
+  .hq-member-table,
+  .hq-member-table tbody,
+  .hq-member-table tbody tr {
+    display: block;
+    width: 100%;
+  }
+
+  .hq-member-table thead {
+    display: none;
+  }
+
+  .hq-member-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-bottom: 1px solid var(--th-hairline);
+    padding: 8px 0;
+  }
+
+  .hq-member-table tbody td {
+    display: block;
+    border: 0;
+    padding: 5px 12px;
+    min-width: 0;
+  }
+
+  .hq-member-table tbody td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .hq-member-table tbody td.hq-member-identity,
+  .hq-member-table tbody td[data-label='Portal'],
+  .hq-member-table tbody td[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  .hq-member-table tbody td.hq-member-identity::before {
+    display: none;
+  }
+
+  .hq-member-table tbody td[data-label='Signature'] {
+    text-align: left !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .hq-member-invite-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .hq-report-list-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

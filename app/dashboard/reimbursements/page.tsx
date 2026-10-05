@@ -5,7 +5,8 @@ import { getLeadTeamIds } from '@/lib/lead-state';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { formatDateLabel } from '@/lib/academic-calendar';
 import { BUDGET_CATEGORY_LABELS, type BudgetCategory } from '@/lib/team-budget-application-rules';
-import { CopyRNumber, FinanceFileToggle, PortalDecideButtons } from '@/components/reimbursement-actions';
+import { CopyRNumber, FinanceFileToggle, PortalDecideButtons, SlackDeliveryRetry } from '@/components/reimbursement-actions';
+import type { DeliveryStatus } from '@/lib/reimbursement-delivery';
 import {
   canFileInGranted,
   getReimbursementAttachments,
@@ -30,6 +31,8 @@ type ReimbursementRow = {
   travel_subtype: TravelSubtype | null;
   receipt_path: string | null;
   status: 'pending' | 'approved' | 'rejected';
+  slack_delivery_status: DeliveryStatus;
+  slack_delivery_results: Array<{ email: string; ok: boolean }>;
   requires_signature: boolean;
   approval_kind: 'button' | 'signature' | null;
   decided_at: string | null;
@@ -98,7 +101,7 @@ export default async function ReimbursementsPage() {
   let query = admin
     .from('member_reimbursements')
     .select(
-      'id, team_id, expense_type, budget_category, budget_expense_label, funding_source_label, submitter_name, item_name, amount_cents, reimbursement_number, purchase_type, travel_subtype, receipt_path, status, requires_signature, approval_kind, decided_at, decided_by_profile_id, finance_processed_at, decision_token, off_campus_ack, created_at'
+      'id, team_id, expense_type, budget_category, budget_expense_label, funding_source_label, submitter_name, item_name, amount_cents, reimbursement_number, purchase_type, travel_subtype, receipt_path, status, slack_delivery_status, slack_delivery_results, requires_signature, approval_kind, decided_at, decided_by_profile_id, finance_processed_at, decision_token, off_campus_ack, created_at'
     )
     .order('created_at', { ascending: false })
     .limit(500);
@@ -318,6 +321,7 @@ export default async function ReimbursementsPage() {
                     <th>Amount</th>
                     <th>Granted #</th>
                     <th>Receipts</th>
+                    <th>Slack</th>
                     <th>Decision</th>
                   </tr>
                 </thead>
@@ -354,6 +358,22 @@ export default async function ReimbursementsPage() {
                       <td>{r.reimbursement_number}</td>
                       <td>
                         <ReceiptCell links={attachmentLinksFor(r)} />
+                      </td>
+                      <td>
+                        <span className="hq-inline-note">
+                          {r.slack_delivery_status === 'delivered' ? 'Confirmed'
+                            : r.slack_delivery_status === 'partial' ? `${r.slack_delivery_results.filter((result) => result.ok).length}/${r.slack_delivery_results.length} confirmed`
+                            : r.slack_delivery_status === 'failed' ? 'Not delivered'
+                            : r.slack_delivery_status === 'untracked' ? 'Not tracked'
+                            : r.slack_delivery_status === 'pending' ? 'Awaiting ACK'
+                            : 'Unconfirmed'}
+                        </span>
+                        {(currentRole === 'admin' || currentRole === 'president' || currentRole === 'financial_officer' ||
+                          (r.expense_type === 'leadership' ? profileHasPresidentRole(profile) : Boolean(r.team_id && leadTeamSet.has(r.team_id)))) &&
+                          (r.slack_delivery_status === 'partial' || r.slack_delivery_status === 'failed' ||
+                            r.slack_delivery_status === 'unknown' || r.slack_delivery_status === 'pending') ? (
+                            <SlackDeliveryRetry id={r.id} />
+                          ) : null}
                       </td>
                       <td>
                         {(r.expense_type === 'leadership'

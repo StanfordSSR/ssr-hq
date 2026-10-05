@@ -24,15 +24,18 @@ type SlackbotNotifyPayload = {
   metadata?: Record<string, unknown>;
 };
 
-type SlackbotNotifyResponse = {
+export type SlackbotNotifyResponse = {
   ok: boolean;
   error?: string;
   delivered?: number;
   failed?: number;
+  idempotency_key?: string;
+  type?: string;
   results?: Array<{
     email: string;
     ok: boolean;
     slack_user_id?: string;
+    error?: string;
   }>;
 };
 
@@ -43,7 +46,7 @@ export function getSlackbotFallbackContext() {
   };
 }
 
-export async function sendSlackbotNotification(payload: SlackbotNotifyPayload) {
+export async function sendSlackbotNotification(payload: SlackbotNotifyPayload, options?: { allowFailedAck?: boolean }) {
   if (!env.slackbotNotifyUrl) {
     throw new Error('Missing environment variable: SSR_SLACKBOT_NOTIFY_URL');
   }
@@ -72,7 +75,10 @@ export async function sendSlackbotNotification(payload: SlackbotNotifyPayload) {
       throw new Error(data?.error || `Slackbot notify failed with status ${response.status}.`);
     }
 
-    if (!data?.ok) {
+    if (!data) {
+      throw new Error('Slackbot returned no delivery acknowledgement.');
+    }
+    if (!data.ok && !options?.allowFailedAck) {
       throw new Error(data?.error || 'Slackbot notify failed.');
     }
 
@@ -83,6 +89,36 @@ export async function sendSlackbotNotification(payload: SlackbotNotifyPayload) {
     }
 
     throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function getSlackbotNotificationStatus(key: string): Promise<{
+  found: boolean;
+  status?: 'processing' | 'completed' | 'failed';
+  response_payload?: unknown;
+}> {
+  if (!env.slackbotNotifyUrl || !env.slackbotNotifySecret) {
+    throw new Error('Slackbot notification service is not configured.');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const url = new URL(env.slackbotNotifyUrl);
+    url.searchParams.set('idempotency_key', key);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${env.slackbotNotifySecret}` },
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok || typeof data.found !== 'boolean') {
+      throw new Error(data?.error || `Slackbot status lookup failed with status ${response.status}.`);
+    }
+    return data;
   } finally {
     clearTimeout(timeout);
   }

@@ -4,10 +4,85 @@ import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getViewerContext, profileHasPresidentRole } from '@/lib/auth';
 import { recordAuditEvent } from '@/lib/audit';
-import { getReimbursementById, finalizeReimbursementDecision, canFileInGranted } from '@/lib/reimbursements';
+import {
+  getReimbursementById,
+  getReimbursementReviewers,
+  sendReimbursementSlackPush,
+  finalizeReimbursementDecision,
+  canFileInGranted,
+  type ReimbursementRow
+} from '@/lib/reimbursements';
 import { getLeadTeamIds } from '@/lib/lead-state';
 
 type ActionResult = { ok: boolean; message: string };
+
+export async function retryReimbursementNotificationAction(
+  _prev: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const { user, profile, currentRole } = await getViewerContext();
+  const id = String(formData.get('reimbursement_id') || '').trim();
+  const reimbursement = id ? await getReimbursementById(id) : null;
+  if (!reimbursement || reimbursement.status !== 'pending') {
+    return { ok: false, message: 'This reimbursement is no longer awaiting review.' };
+  }
+
+  const isFinance = currentRole === 'admin' || currentRole === 'president' || currentRole === 'financial_officer';
+  const leadTeams = await getLeadTeamIds(user.id);
+  const canRetry = isFinance || (reimbursement.expense_type === 'leadership'
+    ? profileHasPresidentRole(profile)
+    : Boolean(reimbursement.team_id && leadTeams.includes(reimbursement.team_id)));
+  if (!canRetry) return { ok: false, message: 'You cannot retry this notification.' };
+
+  if (!['partial', 'failed', 'unknown', 'pending'].includes(reimbursement.slack_delivery_status)) {
+    return { ok: false, message: 'This notification is already delivered or was not tracked.' };
+  }
+  if (reimbursement.slack_delivery_status === 'pending' && reimbursement.slack_delivery_requested_at &&
+      Date.now() - Date.parse(reimbursement.slack_delivery_requested_at) < 60_000) {
+    return { ok: false, message: 'The bot is still processing this notification.' };
+  }
+
+  const admin = createAdminClient();
+  let claim = admin.from('member_reimbursements')
+    .update({ slack_delivery_status: 'pending', slack_delivery_requested_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'pending')
+    .eq('slack_delivery_status', reimbursement.slack_delivery_status)
+    .eq('slack_delivery_attempts', reimbursement.slack_delivery_attempts);
+  if (reimbursement.slack_delivery_status === 'pending') {
+    claim = claim.lt('slack_delivery_requested_at', new Date(Date.now() - 60_000).toISOString());
+  }
+  const { data: claimed, error: claimError } = await claim.select('*').maybeSingle();
+  if (claimError) return { ok: false, message: claimError.message };
+  if (!claimed) return { ok: false, message: 'Another retry is already in progress.' };
+
+  try {
+    const reviewers = await getReimbursementReviewers(reimbursement);
+    let teamName = 'SSR Club / Leadership';
+    if (reimbursement.team_id) {
+      const { data: team } = await admin.from('teams').select('name').eq('id', reimbursement.team_id).single();
+      teamName = team?.name || 'Team';
+    }
+    const status = await sendReimbursementSlackPush(claimed as ReimbursementRow, reviewers, teamName);
+    await recordAuditEvent({
+      actorId: user.id,
+      action: 'reimbursement.slack_delivery_retried',
+      targetType: 'member_reimbursement',
+      targetId: id,
+      summary: `Checked or retried Slack delivery for ${reimbursement.reimbursement_number}: ${status}.`
+    });
+    revalidatePath('/dashboard/reimbursements');
+    return {
+      ok: status === 'delivered',
+      message: status === 'delivered' ? 'Reviewer notification confirmed.'
+        : status === 'unknown' ? 'Delivery is still unconfirmed. Check again later.'
+        : 'Some reviewer DMs failed. You can retry again.'
+    };
+  } catch (error) {
+    revalidatePath('/dashboard/reimbursements');
+    return { ok: false, message: error instanceof Error ? error.message : 'Could not check delivery.' };
+  }
+}
 
 // Financial officers mark an approved reimbursement as filed in the Stanford
 // Granted portal so it drops off the to-do list. See canFileInGranted for who
