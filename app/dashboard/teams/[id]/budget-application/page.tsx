@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { getViewerContext } from '@/lib/auth';
+import { getViewerContext, profileHasPresidentRole } from '@/lib/auth';
 import { formatDateLabel } from '@/lib/academic-calendar';
 import { getBudgetSetupState } from '@/lib/budget-plan';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getTeamBudgetApplication, getTeamBudgetCaps } from '@/lib/team-budget-application';
-import { selectTeamApplicationYear } from '@/lib/team-budget-application-rules';
+import { canViewTeamBudgetApplication, isTeamBudgetApplicationOpen, selectTeamApplicationYear } from '@/lib/team-budget-application-rules';
 import { TeamBudgetApplicationEditor } from '@/components/team-budget-application-editor';
 
 export default async function TeamBudgetApplicationPage({
@@ -17,11 +17,14 @@ export default async function TeamBudgetApplicationPage({
   searchParams?: Promise<{ year?: string | string[] }>;
 }) {
   const { id: teamId } = await params;
-  const { user, currentRole } = await getViewerContext();
+  const { user, currentRole, profile } = await getViewerContext();
   const isOfficer = ['admin', 'president', 'vice_president', 'financial_officer'].includes(currentRole);
+  const isPresident = profileHasPresidentRole(profile);
   const leadTeamIds = await getLeadTeamIds(user.id);
   const isLead = leadTeamIds.includes(teamId);
-  if (!isOfficer && !isLead) redirect('/dashboard');
+  const now = new Date();
+  const isOpen = isTeamBudgetApplicationOpen(now);
+  if (!canViewTeamBudgetApplication(currentRole, isLead, isPresident, now)) redirect('/dashboard');
 
   const admin = createAdminClient();
   const setup = await getBudgetSetupState();
@@ -33,7 +36,8 @@ export default async function TeamBudgetApplicationPage({
   ]);
   if (teamError || !team) notFound();
 
-  const canEdit = isLead && team.is_active && Boolean(plan);
+  const canEdit = isOpen && isLead && team.is_active && Boolean(plan);
+  const isPreview = !isOpen && isPresident;
   return (
     <div className="hq-page th-page">
       <section className="hq-page-head">
@@ -41,14 +45,14 @@ export default async function TeamBudgetApplicationPage({
           <p className="hq-eyebrow">{team.name} · {academicYear}</p>
           <h1 className="hq-page-title">Annual budget application</h1>
           <p className="hq-subtitle">
-            {application?.status === 'submitted'
+            {isPreview ? 'President preview · Opens October 4 at 7:20 PM Pacific' : application?.status === 'submitted'
               ? `Submitted ${application.submittedAt ? formatDateLabel(new Date(application.submittedAt)) : ''}`
               : plan ? 'Draft' : 'Budget plan unavailable'}
           </p>
         </div>
         <div className="hq-page-head-action">
-          <Link href={isOfficer ? '/dashboard/finances/applications' : `/dashboard/teams/${teamId}`} className="button-secondary">
-            {isOfficer ? 'Team applications' : 'Team page'}
+          <Link href={isOfficer || isPresident ? '/dashboard/finances/applications' : `/dashboard/teams/${teamId}`} className="button-secondary">
+            {isOfficer || isPresident ? 'Team applications' : 'Team page'}
           </Link>
         </div>
       </section>
@@ -78,6 +82,7 @@ export default async function TeamBudgetApplicationPage({
           initialVersion={application?.version || 0}
           initialStatus={application?.status || 'draft'}
           canEdit={canEdit}
+          isPreview={isPreview}
         />
       )}
     </div>

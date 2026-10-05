@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
 import {
   getSubmissionError,
+  isTeamBudgetApplicationOpen,
   normalizeApplicationItems,
   type BudgetApplicationItem
 } from '@/lib/team-budget-application-rules';
@@ -27,6 +28,7 @@ type SaveApplicationResult =
 
 export async function saveTeamBudgetApplicationAction(input: SaveApplicationInput): Promise<SaveApplicationResult> {
   const { user } = await getViewerContext();
+  if (!isTeamBudgetApplicationOpen()) return { ok: false, error: 'Budget applications open October 4 at 7:20 PM Pacific.' };
   if (!input || typeof input.teamId !== 'string' || typeof input.academicYear !== 'string') {
     return { ok: false, error: 'Invalid application request.' };
   }

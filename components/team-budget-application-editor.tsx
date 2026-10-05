@@ -65,7 +65,8 @@ export function TeamBudgetApplicationEditor({
   initialItems,
   initialVersion,
   initialStatus,
-  canEdit
+  canEdit,
+  isPreview = false
 }: {
   teamId: string;
   academicYear: string;
@@ -74,14 +75,15 @@ export function TeamBudgetApplicationEditor({
   initialVersion: number;
   initialStatus: 'draft' | 'submitted';
   canEdit: boolean;
+  isPreview?: boolean;
 }) {
   const router = useRouter();
-  const [rows, setRows] = useState(() => initialRows(initialItems, canEdit && initialStatus === 'draft', caps));
+  const [rows, setRows] = useState(() => initialRows(initialItems, (canEdit || isPreview) && initialStatus === 'draft', caps));
   const [version, setVersion] = useState(initialVersion);
   const [status, setStatus] = useState(initialStatus);
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'success'; message: string } | null>(null);
   const [isPending, startTransition] = useTransition();
-  const editable = canEdit && status === 'draft';
+  const editable = (canEdit || isPreview) && status === 'draft';
   const parsed = useMemo(() => parseRows(rows), [rows]);
   const submissionError = parsed.error || getSubmissionError(parsed.items, caps);
   const totalCents = parsed.items.reduce((sum, item) => sum + item.amountCents, 0);
@@ -108,6 +110,7 @@ export function TeamBudgetApplicationEditor({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isPreview) return;
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const intent = submitter?.value === 'submit' ? 'submit' : 'draft';
     if (parsed.error || (intent === 'submit' && submissionError)) {
@@ -141,6 +144,7 @@ export function TeamBudgetApplicationEditor({
 
   return (
     <form className="budget-app-form" onSubmit={handleSubmit}>
+      {isPreview ? <p className="budget-app-notice budget-app-notice-warning" role="status">President preview. Changes here are local and cannot be saved before opening.</p> : null}
       <div className="budget-app-overview">
         <div>
           <span className="budget-app-overview-label">Requested</span>
@@ -251,10 +255,10 @@ export function TeamBudgetApplicationEditor({
       {editable ? (
         <div className="budget-app-actions">
           <div className="button-row">
-            <button type="submit" className="button-secondary" name="intent" value="draft" disabled={isPending || Boolean(parsed.error)}>
+            <button type="submit" className="button-secondary" name="intent" value="draft" disabled={isPreview || isPending || Boolean(parsed.error)}>
               {isPending ? 'Saving...' : 'Save draft'}
             </button>
-            <button type="submit" className="button" name="intent" value="submit" disabled={isPending || Boolean(submissionError)}>
+            <button type="submit" className="button" name="intent" value="submit" disabled={isPreview || isPending || Boolean(submissionError)}>
               Submit application
             </button>
           </div>

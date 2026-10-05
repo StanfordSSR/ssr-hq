@@ -18,6 +18,18 @@ export type BudgetApplicationItem = {
 
 export type BudgetCaps = Record<BudgetCategory, number>;
 
+// October 4, 2026 at 7:20 PM Pacific (PDT).
+export const TEAM_BUDGET_OPENS_AT = '2026-10-05T02:20:00.000Z';
+
+export function isTeamBudgetApplicationOpen(now = new Date()): boolean {
+  return now.getTime() >= Date.parse(TEAM_BUDGET_OPENS_AT);
+}
+
+export function canViewTeamBudgetApplication(role: string, isLead: boolean, isPresident: boolean, now = new Date()): boolean {
+  if (!isTeamBudgetApplicationOpen(now)) return isPresident;
+  return isLead || ['admin', 'president', 'vice_president', 'financial_officer'].includes(role);
+}
+
 export function selectTeamApplicationYear(
   setup: { academicYear: string; nextAcademicYear: string; setupState: 'upcoming' | 'open' | 'closed' },
   requestedYear: string | string[] | undefined

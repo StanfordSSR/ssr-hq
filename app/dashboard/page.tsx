@@ -37,6 +37,8 @@ import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
 import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
 import { AcademicYearRolloverButton } from '@/components/academic-year-rollover-button';
+import { TimedBudgetApplicationLink } from '@/components/timed-budget-application-link';
+import { isTeamBudgetApplicationOpen } from '@/lib/team-budget-application-rules';
 
 type Team = {
   id: string;
@@ -1118,9 +1120,13 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="th-mast-side">
-          <Link href={`/dashboard/teams/${team.id}/budget-application`} className="th-btn-light">
-            Budget application
-          </Link>
+          <TimedBudgetApplicationLink
+            href={`/dashboard/teams/${team.id}/budget-application`}
+            className="th-btn-light"
+            label="Budget application"
+            initialOpen={isTeamBudgetApplicationOpen()}
+            canPreview={Boolean(me.is_president) || me.role === 'president'}
+          />
           <Link href="/dashboard/purchases" className="th-btn-light">
             Log purchase
           </Link>

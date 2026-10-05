@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canViewTeamBudgetApplication,
   emptyBudgetCaps,
   getCategoryRequest,
   getSubmissionError,
+  isTeamBudgetApplicationOpen,
   normalizeApplicationItems,
   selectTeamApplicationYear,
   type BudgetApplicationItem
@@ -13,6 +15,29 @@ const equipment = (amountCents: number, index = 1): BudgetApplicationItem => ({
   category: 'equipment',
   description: `Equipment ${index}`,
   amountCents
+});
+
+describe('timed application access', () => {
+  const before = new Date('2026-10-05T02:19:59.999Z');
+  const opens = new Date('2026-10-05T02:20:00.000Z');
+
+  it('opens at 7:20 PM Pacific on October 4', () => {
+    expect(isTeamBudgetApplicationOpen(before)).toBe(false);
+    expect(isTeamBudgetApplicationOpen(opens)).toBe(true);
+  });
+
+  it('allows only the president to preview before opening', () => {
+    expect(canViewTeamBudgetApplication('president', false, true, before)).toBe(true);
+    expect(canViewTeamBudgetApplication('admin', false, true, before)).toBe(true);
+    expect(canViewTeamBudgetApplication('team_lead', true, false, before)).toBe(false);
+    expect(canViewTeamBudgetApplication('admin', false, false, before)).toBe(false);
+  });
+
+  it('allows every active lead and the reviewing officers at opening', () => {
+    expect(canViewTeamBudgetApplication('team_lead', true, false, opens)).toBe(true);
+    expect(canViewTeamBudgetApplication('president', false, true, opens)).toBe(true);
+    expect(canViewTeamBudgetApplication('team_lead', false, false, opens)).toBe(false);
+  });
 });
 
 describe('application year selection', () => {
