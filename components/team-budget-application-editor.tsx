@@ -182,7 +182,7 @@ export function TeamBudgetApplicationEditor({
 
       {BUDGET_CATEGORIES.map((category) => {
         const categoryRows = rows.filter((row) => row.category === category);
-        const request = getCategoryRequest(parsed.items, category, caps[category]);
+        const request = getCategoryRequest(parsed.items, category, caps);
         const blankRowsNeeded = Math.max(0, request.requiredItemCount - categoryRows.length);
         return (
           <section className="budget-app-category" key={category} aria-labelledby={`budget-app-${category}`}>
