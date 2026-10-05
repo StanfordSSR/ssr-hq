@@ -256,7 +256,10 @@ export default async function DashboardPage() {
         )
         .eq('expense_type', 'team')
         .eq('academic_year', academicYear),
-      admin.from('member_reimbursements').select('id, team_id, status, finance_processed_at, amount_cents')
+      admin
+        .from('member_reimbursements')
+        .select('id, team_id, status, finance_processed_at, amount_cents')
+        .eq('academic_year', academicYear)
     ]);
     const pendingCardCount = pendingCardAgreements.length;
     const teams = (teamsData || []) as Team[];
@@ -910,6 +913,7 @@ export default async function DashboardPage() {
         .select('id, description, purchased_at, payment_method, receipt_path, receipt_not_needed')
         .eq('team_id', team.id)
         .eq('payment_method', 'credit_card')
+        .eq('academic_year', cycle)
         .eq('receipt_not_needed', false)
         .is('receipt_path', null)
         .order('purchased_at', { ascending: true }),
@@ -940,6 +944,7 @@ export default async function DashboardPage() {
     .from('member_reimbursements')
     .select('id, submitter_name, item_name, amount_cents, reimbursement_number, requires_signature, created_at')
     .eq('team_id', team.id)
+    .eq('academic_year', cycle)
     .eq('status', 'pending')
     .order('created_at', { ascending: false });
   const pendingReimbursements = (pendingReimbursementsData || []) as Array<{
@@ -1108,7 +1113,7 @@ export default async function DashboardPage() {
   const usd = (value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
   return (
-    <div className="th-page">
+    <div className="th-page th-lead-dashboard">
       {/* Masthead */}
       <header className="th-mast">
         <div className="th-mast-main">
@@ -1191,7 +1196,7 @@ export default async function DashboardPage() {
 
       {/* Needs attention */}
       {attentionCount > 0 ? (
-        <details className="th-section th-section-alert" open>
+        <details className="th-section th-section-alert">
           <summary>
             <span className="th-sec-label">Needs attention</span>
             <span className="th-sec-preview">
@@ -1288,7 +1293,7 @@ export default async function DashboardPage() {
       ) : null}
 
       {/* Spending */}
-      <details className="th-section" open>
+      <details className="th-section">
         <summary>
           <span className="th-sec-label">Spending</span>
           <span className="th-sec-preview">

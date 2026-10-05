@@ -4,6 +4,7 @@ import {
   formatDateLabel,
   formatCountdown,
   formatPacificDateKey,
+  getCurrentAcademicYear,
   getNextReportState
 } from '@/lib/academic-calendar';
 import { recordAuditEvent } from '@/lib/audit';
@@ -134,10 +135,12 @@ async function syncReceiptQueue() {
     .eq('team_role', 'lead')
     .eq('is_active', true);
   const activeLeadTeamIds = new Set((leadMemberships || []).map((membership) => membership.team_id));
+  const academicYear = await getCurrentAcademicYear();
   const { data: purchasesData } = await admin
     .from('purchase_logs')
     .select('id, team_id, description, purchased_at')
     .eq('payment_method', 'credit_card')
+    .eq('academic_year', academicYear)
     .eq('receipt_not_needed', false)
     .is('receipt_path', null);
   const purchases =

@@ -41,6 +41,7 @@ type ReimbursementRow = {
   item_name: string;
   amount_cents: number;
   reimbursement_number: string;
+  academic_year: string;
   status: 'pending' | 'approved' | 'rejected';
   requires_signature: boolean;
   created_at: string;
@@ -125,7 +126,7 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
       .order('full_name'),
     admin
       .from('member_reimbursements')
-      .select('id, submitter_name, item_name, amount_cents, reimbursement_number, status, requires_signature, created_at')
+      .select('id, submitter_name, item_name, amount_cents, reimbursement_number, status, requires_signature, created_at, academic_year')
       .eq('team_id', teamId)
       .order('created_at', { ascending: false })
       .limit(100),
@@ -192,7 +193,9 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
 
   // Receipts owed: credit card purchases with no receipt on file.
   const receiptsOwed = purchases
-    .filter((p) => p.payment_method === 'credit_card' && !p.receipt_path && !p.receipt_not_needed)
+    .filter((p) =>
+      p.academic_year === cycle && p.payment_method === 'credit_card' && !p.receipt_path && !p.receipt_not_needed
+    )
     .map((p) => ({
       ...p,
       state: getReceiptTaskState({
@@ -204,7 +207,7 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
     }));
   const overdueReceipts = receiptsOwed.filter((p) => p.state.overdue).length;
 
-  const pendingReimbursements = reimbursements.filter((r) => r.status === 'pending');
+  const pendingReimbursements = reimbursements.filter((r) => r.academic_year === cycle && r.status === 'pending');
   const attentionCount = pendingReimbursements.length + receiptsOwed.length;
 
   const ledgerRows: PurchaseLedgerRow[] = purchases.map((p) => ({
