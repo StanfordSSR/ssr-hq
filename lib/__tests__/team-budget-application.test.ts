@@ -23,8 +23,9 @@ describe('budget application access and deadline', () => {
   const deadline = new Date('2026-10-12T02:08:00.000Z');
 
   it('closes at 7:08 PM Pacific on October 11', () => {
-    expect(isTeamBudgetApplicationClosed(before)).toBe(false);
-    expect(isTeamBudgetApplicationClosed(deadline)).toBe(true);
+    expect(isTeamBudgetApplicationClosed('2026-27', before)).toBe(false);
+    expect(isTeamBudgetApplicationClosed('2026-27', deadline)).toBe(true);
+    expect(isTeamBudgetApplicationClosed('2027-28', deadline)).toBe(false);
     expect(formatTeamBudgetDeadline()).toContain('Oct 11, 2026');
     expect(formatTeamBudgetDeadline()).toContain('7:08 PM');
   });

@@ -6,7 +6,7 @@ import { getBudgetSetupState } from '@/lib/budget-plan';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getTeamBudgetApplication, getTeamBudgetCaps } from '@/lib/team-budget-application';
-import { canViewTeamBudgetApplication, formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, selectTeamApplicationYear } from '@/lib/team-budget-application-rules';
+import { canViewTeamBudgetApplication, formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, selectTeamApplicationYear, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 import { TeamBudgetApplicationEditor } from '@/components/team-budget-application-editor';
 
 export default async function TeamBudgetApplicationPage({
@@ -22,12 +22,12 @@ export default async function TeamBudgetApplicationPage({
   const isPresident = profileHasPresidentRole(profile);
   const leadTeamIds = await getLeadTeamIds(user.id);
   const isLead = leadTeamIds.includes(teamId);
-  const isClosed = isTeamBudgetApplicationClosed();
   if (!canViewTeamBudgetApplication(currentRole, isLead, isPresident)) redirect('/dashboard');
 
   const admin = createAdminClient();
   const setup = await getBudgetSetupState();
   const academicYear = selectTeamApplicationYear(setup, (await searchParams)?.year);
+  const isClosed = isTeamBudgetApplicationClosed(academicYear);
   const [{ data: team, error: teamError }, { plan, caps }, application] = await Promise.all([
     admin.from('teams').select('id, name, is_active').eq('id', teamId).maybeSingle(),
     getTeamBudgetCaps(teamId, academicYear),
@@ -47,7 +47,7 @@ export default async function TeamBudgetApplicationPage({
               ? `Submitted ${application.submittedAt ? formatDateLabel(new Date(application.submittedAt)) : ''}`
               : isClosed ? 'Submission closed' : plan ? 'Draft' : 'Budget plan unavailable'}
           </p>
-          <p className="hq-inline-note">Due {formatTeamBudgetDeadline()}</p>
+          {academicYear === TEAM_BUDGET_ACADEMIC_YEAR ? <p className="hq-inline-note">Due {formatTeamBudgetDeadline()}</p> : null}
         </div>
         <div className="hq-page-head-action">
           <Link href={isOfficer || isPresident ? '/dashboard/finances/applications' : `/dashboard/teams/${teamId}`} className="button-secondary">

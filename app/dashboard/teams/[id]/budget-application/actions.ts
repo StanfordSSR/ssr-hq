@@ -28,10 +28,10 @@ type SaveApplicationResult =
 
 export async function saveTeamBudgetApplicationAction(input: SaveApplicationInput): Promise<SaveApplicationResult> {
   const { user } = await getViewerContext();
-  if (isTeamBudgetApplicationClosed()) return { ok: false, error: 'The annual budget application deadline has passed.' };
   if (!input || typeof input.teamId !== 'string' || typeof input.academicYear !== 'string') {
     return { ok: false, error: 'Invalid application request.' };
   }
+  if (isTeamBudgetApplicationClosed(input.academicYear)) return { ok: false, error: 'The annual budget application deadline has passed.' };
   const leadTeamIds = await getLeadTeamIds(user.id);
   if (!leadTeamIds.includes(input.teamId)) return { ok: false, error: 'Only an active team lead can edit this application.' };
 
@@ -131,6 +131,8 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
     revalidatePath(`/dashboard/teams/${input.teamId}/budget-application`);
     revalidatePath(`/dashboard/teams/${input.teamId}`);
     revalidatePath('/dashboard/finances/applications');
+    revalidatePath('/dashboard');
+    revalidatePath('/dashboard/tasks');
     return { ok: true, version: input.expectedVersion + 1, status: submitted ? 'submitted' : 'draft' };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Could not save the application.' };

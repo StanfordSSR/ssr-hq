@@ -200,7 +200,7 @@ export default async function ManageTeamsPage() {
                       )}
                     </section>
 
-                    {canEdit ? <section className="hq-team-column hq-team-column-form">
+                    {canEdit && team.is_active ? <section className="hq-team-column hq-team-column-form">
                       <h4 className="hq-team-label">Assign existing lead</h4>
                       <form action={assignExistingLeadAction} className="hq-team-assign-form">
                         <input type="hidden" name="team_id" value={team.id} />
