@@ -5,9 +5,9 @@
 // here is a pure function of its inputs: no I/O, no clock reads, no Supabase.
 // Amounts are always integer cents.
 
-export type PurchaseCategory = 'equipment' | 'food' | 'travel' | 'registration';
+export type PurchaseCategory = 'equipment' | 'food' | 'travel' | 'registration' | 'other';
 
-export const PURCHASE_CATEGORIES: PurchaseCategory[] = ['equipment', 'food', 'travel', 'registration'];
+export const PURCHASE_CATEGORIES: PurchaseCategory[] = ['equipment', 'food', 'travel', 'registration', 'other'];
 
 // Display colors for category charts, shared by the donut and the bars so the
 // legend can never disagree with the slices.
@@ -15,7 +15,8 @@ export const CATEGORY_COLORS: Record<PurchaseCategory, string> = {
   equipment: '#8c1515',
   food: '#d17c3f',
   travel: '#3f6e8f',
-  registration: '#5b8c5a'
+  registration: '#5b8c5a',
+  other: '#956b8a'
 };
 
 export const UNSPENT_COLOR = '#e8e1de';
@@ -50,7 +51,8 @@ export function categoryTotals(
     equipment: 0,
     food: 0,
     travel: 0,
-    registration: 0
+    registration: 0,
+    other: 0
   };
   for (const row of rows) {
     const key = (row.category || 'equipment') as PurchaseCategory;

@@ -30,7 +30,7 @@ type PurchaseRow = {
   description: string | null;
   person_name: string | null;
   payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel' | 'registration';
+  category: 'equipment' | 'food' | 'travel' | 'registration' | 'other';
   receipt_path: string | null;
   receipt_not_needed: boolean;
 };

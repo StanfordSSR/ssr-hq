@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { ClearExpenseLogForm } from '@/components/clear-expense-log-form';
 import { PurchaseCategoryForm } from '@/components/purchase-category-form';
+import { getChargeCatalog } from '@/lib/budget-charge-routing';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { PurchaseEntryActions } from '@/components/purchase-entry-actions';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
@@ -32,7 +33,10 @@ type Purchase = {
   purchased_at: string;
   person_name: string | null;
   payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel' | 'registration';
+  category: 'equipment' | 'food' | 'travel' | 'registration' | 'other';
+  budget_expense_item_id: string | null;
+  funding_source_id: string | null;
+  funding_source_label: string | null;
   receipt_path: string | null;
   receipt_file_name: string | null;
   receipt_not_needed: boolean;
@@ -49,7 +53,8 @@ const categoryLabel: Record<Purchase['category'], string> = {
   equipment: 'Equipment',
   food: 'Food',
   travel: 'Travel',
-  registration: 'Registration'
+  registration: 'Registration',
+  other: 'Other'
 };
 
 const categoryColors: Record<Purchase['category'] | 'unused', string> = {
@@ -57,6 +62,7 @@ const categoryColors: Record<Purchase['category'] | 'unused', string> = {
   food: '#d17c3f',
   travel: '#3f6e8f',
   registration: '#5b8c5a',
+  other: '#956b8a',
   unused: '#dfd7d7'
 };
 
@@ -110,6 +116,7 @@ export default async function ExpenseLogPage({
   }
 
   const currentCycle = await getCurrentAcademicYear();
+  const chargeCatalog = await getChargeCatalog(currentCycle);
   const rawTeam = readSingle(params.team);
   const defaultTeamSelection = isPrivilegedViewer ? 'all' : teams[0]!.id;
   const selectedTeamId =
@@ -133,7 +140,7 @@ export default async function ExpenseLogPage({
   const onlyLeadership = selectedTeamId === 'leadership';
   const includeLeadership = isPrivilegedViewer && (selectedTeamId === 'all' || onlyLeadership);
   const purchaseColumns =
-    'id, team_id, expense_type, academic_year, description, amount_cents, purchased_at, person_name, payment_method, category, receipt_path, receipt_file_name, receipt_not_needed';
+    'id, team_id, expense_type, academic_year, description, amount_cents, purchased_at, person_name, payment_method, category, budget_expense_item_id, funding_source_id, funding_source_label, receipt_path, receipt_file_name, receipt_not_needed';
 
   const [{ data: teamPurchasesData }, { data: leadershipPurchasesData }] = await Promise.all([
     onlyLeadership
@@ -634,10 +641,10 @@ export default async function ExpenseLogPage({
                     <td>{purchase.person_name || 'Unknown'}</td>
                     <td>{paymentMethodLabel[purchase.payment_method]}</td>
                     <td>
-                      {!isReadOnlyFinanceViewer ? (
-                        <PurchaseCategoryForm purchaseId={purchase.id} category={purchase.category} />
+                      {!isReadOnlyFinanceViewer && purchase.expense_type === 'team' && purchase.academic_year === currentCycle ? (
+                        <PurchaseCategoryForm purchaseId={purchase.id} accounts={chargeCatalog?.teams[purchase.team_id || ''] || []} expenseId={purchase.budget_expense_item_id || ''} sourceId={purchase.funding_source_id || ''} />
                       ) : (
-                        categoryLabel[purchase.category]
+                        <>{categoryLabel[purchase.category]}{purchase.funding_source_label ? ` · ${purchase.funding_source_label}` : ''}</>
                       )}
                     </td>
                     <td>

@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear } from '@/lib/academic-calendar';
 import { getActiveBudgetPlan, getBudgetSetupState } from '@/lib/budget-plan';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
+import { getChargeCatalog } from '@/lib/budget-charge-routing';
 import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/actions';
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
 import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
@@ -32,7 +33,7 @@ type PurchaseLog = {
   team_id: string;
   amount_cents: number;
   purchased_at: string;
-  category: 'equipment' | 'food' | 'travel' | 'registration';
+  category: 'equipment' | 'food' | 'travel' | 'registration' | 'other';
   description?: string;
   person_name?: string | null;
   payment_method?: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
@@ -45,11 +46,12 @@ const paymentMethodLabel: Record<'reimbursement' | 'credit_card' | 'amazon' | 'u
   unknown: 'Unknown'
 };
 
-const categoryLabel: Record<'equipment' | 'food' | 'travel' | 'registration', string> = {
+const categoryLabel: Record<'equipment' | 'food' | 'travel' | 'registration' | 'other', string> = {
   equipment: 'Equipment',
   food: 'Food',
   travel: 'Travel',
-  registration: 'Registration'
+  registration: 'Registration',
+  other: 'Other'
 };
 
 function readSingle(value: string | string[] | undefined) {
@@ -82,6 +84,7 @@ export default async function FinancesPage({
 
   const cycle = await getCurrentAcademicYear();
   const [budgetSetup, activeBudgetPlan] = await Promise.all([getBudgetSetupState(), getActiveBudgetPlan(cycle)]);
+  const chargeCatalog = await getChargeCatalog(cycle);
   const planManagesBudgets = activeBudgetPlan?.status === 'approved';
   const canEditBudgets = canEdit && !planManagesBudgets;
   const showPlanCta = budgetSetup.setupState !== 'upcoming';
@@ -605,6 +608,7 @@ export default async function FinancesPage({
                 <section className="hq-question-card">
                   <h3>Add leadership expense</h3>
                   <ManualPurchaseForm
+                    catalog={chargeCatalog}
                     academicYear={cycle}
                     teams={[]}
                     leadership
@@ -662,6 +666,7 @@ export default async function FinancesPage({
                 <section className="hq-question-card">
                   <h3>Add purchase</h3>
                   <ManualPurchaseForm
+                    catalog={chargeCatalog}
                     academicYear={cycle}
                     teams={[selectedTeam]}
                     defaultPersonName={profile.full_name || ''}

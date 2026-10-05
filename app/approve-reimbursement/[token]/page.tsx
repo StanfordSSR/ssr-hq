@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Header } from '@/components/header';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { createClient } from '@/lib/supabase-server';
+import { getActivePresidentReviewers } from '@/lib/reimbursements';
 import {
   getReimbursementByToken,
   PURCHASE_TYPE_LABELS,
@@ -45,12 +47,24 @@ export default async function ApproveReimbursementPage({
     );
   }
 
+  if (reimbursement.expense_type === 'leadership') {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    const presidents = await getActivePresidentReviewers();
+    if (!user || !presidents.some((president) => president.userId === user.id)) {
+      return <><Header /><main className="page-shell"><section className="auth-shell"><div className="auth-card">
+        <h1 className="auth-title">President sign-in required</h1>
+        <p className="helper">Only a signed-in club president can review this reimbursement.</p>
+        <Link className="text-link" href="/login">Sign in</Link>
+      </div></section></main></>;
+    }
+  }
+
   const admin = createAdminClient();
-  const { data: team } = await admin
-    .from('teams')
-    .select('name')
-    .eq('id', reimbursement.team_id)
-    .maybeSingle();
+  const { data: team } = reimbursement.team_id
+    ? await admin.from('teams').select('name').eq('id', reimbursement.team_id).maybeSingle()
+    : { data: null };
+  const scopeName = reimbursement.expense_type === 'leadership' ? 'SSR Club / Leadership' : team?.name || 'their team';
 
   const purchaseTypeValue = reimbursement.purchase_type
     ? reimbursement.purchase_type === 'travel' && reimbursement.travel_subtype
@@ -60,10 +74,12 @@ export default async function ApproveReimbursementPage({
 
   const details = (
     <dl className="form-stack" style={{ margin: 0 }}>
-      <Row label="Team" value={team?.name || '—'} />
+      <Row label="Account" value={scopeName} />
       <Row label="Submitted by" value={reimbursement.submitter_name} />
       <Row label="Item" value={reimbursement.item_name} />
       {purchaseTypeValue ? <Row label="Type" value={purchaseTypeValue} /> : null}
+      {reimbursement.budget_expense_label ? <Row label="Budget line" value={reimbursement.budget_expense_label} /> : null}
+      {reimbursement.funding_source_label ? <Row label="Funding source" value={reimbursement.funding_source_label} /> : null}
       <Row label="Amount" value={formatCurrency(reimbursement.amount_cents)} />
       <Row label="Granted #" value={reimbursement.reimbursement_number} />
     </dl>
@@ -80,7 +96,7 @@ export default async function ApproveReimbursementPage({
               {reimbursement.status === 'pending' ? 'Approve or reject' : 'Reimbursement'}
             </h1>
             <p className="auth-subtitle">
-              {reimbursement.submitter_name} submitted this purchase for {team?.name || 'their team'}.
+              {reimbursement.submitter_name} submitted this purchase for {scopeName}.
               {reimbursement.requires_signature
                 ? ' Because it is over the approval threshold, you must sign to approve it.'
                 : ''}

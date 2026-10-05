@@ -1,4 +1,9 @@
+'use client';
+
+import { useState } from 'react';
 import { rematchStatementAction, resolveStatementItemAction, uploadStatementAction } from '@/app/dashboard/actions';
+import { BudgetChargeFields } from '@/components/budget-charge-fields';
+import type { ChargeCatalog } from '@/lib/budget-charge-routing';
 import { suggestStatementScope } from '@/lib/statement-import';
 
 type StatementItem = {
@@ -16,6 +21,7 @@ type TeamOption = { id: string; name: string };
 type StatementReconciliationProps = {
   items: StatementItem[];
   teams: TeamOption[];
+  catalog: ChargeCatalog | null;
   canEdit: boolean;
   summary: {
     total: number;
@@ -43,7 +49,44 @@ function suggestedTeamId(description: string, teams: TeamOption[]): string {
   return match?.id || '';
 }
 
-export function StatementReconciliation({ items, teams, canEdit, summary, lastImport }: StatementReconciliationProps) {
+function StatementAssignment({ itemId, defaultTeam, teams, catalog }: {
+  itemId: string;
+  defaultTeam: string;
+  teams: TeamOption[];
+  catalog: ChargeCatalog | null;
+}) {
+  const [scope, setScope] = useState<'team' | 'leadership'>('team');
+  const [teamId, setTeamId] = useState(defaultTeam);
+  const accounts = scope === 'leadership' ? catalog?.leadership || [] : catalog?.teams[teamId] || [];
+  return <div className="form-stack">
+    <form action={resolveStatementItemAction} className="hq-statement-actions">
+      <input type="hidden" name="item_id" value={itemId} />
+      <input type="hidden" name="decision" value={scope} />
+      <div className="field">
+        <label className="label" htmlFor={`statement-scope-${itemId}`}>Assign to</label>
+        <select id={`statement-scope-${itemId}`} className="select" value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}>
+          <option value="team">Team</option><option value="leadership">SSR Club / Leadership</option>
+        </select>
+      </div>
+      {scope === 'team' ? <div className="field">
+        <label className="label" htmlFor={`statement-team-${itemId}`}>Team</label>
+        <select id={`statement-team-${itemId}`} className="select" name="team_id" value={teamId} onChange={(event) => setTeamId(event.target.value)} required>
+          <option value="">Choose team…</option>
+          {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+        </select>
+      </div> : null}
+      <BudgetChargeFields key={`${scope}:${teamId}`} accounts={accounts} idPrefix={`statement-${itemId}`} leadership={scope === 'leadership'} />
+      <button className="button" type="submit">Assign purchase</button>
+    </form>
+    <form action={resolveStatementItemAction} className="hq-statement-actions">
+      <input type="hidden" name="item_id" value={itemId} />
+      <button className="button-secondary" type="submit" name="decision" value="unknown">Unknown</button>
+      <button className="button-secondary" type="submit" name="decision" value="disregard">Disregard</button>
+    </form>
+  </div>;
+}
+
+export function StatementReconciliation({ items, teams, catalog, canEdit, summary, lastImport }: StatementReconciliationProps) {
   return (
     <div className="form-stack">
       <div className="hq-block-head">
@@ -148,29 +191,7 @@ export function StatementReconciliation({ items, teams, canEdit, summary, lastIm
                 ) : null}
 
                 {canEdit ? (
-                  <form action={resolveStatementItemAction} className="hq-statement-actions">
-                    <input type="hidden" name="item_id" value={item.id} />
-                    <select className="select" name="team_id" defaultValue={defaultTeam} aria-label="Team">
-                      <option value="">Choose team…</option>
-                      {teams.map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button className="button" type="submit" name="decision" value="team">
-                      Assign to team
-                    </button>
-                    <button className="button-secondary" type="submit" name="decision" value="leadership">
-                      Leadership / Ops
-                    </button>
-                    <button className="button-secondary" type="submit" name="decision" value="unknown">
-                      Unknown
-                    </button>
-                    <button className="button-secondary" type="submit" name="decision" value="disregard">
-                      Disregard
-                    </button>
-                  </form>
+                  <StatementAssignment itemId={item.id} defaultTeam={defaultTeam} teams={teams} catalog={catalog} />
                 ) : null}
               </article>
             );

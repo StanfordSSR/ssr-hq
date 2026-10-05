@@ -3,6 +3,8 @@
 import { useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { logPurchaseAction } from '@/app/dashboard/actions';
+import { BudgetChargeFields } from '@/components/budget-charge-fields';
+import type { ChargeCatalog } from '@/lib/budget-charge-routing';
 
 type TeamOption = { id: string; name: string };
 
@@ -23,11 +25,13 @@ function ExpenseSubmitButton() {
 export function TeamExpenseLogger({
   teams,
   academicYear,
-  personName
+  personName,
+  catalog
 }: {
   teams: TeamOption[];
   academicYear: string;
   personName: string;
+  catalog: ChargeCatalog | null;
 }) {
   const [open, setOpen] = useState(false);
   const [teamId, setTeamId] = useState('');
@@ -39,7 +43,6 @@ export function TeamExpenseLogger({
   // Controlled so a scanned receipt can auto-fill them (and the user can edit).
   const [item, setItem] = useState('');
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('equipment');
   const [scanning, setScanning] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
 
@@ -73,10 +76,6 @@ export function TeamExpenseLogger({
       if (typeof data.amount === 'number' && data.amount > 0) {
         setAmount(data.amount.toFixed(2));
         filled.push('amount');
-      }
-      if (data.category) {
-        setCategory(data.category);
-        filled.push('category');
       }
       setScanNote(
         filled.length
@@ -222,23 +221,7 @@ export function TeamExpenseLogger({
             </div>
           </div>
 
-          <div className="field">
-            <label className="label" htmlFor="team-expense-category">
-              Category
-            </label>
-            <select
-              className="select"
-              id="team-expense-category"
-              name="category"
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-            >
-              <option value="equipment">Equipment</option>
-              <option value="food">Food</option>
-              <option value="travel">Travel</option>
-              <option value="registration">Registration</option>
-            </select>
-          </div>
+          <BudgetChargeFields key={teamId} accounts={catalog?.teams[teamId] || []} idPrefix="team-expense" />
 
           {paymentMethod === 'credit_card' ? (
             <div className="field">

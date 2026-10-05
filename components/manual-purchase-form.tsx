@@ -2,6 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { logPurchaseAction } from '@/app/dashboard/actions';
+import { BudgetChargeFields } from '@/components/budget-charge-fields';
+import type { ChargeCatalog } from '@/lib/budget-charge-routing';
 
 type TeamOption = {
   id: string;
@@ -12,14 +14,16 @@ type ManualPurchaseFormProps = {
   academicYear: string;
   teams: TeamOption[];
   defaultPersonName: string;
+  catalog: ChargeCatalog | null;
   leadership?: boolean;
 };
 
 const missingReceiptWarning =
   'Not submitting a receipt within 2 weeks of purchase may result in a 6 month suspension of credit card privileges. Do you want to continue without uploading one right now?';
 
-export function ManualPurchaseForm({ academicYear, teams, defaultPersonName, leadership = false }: ManualPurchaseFormProps) {
+export function ManualPurchaseForm({ academicYear, teams, defaultPersonName, catalog, leadership = false }: ManualPurchaseFormProps) {
   const [paymentMethod, setPaymentMethod] = useState<'credit_card' | 'reimbursement' | 'amazon' | 'unknown'>('credit_card');
+  const [teamId, setTeamId] = useState(teams[0]?.id || '');
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
@@ -45,7 +49,7 @@ export function ManualPurchaseForm({ academicYear, teams, defaultPersonName, lea
           <label className="label" htmlFor="purchase-team">
             Team
           </label>
-          <select className="select" id="purchase-team" name="team_id" defaultValue={teams[0]?.id || ''} required>
+          <select className="select" id="purchase-team" name="team_id" value={teamId} onChange={(event) => setTeamId(event.target.value)} required>
             {teams.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
@@ -107,17 +111,25 @@ export function ManualPurchaseForm({ academicYear, teams, defaultPersonName, lea
         </div>
       </div>
 
-      <div className="field">
+      <BudgetChargeFields
+        key={leadership ? 'leadership' : teamId}
+        accounts={leadership ? catalog?.leadership || [] : catalog?.teams[teamId] || []}
+        idPrefix="purchase"
+        leadership={leadership}
+      />
+
+      {leadership ? <div className="field">
         <label className="label" htmlFor="purchase-category">
-          Category
+          Purchase type
         </label>
         <select className="select" id="purchase-category" name="category" defaultValue="equipment">
           <option value="equipment">Equipment</option>
           <option value="food">Food</option>
           <option value="travel">Travel</option>
           <option value="registration">Registration</option>
+          <option value="other">Other</option>
         </select>
-      </div>
+      </div> : null}
 
       {paymentMethod === 'credit_card' ? (
         <div className="field">

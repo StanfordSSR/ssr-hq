@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
+import { getCurrentAcademicYear } from '@/lib/academic-calendar';
+import { getChargeCatalog, resolveCharge, type ResolvedCharge } from '@/lib/budget-charge-routing';
 import {
   extractSubmissionFootprint,
   GAS_REIMBURSEMENT_MIN_ATTACHMENTS,
   getActiveTeamLeads,
-  getCurrentAcademicYearSafe,
+  getActivePresidentReviewers,
   getReimbursementSettings,
   isPurchaseType,
   isTravelSubtype,
@@ -41,6 +43,9 @@ export async function POST(request: NextRequest) {
   }
 
   const teamId = String(formData.get('team_id') || '').trim();
+  const expenseType = String(formData.get('expense_type') || 'team').trim();
+  const budgetExpenseItemId = String(formData.get('budget_expense_item_id') || '').trim();
+  const fundingSourceId = String(formData.get('funding_source_id') || '').trim();
   const submitterName = String(formData.get('submitter_name') || '').trim();
   const itemName = String(formData.get('item_name') || '').trim();
   const amountRaw = String(formData.get('amount') || '').trim();
@@ -52,7 +57,10 @@ export async function POST(request: NextRequest) {
     .getAll('receipt')
     .filter((entry): entry is File => entry instanceof File && entry.size > 0);
 
-  if (!teamId || !submitterName || !itemName || !amountRaw || !reimbursementNumberRaw) {
+  if ((expenseType !== 'team' && expenseType !== 'leadership') ||
+      (expenseType === 'team' && !teamId) ||
+      (expenseType === 'leadership' && teamId) ||
+      !submitterName || submitterName.length > 120 || !itemName || !amountRaw || !reimbursementNumberRaw) {
     return NextResponse.json({ error: 'Please fill in every field.' }, { status: 400 });
   }
 
@@ -116,33 +124,36 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const { data: team } = await admin
-    .from('teams')
-    .select('id, name, is_active')
-    .eq('id', teamId)
-    .maybeSingle();
-  if (!team || !team.is_active) {
+  const { data: team } = expenseType === 'team'
+    ? await admin.from('teams').select('id, name, is_active').eq('id', teamId).maybeSingle()
+    : { data: null };
+  if (expenseType === 'team' && (!team || !team.is_active)) {
     return NextResponse.json({ error: 'Choose a valid team.' }, { status: 400 });
   }
 
-  const match = await matchSubmitterToTeam(teamId, submitterName);
-  if (!match) {
+  const match = expenseType === 'team' ? await matchSubmitterToTeam(teamId, submitterName) : null;
+  if (expenseType === 'team' && !match) {
     return NextResponse.json(
-      {
-        error:
-          `We couldn't find "${submitterName}" on ${team.name}'s roster. ` +
-          'Check the spelling, or ask your team lead to add you to the roster first.'
-      },
+      { error: `We couldn't find "${submitterName}" on ${team!.name}'s roster. Check the spelling, or ask your team lead to add you first.` },
       { status: 422 }
     );
   }
 
-  const leads = await getActiveTeamLeads(teamId);
-  if (leads.length === 0) {
-    return NextResponse.json(
-      { error: `${team.name} has no active team lead set up to approve reimbursements yet.` },
-      { status: 409 }
+  const reviewers = expenseType === 'leadership' ? await getActivePresidentReviewers() : await getActiveTeamLeads(teamId);
+  const scopeName = expenseType === 'leadership' ? 'SSR Club / Leadership' : team!.name;
+  if (reviewers.length === 0) {
+    return NextResponse.json({ error: `${scopeName} has no active reviewer available.` }, { status: 409 });
+  }
+
+  const academicYear = await getCurrentAcademicYear();
+  let charge: ResolvedCharge;
+  try {
+    charge = resolveCharge(
+      await getChargeCatalog(academicYear), expenseType, expenseType === 'team' ? teamId : null,
+      budgetExpenseItemId, fundingSourceId
     );
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Choose a valid budget account.' }, { status: 422 });
   }
 
   const reimbursementId = crypto.randomUUID();
@@ -151,7 +162,7 @@ export async function POST(request: NextRequest) {
   let uploadedAttachments: Awaited<ReturnType<typeof uploadReimbursementAttachments>> = [];
   if (receipts.length > 0) {
     try {
-      uploadedAttachments = await uploadReimbursementAttachments(reimbursementId, teamId, receipts);
+      uploadedAttachments = await uploadReimbursementAttachments(reimbursementId, teamId || 'leadership', receipts);
       // Mirror the first file onto the primary receipt columns for the existing
       // approval → ledger flow and single-receipt views.
       receiptPath = uploadedAttachments[0]?.path ?? null;
@@ -169,7 +180,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const academicYear = await getCurrentAcademicYearSafe();
   const requiresSignature = amountCents > settings.signatureThresholdCents;
   const decisionToken = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '');
 
@@ -177,14 +187,21 @@ export async function POST(request: NextRequest) {
     .from('member_reimbursements')
     .insert({
       id: reimbursementId,
-      team_id: teamId,
-      submitter_name: match.canonicalName,
-      roster_member_id: match.rosterMemberId,
-      matched_profile_id: match.profileId,
+      team_id: expenseType === 'team' ? teamId : null,
+      expense_type: expenseType,
+      submitter_name: match?.canonicalName || submitterName,
+      roster_member_id: match?.rosterMemberId || null,
+      matched_profile_id: match?.profileId || null,
       item_name: itemName,
       amount_cents: amountCents,
       reimbursement_number: reimbursementNumber,
       academic_year: academicYear,
+      budget_category: charge.category,
+      budget_plan_id: charge.planId,
+      budget_expense_item_id: charge.expenseId,
+      budget_expense_label: charge.expenseLabel,
+      funding_source_id: charge.sourceId,
+      funding_source_label: charge.sourceLabel,
       purchase_type: purchaseType,
       travel_subtype: travelSubtype,
       receipt_path: receiptPath,
@@ -213,14 +230,16 @@ export async function POST(request: NextRequest) {
   await recordReimbursementAttachments(reimbursementId, uploadedAttachments);
 
   await recordAuditEvent({
-    actorId: match.profileId,
+    actorId: match?.profileId || null,
     action: 'reimbursement.submitted',
     targetType: 'member_reimbursement',
     targetId: reimbursementId,
-    summary: `${match.canonicalName} submitted a ${reimbursementNumber} reimbursement for ${team.name}.`,
+    summary: `${match?.canonicalName || submitterName} submitted a ${reimbursementNumber} reimbursement for ${scopeName}.`,
     details: {
       teamId,
       amountCents,
+      budgetExpenseItemId: charge.expenseId,
+      fundingSourceId: charge.sourceId,
       requiresSignature,
       source: 'public_intake',
       offCampus: footprint.geo.outsideBayArea,
@@ -230,13 +249,13 @@ export async function POST(request: NextRequest) {
 
   await recordSubmissionFootprint(reimbursementId, footprint);
 
-  await sendReimbursementSlackPush(inserted as ReimbursementRow, leads, team.name);
+  await sendReimbursementSlackPush(inserted as ReimbursementRow, reviewers, scopeName);
 
   return NextResponse.json({
     ok: true,
     requiresSignature,
     message: requiresSignature
-      ? `Submitted! Because this is over the approval threshold, your lead will need to sign to approve it.`
-      : `Submitted! Your team lead has been notified to approve it.`
+      ? `Submitted! Because this is over the approval threshold, ${expenseType === 'leadership' ? 'a president' : 'your lead'} will need to sign to approve it.`
+      : `Submitted! ${expenseType === 'leadership' ? 'A president' : 'Your team lead'} has been notified to approve it.`
   });
 }

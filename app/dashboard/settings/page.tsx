@@ -33,6 +33,7 @@ import { ReportQuestionEditor } from '@/components/report-question-editor';
 import { EoySettingsForm } from '@/components/eoy-settings-form';
 import { getEoyReportSettings } from '@/lib/eoy-report';
 import { StatementReconciliation } from '@/components/statement-reconciliation';
+import { getChargeCatalog } from '@/lib/budget-charge-routing';
 import { normalizeReminderDays } from '@/lib/purchases';
 import { SettingsTabs } from '@/components/settings-tabs';
 import { formatAgreementDateRange } from '@/lib/visitor-agreements';
@@ -135,6 +136,7 @@ export default async function SettingsPage() {
   const cardIsConfigured = cardConfigured();
   const cardGrantMap = new Map(creditCardGrants.map((grant) => [grant.user_id, grant.enabled]));
   const currentAcademicYear = calendarSettings.effectiveAcademicYear;
+  const chargeCatalog = await getChargeCatalog(currentAcademicYear);
   const nextAcademicYear = calendarSettings.nextAcademicYear;
   const [
     reportingWindows,
@@ -977,6 +979,7 @@ export default async function SettingsPage() {
               content: (
                 <section className="hq-lead-block">
                   <StatementReconciliation
+                    catalog={chargeCatalog}
                     items={unaccountedStatementItems}
                     teams={statementTeams}
                     canEdit={canEdit}

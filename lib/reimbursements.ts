@@ -1,7 +1,8 @@
 import { createAdminClient } from '@/lib/supabase-admin';
+import type { ExpenseCategory } from '@/lib/budget-plan';
 import { env } from '@/lib/env';
 import { recordAuditEvent } from '@/lib/audit';
-import { detectPurchaseCategory } from '@/lib/purchases';
+import { detectPurchaseCategory, type PurchaseCategory } from '@/lib/purchases';
 import { getCurrentAcademicYear } from '@/lib/academic-calendar';
 import {
   SLACKBOT_SYSTEM_TEAM_ID,
@@ -179,7 +180,7 @@ export function categoryForReimbursement(
   purchaseType: PurchaseType | null,
   travelSubtype: TravelSubtype | null,
   itemName: string
-): 'equipment' | 'food' | 'travel' | 'registration' {
+): PurchaseCategory {
   if (purchaseType === 'equipment') return 'equipment';
   if (purchaseType === 'event_food') return 'food';
   if (purchaseType === 'travel') return travelSubtype === 'food' ? 'food' : 'travel';
@@ -207,7 +208,14 @@ export type ReimbursementSettings = {
 
 export type ReimbursementRow = {
   id: string;
-  team_id: string;
+  team_id: string | null;
+  expense_type: 'team' | 'leadership';
+  budget_category: ExpenseCategory | null;
+  budget_plan_id: string | null;
+  budget_expense_item_id: string | null;
+  budget_expense_label: string | null;
+  funding_source_id: string | null;
+  funding_source_label: string | null;
   submitter_name: string;
   roster_member_id: string | null;
   matched_profile_id: string | null;
@@ -319,6 +327,23 @@ export async function getActiveTeamLeads(teamId: string): Promise<TeamLead[]> {
     .eq('active', true);
 
   return (profiles || []).map((p) => ({ userId: p.id, fullName: p.full_name, email: p.email }));
+}
+
+export async function getActivePresidentReviewers(): Promise<TeamLead[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('profiles')
+    .select('id, full_name, email, role, is_president')
+    .eq('active', true);
+  if (error) throw new Error('Could not load the club presidents.');
+  return (data || [])
+    .filter((profile) => profile.role === 'president' || profile.is_president)
+    .map((profile) => ({ userId: profile.id, fullName: profile.full_name, email: profile.email }));
+}
+
+export async function getReimbursementReviewers(reimbursement: Pick<ReimbursementRow, 'expense_type' | 'team_id'>) {
+  if (reimbursement.expense_type === 'leadership') return getActivePresidentReviewers();
+  return reimbursement.team_id ? getActiveTeamLeads(reimbursement.team_id) : [];
 }
 
 export async function uploadReimbursementReceipt(reimbursementId: string, teamId: string, file: File) {
@@ -443,6 +468,8 @@ export async function sendReimbursementSlackPush(
     `• Item: ${reimbursement.item_name}`,
     `• Amount: ${amount}`,
     `• Granted #: ${reimbursement.reimbursement_number}`,
+    reimbursement.budget_expense_label ? `• Budget line: ${reimbursement.budget_expense_label}` : null,
+    reimbursement.funding_source_label ? `• Funding source: ${reimbursement.funding_source_label}` : null,
     reimbursement.requires_signature
       ? `This is over the signature threshold — open the link to review and *sign* to approve.`
       : `Approve or reject below.`
@@ -454,13 +481,15 @@ export async function sendReimbursementSlackPush(
     team_name: SLACKBOT_SYSTEM_TEAM_NAME,
     recipient_emails: emails,
     title,
-    message: lines.join('\n'),
+    message: lines.filter(Boolean).join('\n'),
     metadata: {
       reimbursement_id: reimbursement.id,
       team_id: reimbursement.team_id,
       team_name: teamName,
       amount_cents: reimbursement.amount_cents,
       reimbursement_number: reimbursement.reimbursement_number,
+      funding_source_id: reimbursement.funding_source_id,
+      funding_source_label: reimbursement.funding_source_label,
       requires_signature: reimbursement.requires_signature,
       approve_url: approveUrl,
       // The Slack bot should POST { reimbursement_id, decision, approver_email }
@@ -507,9 +536,9 @@ export async function verifyReimbursementSignature(
     throw new Error('That signature was too brief to verify — please sign again.');
   }
 
-  const leads = await getActiveTeamLeads(reimbursement.team_id);
+  const leads = await getReimbursementReviewers(reimbursement);
   if (leads.length === 0) {
-    throw new Error('This team has no active lead to approve the reimbursement.');
+    throw new Error('No active reviewer is available for this reimbursement.');
   }
 
   const admin = createAdminClient();
@@ -523,7 +552,7 @@ export async function verifyReimbursementSignature(
 
   if (!profiles || profiles.length === 0) {
     throw new Error(
-      'No team lead has enrolled a signature yet. A lead must enroll one in Personal settings (or approve from the portal) before this can be signed.'
+      'No reviewer has enrolled a signature yet. An approver must enroll one in Personal settings before this can be signed.'
     );
   }
 
@@ -537,7 +566,7 @@ export async function verifyReimbursementSignature(
 
   if (!best) {
     throw new Error(
-      "Signature didn't match an enrolled team lead. Sign again, or have your lead approve from the portal."
+      "Signature didn't match an enrolled reviewer. Sign again, or ask an approver to review it."
     );
   }
 
@@ -572,7 +601,7 @@ export async function finalizeReimbursementDecision(opts: {
     // active lead so created_by (NOT NULL) is always satisfied.
     let creatorId = opts.deciderProfileId;
     if (!creatorId) {
-      const leads = await getActiveTeamLeads(reimbursement.team_id);
+      const leads = await getReimbursementReviewers(reimbursement);
       creatorId = leads[0]?.userId ?? null;
     }
     if (!creatorId) {
@@ -583,7 +612,7 @@ export async function finalizeReimbursementDecision(opts: {
     const { error: insertError } = await admin.from('purchase_logs').insert({
       id: purchaseLogId,
       team_id: reimbursement.team_id,
-      expense_type: 'team',
+      expense_type: reimbursement.expense_type,
       created_by: creatorId,
       academic_year: reimbursement.academic_year,
       amount_cents: reimbursement.amount_cents,
@@ -591,11 +620,14 @@ export async function finalizeReimbursementDecision(opts: {
       person_name: reimbursement.submitter_name,
       purchased_at: reimbursement.created_at,
       payment_method: 'reimbursement',
-      category: categoryForReimbursement(
-        reimbursement.purchase_type,
-        reimbursement.travel_subtype,
-        reimbursement.item_name
+      category: reimbursement.budget_category || categoryForReimbursement(
+        reimbursement.purchase_type, reimbursement.travel_subtype, reimbursement.item_name
       ),
+      budget_plan_id: reimbursement.budget_plan_id,
+      budget_expense_item_id: reimbursement.budget_expense_item_id,
+      budget_expense_label: reimbursement.budget_expense_label,
+      funding_source_id: reimbursement.funding_source_id,
+      funding_source_label: reimbursement.funding_source_label,
       receipt_path: reimbursement.receipt_path,
       receipt_file_name: reimbursement.receipt_file_name,
       receipt_uploaded_at: reimbursement.receipt_path ? reimbursement.created_at : null,
@@ -639,7 +671,9 @@ export async function finalizeReimbursementDecision(opts: {
       approvalKind: opts.approvalKind,
       source: opts.source,
       amountCents: reimbursement.amount_cents,
-      purchaseLogId
+      purchaseLogId,
+      budgetExpenseItemId: reimbursement.budget_expense_item_id,
+      fundingSourceId: reimbursement.funding_source_id
     }
   });
 
@@ -671,7 +705,7 @@ async function notifyReimbursementDecided(
       decidedByName = data?.full_name ?? null;
     }
 
-    const leads = await getActiveTeamLeads(reimbursement.team_id);
+    const leads = await getReimbursementReviewers(reimbursement);
     const emails = leads.map((l) => (l.email || '').toLowerCase()).filter(Boolean);
 
     await sendSlackbotNotification({

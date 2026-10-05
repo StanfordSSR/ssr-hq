@@ -8,6 +8,8 @@ import {
   normalizePurchaseDate,
   parsePurchaseAmount
 } from '@/lib/purchases';
+import type { ChargeCatalog } from '@/lib/budget-charge-routing';
+import { BUDGET_CATEGORY_LABELS } from '@/lib/team-budget-application-rules';
 
 type TeamOption = {
   id: string;
@@ -18,6 +20,7 @@ type PurchaseImportProps = {
   teams: TeamOption[];
   defaultTeamId: string;
   academicYear: string;
+  catalog: ChargeCatalog | null;
 };
 
 type ParsedSheet = {
@@ -43,7 +46,9 @@ type PreparedPurchase = {
   personName?: string;
   purchasedAt?: string;
   paymentMethod: PaymentMethod;
-  category: 'equipment' | 'food' | 'travel' | 'registration';
+  category: 'equipment' | 'food' | 'travel' | 'registration' | 'other';
+  budgetExpenseItemId: string;
+  fundingSourceId: string;
 };
 
 const initialState = {
@@ -148,11 +153,12 @@ function parseCsv(text: string) {
   };
 }
 
-export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseImportProps) {
+export function PurchaseImport({ teams, defaultTeamId, academicYear, catalog }: PurchaseImportProps) {
   const [parsed, setParsed] = useState<ParsedSheet | null>(null);
   const [teamId, setTeamId] = useState(defaultTeamId);
   const [paymentMappings, setPaymentMappings] = useState<Record<string, PaymentMethod>>({});
   const [fileError, setFileError] = useState('');
+  const [chargeSelections, setChargeSelections] = useState<Record<number, { expenseId: string; sourceId: string }>>({});
   const [mapping, setMapping] = useState<MappingState>({
     item: '',
     amount: '',
@@ -218,7 +224,9 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
         personName: mapping.person ? readCellText(row[mapping.person]) : '',
         purchasedAt: mapping.date ? normalizePurchaseDate(row[mapping.date]) : '',
         paymentMethod,
-        category: detectPurchaseCategory(description)
+        category: detectPurchaseCategory(description),
+        budgetExpenseItemId: '',
+        fundingSourceId: ''
       });
     }
 
@@ -227,6 +235,17 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
       skippedRows
     };
   }, [parsed, mapping, resolvedPaymentMappings]);
+
+  const accounts = catalog?.teams[teamId] || [];
+  const assignedPurchases = preparedPayload.purchases.map((purchase) => {
+    const selection = chargeSelections[purchase.rowNumber];
+    const suggested = accounts.filter((account) => account.category === purchase.category);
+    const account = accounts.find((option) => option.expenseId === selection?.expenseId) ||
+      (!selection && suggested.length === 1 ? suggested[0] : undefined);
+    const sourceId = selection?.sourceId || (account?.sources.length === 1 ? account.sources[0].id : '');
+    return { ...purchase, budgetExpenseItemId: account?.expenseId || '', fundingSourceId: sourceId };
+  });
+  const missingCharges = assignedPurchases.some((purchase) => !purchase.budgetExpenseItemId || !purchase.fundingSourceId);
 
   const importAmount = useMemo(
     () => preparedPayload.purchases.reduce((sum, purchase) => sum + purchase.amount, 0),
@@ -263,6 +282,7 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
       payment: guessColumn(headers, [/payment/, /method/, /source/, /card/, /reimb/, /account/])
     });
     setPaymentMappings({});
+    setChargeSelections({});
   };
 
   return (
@@ -301,7 +321,7 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
         <form action={formAction} className="form-stack">
           <input type="hidden" name="academic_year" value={academicYear} />
           <input type="hidden" name="team_id" value={teamId} />
-          <input type="hidden" name="import_payload" value={JSON.stringify(preparedPayload)} />
+          <input type="hidden" name="import_payload" value={JSON.stringify({ ...preparedPayload, purchases: assignedPurchases })} />
 
           <div className="hq-import-meta">
             <div className="hq-import-stat">
@@ -326,7 +346,7 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
               className="select"
               id="import-team"
               value={teamId}
-              onChange={(event) => setTeamId(event.target.value)}
+              onChange={(event) => { setTeamId(event.target.value); setChargeSelections({}); }}
             >
               {teams.map((team) => (
                 <option key={team.id} value={team.id}>
@@ -393,6 +413,29 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
             </div>
           ) : null}
 
+          {assignedPurchases.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Row</th><th>Item</th><th>Budget category</th><th>Funding source</th></tr></thead>
+                <tbody>{assignedPurchases.map((purchase) => {
+                  const account = accounts.find((option) => option.expenseId === purchase.budgetExpenseItemId);
+                  return <tr key={purchase.rowNumber}>
+                    <td>{purchase.rowNumber}</td>
+                    <td>{purchase.description}</td>
+                    <td><select className="select" aria-label={`Budget category for row ${purchase.rowNumber}`} value={purchase.budgetExpenseItemId} onChange={(event) => setChargeSelections((current) => ({ ...current, [purchase.rowNumber]: { expenseId: event.target.value, sourceId: '' } }))}>
+                      <option value="">Choose category…</option>
+                      {accounts.map((option) => <option key={option.expenseId} value={option.expenseId} disabled={option.sources.length === 0}>{option.category ? BUDGET_CATEGORY_LABELS[option.category] : option.label}</option>)}
+                    </select></td>
+                    <td>{account?.sources.length === 1 ? account.sources[0].label : <select className="select" aria-label={`Funding source for row ${purchase.rowNumber}`} value={purchase.fundingSourceId} onChange={(event) => setChargeSelections((current) => ({ ...current, [purchase.rowNumber]: { expenseId: purchase.budgetExpenseItemId, sourceId: event.target.value } }))} disabled={!account}>
+                      <option value="">Choose source…</option>
+                      {account?.sources.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}
+                    </select>}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            </div>
+          ) : null}
+
           <div className="hq-import-summary">
             <span>
               Ready to add <strong>${importAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
@@ -412,7 +455,7 @@ export function PurchaseImport({ teams, defaultTeamId, academicYear }: PurchaseI
             <button
               className="button-secondary"
               type="submit"
-              disabled={!mapping.item || !mapping.amount || preparedPayload.purchases.length === 0 || pending}
+              disabled={!mapping.item || !mapping.amount || preparedPayload.purchases.length === 0 || missingCharges || pending}
             >
               {pending ? 'Importing...' : 'Import purchases'}
             </button>

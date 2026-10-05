@@ -10,7 +10,7 @@ type PurchaseEntryActionsProps = {
   purchasedAt: string;
   personName: string | null;
   paymentMethod: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel' | 'registration';
+  category: 'equipment' | 'food' | 'travel' | 'registration' | 'other';
 };
 
 export function PurchaseEntryActions({

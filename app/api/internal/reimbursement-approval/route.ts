@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { env } from '@/lib/env';
 import {
   finalizeReimbursementDecision,
-  getActiveTeamLeads,
+  getReimbursementReviewers,
   getReimbursementById
 } from '@/lib/reimbursements';
 
@@ -82,10 +82,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Approver is not a recognized active user.' }, { status: 403 });
   }
 
-  const leads = await getActiveTeamLeads(reimbursement.team_id);
+  const leads = await getReimbursementReviewers(reimbursement);
   if (!leads.some((lead) => lead.userId === approverProfileId)) {
     return NextResponse.json(
-      { error: 'Only an active lead of this team can approve its reimbursements.' },
+      { error: reimbursement.expense_type === 'leadership'
+        ? 'Only an active club president can approve leadership reimbursements.'
+        : 'Only an active lead of this team can approve its reimbursements.' },
       { status: 403 }
     );
   }
