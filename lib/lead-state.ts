@@ -1,7 +1,8 @@
 import { cache } from 'react';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getNextReportState } from '@/lib/academic-calendar';
+import { getCurrentAcademicYear, getNextReportState } from '@/lib/academic-calendar';
 import { getEoyReportState } from '@/lib/eoy-report';
+import { TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 
 export const getLeadTeamIds = cache(async function getLeadTeamIds(userId: string) {
   const admin = createAdminClient();
@@ -25,6 +26,7 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
     };
   }
 
+  const academicYear = await getCurrentAcademicYear();
   const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
   const [
     { count: pendingReceiptCount },
@@ -33,6 +35,8 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
     { data: taskCompletions },
     { count: allTeamsAnnouncementCount },
     { data: announcementRecipients },
+    { data: activeTeams },
+    { data: budgetApplications },
     reportState,
     eoyState
   ] =
@@ -58,6 +62,8 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
         .eq('recipient_scope', 'all_teams')
         .gte('event_at', staleThreshold),
       admin.from('announcement_recipients').select('announcement_id').in('team_id', myTeamIds),
+      admin.from('teams').select('id').in('id', myTeamIds).eq('is_active', true),
+      admin.from('team_budget_applications').select('team_id, status').in('team_id', myTeamIds).eq('academic_year', TEAM_BUDGET_ACADEMIC_YEAR),
       getNextReportState(),
       getEoyReportState()
     ]);
@@ -68,6 +74,11 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
   const hasAssignedTasks = hasAssignedAllTeamTask || hasSpecificAssignedTasks;
   const hasAnnouncements = (allTeamsAnnouncementCount || 0) > 0 || (announcementRecipients || []).length > 0;
   const hasPendingReceipts = (pendingReceiptCount || 0) > 0;
+  const submittedBudgetTeamIds = new Set((budgetApplications || [])
+    .filter((application) => application.status === 'submitted')
+    .map((application) => application.team_id));
+  const hasPendingBudgetApplication = academicYear === TEAM_BUDGET_ACADEMIC_YEAR &&
+    (activeTeams || []).some((team) => !submittedBudgetTeamIds.has(team.id));
   let hasPendingReport = false;
 
   if (reportState.reportState === 'open') {
@@ -101,6 +112,6 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
 
   return {
     hasPendingLeadTasks:
-      hasAssignedTasks || hasPendingReceipts || hasPendingReport || hasPendingEoyReport || hasAnnouncements
+      hasAssignedTasks || hasPendingReceipts || hasPendingReport || hasPendingEoyReport || hasAnnouncements || hasPendingBudgetApplication
   };
 });

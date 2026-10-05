@@ -37,8 +37,7 @@ import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
 import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
 import { AcademicYearRolloverButton } from '@/components/academic-year-rollover-button';
-import { TimedBudgetApplicationLink } from '@/components/timed-budget-application-link';
-import { isTeamBudgetApplicationOpen } from '@/lib/team-budget-application-rules';
+import { formatTeamBudgetDeadline, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 
 type Team = {
   id: string;
@@ -888,6 +887,7 @@ export default async function DashboardPage() {
     { data: tasksData },
     { data: taskRecipients },
     { data: taskCompletions },
+    { data: budgetApplication },
     { data: announcementsData },
     { data: announcementRecipientsData },
     { data: announcementRsvpsData },
@@ -921,6 +921,12 @@ export default async function DashboardPage() {
       admin.from('task_recipients').select('task_id, team_id').eq('team_id', team.id),
       admin.from('task_completions').select('task_id').eq('team_id', team.id),
       admin
+        .from('team_budget_applications')
+        .select('status')
+        .eq('team_id', team.id)
+        .eq('academic_year', TEAM_BUDGET_ACADEMIC_YEAR)
+        .maybeSingle(),
+      admin
         .from('announcements')
         .select('id, title, details, location, event_at, recipient_scope')
         .eq('is_active', true)
@@ -951,6 +957,8 @@ export default async function DashboardPage() {
   const teamTasks = (tasksData || []).filter(
     (task) => !completedTaskIds.has(task.id) && (task.recipient_scope === 'all_teams' || recipientTaskIds.has(task.id))
   );
+  const hasBudgetApplicationTask = cycle === TEAM_BUDGET_ACADEMIC_YEAR && team.is_active && budgetApplication?.status !== 'submitted';
+  const openTaskCount = teamTasks.length + (hasBudgetApplicationTask ? 1 : 0);
   const teamAnnouncements = ((announcementsData || []) as Announcement[]).filter(
     (announcement) => announcement.recipient_scope === 'all_teams' || recipientAnnouncementIds.has(announcement.id)
   );
@@ -1120,13 +1128,9 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="th-mast-side">
-          <TimedBudgetApplicationLink
-            href={`/dashboard/teams/${team.id}/budget-application`}
-            className="th-btn-light"
-            label="Budget application"
-            initialOpen={isTeamBudgetApplicationOpen()}
-            canPreview={Boolean(me.is_president) || me.role === 'president'}
-          />
+          <Link href={`/dashboard/teams/${team.id}/budget-application`} className="th-btn-light">
+            Budget application
+          </Link>
           <Link href="/dashboard/purchases" className="th-btn-light">
             Log purchase
           </Link>
@@ -1454,9 +1458,11 @@ export default async function DashboardPage() {
         <summary>
           <span className="th-sec-label">Tasks</span>
           <span className="th-sec-preview">
-            {teamTasks.length > 0 ? `${teamTasks[0].title}${teamTasks.length > 1 ? ` · +${teamTasks.length - 1} more` : ''}` : 'No open tasks'}
+            {hasBudgetApplicationTask
+              ? `Annual budget application${openTaskCount > 1 ? ` · +${openTaskCount - 1} more` : ''}`
+              : teamTasks.length > 0 ? `${teamTasks[0].title}${teamTasks.length > 1 ? ` · +${teamTasks.length - 1} more` : ''}` : 'No open tasks'}
           </span>
-          <span className="th-sec-count">{teamTasks.length}</span>
+          <span className="th-sec-count">{openTaskCount}</span>
         </summary>
         <div className="th-body">
           <div className="th-block-head">
@@ -1465,12 +1471,22 @@ export default async function DashboardPage() {
               Open tasks →
             </Link>
           </div>
-          {teamTasks.length === 0 ? (
+          {openTaskCount === 0 ? (
             <p className="empty-note">No tasks assigned right now.</p>
           ) : (
             <div className="table-wrap">
               <table>
                 <tbody>
+                  {hasBudgetApplicationTask ? (
+                    <tr>
+                      <td style={{ fontWeight: 700 }}>
+                        <Link href={`/dashboard/teams/${team.id}/budget-application?year=${TEAM_BUDGET_ACADEMIC_YEAR}`} className="th-link">
+                          Annual budget application
+                        </Link>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>Due {formatTeamBudgetDeadline()}</td>
+                    </tr>
+                  ) : null}
                   {teamTasks.map((task) => (
                     <tr key={task.id}>
                       <td style={{ fontWeight: 700 }}>{task.title}</td>

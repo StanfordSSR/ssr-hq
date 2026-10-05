@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
+import { getCurrentAcademicYear, getNextReportState, formatDateLabel } from '@/lib/academic-calendar';
 import {
   completeTaskAction,
   createAnnouncementAction,
@@ -15,10 +15,12 @@ import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
+import { formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 
 type Team = {
   id: string;
   name: string;
+  is_active: boolean;
 };
 
 type Task = {
@@ -87,11 +89,22 @@ export default async function TasksPage() {
   const isAdmin = currentRole === 'admin';
   const isPresident = currentRole === 'president' || currentRole === 'vice_president';
   const isPrivilegedViewer = isAdmin || isPresident;
-  const reportState = await getNextReportState();
-  const eoyState = await getEoyReportState();
+  const [reportState, eoyState, academicYear] = await Promise.all([
+    getNextReportState(), getEoyReportState(), getCurrentAcademicYear()
+  ]);
+  const showBudgetApplicationTask = academicYear === TEAM_BUDGET_ACADEMIC_YEAR;
 
-  const { data: teamsData } = await admin.from('teams').select('id, name').order('name');
+  const { data: teamsData } = await admin.from('teams').select('id, name, is_active').order('name');
   const teams = (teamsData || []) as Team[];
+  const { data: budgetApplicationsData } = showBudgetApplicationTask
+    ? await admin.from('team_budget_applications').select('team_id, status').eq('academic_year', TEAM_BUDGET_ACADEMIC_YEAR)
+    : { data: [] as Array<{ team_id: string; status: string }> };
+  const submittedBudgetTeamIds = new Set((budgetApplicationsData || [])
+    .filter((application) => application.status === 'submitted')
+    .map((application) => application.team_id));
+  const outstandingBudgetTeams = showBudgetApplicationTask
+    ? teams.filter((team) => team.is_active && !submittedBudgetTeamIds.has(team.id))
+    : [];
 
   const { data: tasksData } = await admin
     .from('tasks')
@@ -174,6 +187,7 @@ export default async function TasksPage() {
   let visibleAnnouncements = announcements;
   let selectableTeams = teams;
   let pendingReceipts: ReceiptPurchase[] = [];
+  let budgetApplicationTeams: Team[] = [];
   let reportTask: {
     title: string;
     message: string;
@@ -193,6 +207,7 @@ export default async function TasksPage() {
         .map((completion) => completion.task_id)
     );
     selectableTeams = teams.filter((team) => myTeamIds.has(team.id));
+    budgetApplicationTeams = outstandingBudgetTeams.filter((team) => myTeamIds.has(team.id));
     visibleTasks = tasks.filter((task) => {
       if (completedTaskIds.has(task.id)) {
         return false;
@@ -473,8 +488,17 @@ export default async function TasksPage() {
           </div>
 
           {isPrivilegedViewer ? (
-            visibleAnnouncements.length > 0 || visibleTasks.length > 0 ? (
+            visibleAnnouncements.length > 0 || visibleTasks.length > 0 || outstandingBudgetTeams.length > 0 ? (
               <div className="hq-summary-list">
+                {outstandingBudgetTeams.length > 0 ? (
+                  <div className="hq-summary-row">
+                    <span>All teams · Due {formatTeamBudgetDeadline()}</span>
+                    <strong>Annual budget applications</strong>
+                    <Link href="/dashboard/finances/applications" className="th-link">
+                      Review {outstandingBudgetTeams.length} outstanding →
+                    </Link>
+                  </div>
+                ) : null}
                 {visibleAnnouncements.map((announcement) => {
                   const teamNames =
                     announcement.recipient_scope === 'all_teams'
@@ -535,6 +559,24 @@ export default async function TasksPage() {
             )
           ) : (
             <div className="hq-task-stack">
+              {budgetApplicationTeams.map((team) => (
+                <article key={`budget-${team.id}`} className={`hq-task-card hq-task-card-report ${isTeamBudgetApplicationClosed() ? 'hq-task-card-alert' : ''}`}>
+                  <div className="hq-task-card-head">
+                    <div>
+                      <span className="hq-task-kicker">Budget task</span>
+                      <h4>Submit {TEAM_BUDGET_ACADEMIC_YEAR} annual budget application</h4>
+                    </div>
+                    <Link href={`/dashboard/teams/${team.id}/budget-application?year=${TEAM_BUDGET_ACADEMIC_YEAR}`} className="hq-task-arrow" aria-label={`Open ${team.name} budget application`}>
+                      →
+                    </Link>
+                  </div>
+                  <div className="hq-task-card-meta">
+                    <span>{team.name}</span>
+                    <span>Due {formatTeamBudgetDeadline()}</span>
+                    {isTeamBudgetApplicationClosed() ? <strong className="hq-task-alert">CLOSED</strong> : null}
+                  </div>
+                </article>
+              ))}
               {visibleAnnouncements.map((announcement) => {
                 const teamNames =
                   announcement.recipient_scope === 'all_teams'
@@ -677,7 +719,7 @@ export default async function TasksPage() {
                 );
               })}
 
-              {pendingReceipts.length === 0 && visibleTasks.length === 0 && !reportTask && !eoyReportTask ? (
+              {pendingReceipts.length === 0 && visibleTasks.length === 0 && budgetApplicationTeams.length === 0 && !reportTask && !eoyReportTask ? (
                 <p className="empty-note">No tasks are assigned to your team yet.</p>
               ) : null}
             </div>
