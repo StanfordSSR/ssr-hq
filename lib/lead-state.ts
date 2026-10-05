@@ -46,6 +46,7 @@ export const getLeadTaskIndicatorState = cache(async function getLeadTaskIndicat
         .select('id', { count: 'exact', head: true })
         .in('team_id', myTeamIds)
         .eq('payment_method', 'credit_card')
+        .eq('academic_year', academicYear)
         .eq('receipt_not_needed', false)
         .is('receipt_path', null),
       admin

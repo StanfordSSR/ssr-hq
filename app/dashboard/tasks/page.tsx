@@ -227,6 +227,7 @@ export default async function TasksPage() {
       .select('id, team_id, description, amount_cents, purchased_at, payment_method, receipt_path, receipt_not_needed')
       .in('team_id', Array.from(myTeamIds))
       .eq('payment_method', 'credit_card')
+      .eq('academic_year', academicYear)
       .eq('receipt_not_needed', false)
       .is('receipt_path', null)
       .order('purchased_at', { ascending: true });
