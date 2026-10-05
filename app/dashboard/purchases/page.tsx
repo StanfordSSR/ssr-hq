@@ -7,6 +7,7 @@ import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
+import { getChargeCatalog } from '@/lib/budget-charge-routing';
 
 type Team = {
   id: string;
@@ -22,7 +23,9 @@ type Purchase = {
   purchased_at: string;
   person_name: string | null;
   payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel' | 'registration';
+  category: 'equipment' | 'food' | 'travel' | 'registration' | 'other';
+  budget_expense_label: string | null;
+  funding_source_label: string | null;
   receipt_path: string | null;
   receipt_not_needed: boolean;
 };
@@ -38,7 +41,8 @@ const categoryLabel: Record<Purchase['category'], string> = {
   equipment: 'Equipment',
   food: 'Food',
   travel: 'Travel',
-  registration: 'Registration'
+  registration: 'Registration',
+  other: 'Other'
 };
 
 export default async function PurchasesPage({
@@ -78,11 +82,12 @@ export default async function PurchasesPage({
   }
 
   const academicYear = await getCurrentAcademicYear();
+  const catalog = await getChargeCatalog(academicYear);
   const accessibleTeamIds = teams.map((team) => team.id);
   const teamNameMap = new Map<string, string>(teams.map((team) => [team.id, team.name]));
 
   const purchaseColumns =
-    'id, team_id, expense_type, description, amount_cents, purchased_at, person_name, payment_method, category, receipt_path, receipt_not_needed';
+    'id, team_id, expense_type, description, amount_cents, purchased_at, person_name, payment_method, category, budget_expense_label, funding_source_label, receipt_path, receipt_not_needed';
   const teamPurchasesQuery = admin
     .from('purchase_logs')
     .select(purchaseColumns)
@@ -163,11 +168,11 @@ export default async function PurchasesPage({
             <span className="hq-inline-note">Manual entry</span>
           </div>
 
-          <ManualPurchaseForm academicYear={academicYear} teams={teams} defaultPersonName={me.full_name || ''} />
+          <ManualPurchaseForm academicYear={academicYear} teams={teams} defaultPersonName={me.full_name || ''} catalog={catalog} />
         </section>
 
         <section className="hq-panel hq-surface-muted hq-purchase-panel">
-          <PurchaseImport teams={teams} defaultTeamId={teams[0]?.id || ''} academicYear={academicYear} />
+          <PurchaseImport teams={teams} defaultTeamId={teams[0]?.id || ''} academicYear={academicYear} catalog={catalog} />
         </section>
       </div> : null}
 
@@ -199,7 +204,7 @@ export default async function PurchasesPage({
                     <td>${(purchase.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td>{purchase.person_name || 'Unknown'}</td>
                     <td>{paymentMethodLabel[purchase.payment_method]}</td>
-                    <td>{categoryLabel[purchase.category]}</td>
+                    <td>{categoryLabel[purchase.category]}{purchase.budget_expense_label || purchase.funding_source_label ? <div className="helper">{purchase.budget_expense_label || categoryLabel[purchase.category]}{purchase.funding_source_label ? ` · ${purchase.funding_source_label}` : ''}</div> : null}</td>
                     <td>
                       {(() => {
                         const receiptState = getReceiptTaskState({

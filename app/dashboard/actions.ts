@@ -6,6 +6,7 @@ import { headers } from 'next/headers';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { getChargeCatalog, resolveCharge } from '@/lib/budget-charge-routing';
 import {
   ACTIVE_ROLE_COOKIE,
   getViewerContext,
@@ -1428,12 +1429,15 @@ export async function logPurchaseAction(formData: FormData) {
       const purchasedAt = String(formData.get('purchased_at') || '').trim();
       const paymentMethod = normalizePaymentMethod(String(formData.get('payment_method') || 'unknown'));
       const categoryValue = String(formData.get('category') || 'equipment').trim();
+      const budgetExpenseItemId = String(formData.get('budget_expense_item_id') || '').trim();
+      const fundingSourceId = String(formData.get('funding_source_id') || '').trim();
       const receiptFile = formData.get('receipt');
       const category =
         categoryValue === 'food' ||
         categoryValue === 'travel' ||
         categoryValue === 'equipment' ||
-        categoryValue === 'registration'
+        categoryValue === 'registration' ||
+        categoryValue === 'other'
           ? categoryValue
           : detectPurchaseCategory(description);
 
@@ -1472,6 +1476,10 @@ export async function logPurchaseAction(formData: FormData) {
       }
 
       const effectiveTeamId = expenseType === 'leadership' ? null : teamId;
+      const charge = resolveCharge(
+        await getChargeCatalog(academicYear), expenseType, effectiveTeamId,
+        budgetExpenseItemId, fundingSourceId
+      );
       const purchaseId = crypto.randomUUID();
       let receiptPath: string | null = null;
       let receiptFileName: string | null = null;
@@ -1501,7 +1509,12 @@ export async function logPurchaseAction(formData: FormData) {
         person_name: personName || null,
         purchased_at: normalizePurchaseDate(purchasedAt) || new Date().toISOString(),
         payment_method: paymentMethod,
-        category,
+        category: expenseType === 'team' ? charge.category : category,
+        budget_plan_id: charge.planId,
+        budget_expense_item_id: charge.expenseId,
+        budget_expense_label: charge.expenseLabel,
+        funding_source_id: charge.sourceId,
+        funding_source_label: charge.sourceLabel,
         receipt_path: receiptPath,
         receipt_file_name: receiptFileName,
         receipt_uploaded_at: receiptUploadedAt
@@ -1523,7 +1536,9 @@ export async function logPurchaseAction(formData: FormData) {
           academicYear,
           amountCents,
           paymentMethod,
-          category,
+          category: expenseType === 'team' ? charge.category : category,
+          budgetExpenseItemId: charge.expenseId,
+          fundingSourceId: charge.sourceId,
           receiptUploaded: Boolean(receiptPath)
         }
       });
@@ -1829,6 +1844,8 @@ export async function importPurchasesAction(
       purchasedAt?: string;
       paymentMethod?: string;
       category?: string;
+      budgetExpenseItemId?: string;
+      fundingSourceId?: string;
     }>;
     skippedRows: number[];
   };
@@ -1837,6 +1854,21 @@ export async function importPurchasesAction(
     parsed = JSON.parse(payloadRaw) as typeof parsed;
   } catch {
     return { message: 'The import file could not be parsed.', addedAmount: 0, skippedRows: [] };
+  }
+
+  const catalog = await getChargeCatalog(academicYear);
+  let charges: Array<ReturnType<typeof resolveCharge>>;
+  try {
+    if (!Array.isArray(parsed.purchases)) throw new Error('The import file could not be parsed.');
+    charges = parsed.purchases.map((purchase) => resolveCharge(
+        catalog,
+        'team',
+        teamId,
+        String(purchase.budgetExpenseItemId || ''),
+        String(purchase.fundingSourceId || '')
+      ));
+  } catch (error) {
+    return { message: error instanceof Error ? error.message : 'Choose a budget account for every row.', addedAmount: 0, skippedRows: [] };
   }
 
   const skippedRows = new Set<number>((parsed.skippedRows || []).filter((row) => Number.isFinite(row)));
@@ -1864,7 +1896,7 @@ export async function importPurchasesAction(
     )
   );
   let duplicateCount = 0;
-  const validPurchases = (parsed.purchases || []).flatMap((purchase) => {
+  const validPurchases = parsed.purchases.flatMap((purchase, index) => {
     const description = String(purchase.description || '').trim();
     const amount = parsePurchaseAmount(purchase.amount);
     const rowNumber = Number(purchase.rowNumber || 0);
@@ -1898,6 +1930,8 @@ export async function importPurchasesAction(
 
     seenKeys.add(dedupKey);
 
+    const charge = charges[index];
+
     return [
       {
         team_id: teamId,
@@ -1908,13 +1942,12 @@ export async function importPurchasesAction(
         person_name: person,
         purchased_at: normalizedPurchasedAt,
         payment_method: normalizedPaymentMethod,
-        category:
-          purchase.category === 'food' ||
-          purchase.category === 'travel' ||
-          purchase.category === 'equipment' ||
-          purchase.category === 'registration'
-            ? purchase.category
-            : detectPurchaseCategory(description),
+        category: charge.category,
+        budget_plan_id: charge.planId,
+        budget_expense_item_id: charge.expenseId,
+        budget_expense_label: charge.expenseLabel,
+        funding_source_id: charge.sourceId,
+        funding_source_label: charge.sourceLabel,
         receipt_not_needed: true
       }
     ];
@@ -1972,30 +2005,32 @@ export async function updatePurchaseCategoryAction(formData: FormData) {
     successMessage: 'Updated the purchase category.',
     action: async () => {
       const purchaseId = String(formData.get('purchase_id') || '').trim();
-      const category = String(formData.get('category') || '').trim();
+      const budgetExpenseItemId = String(formData.get('budget_expense_item_id') || '').trim();
+      const fundingSourceId = String(formData.get('funding_source_id') || '').trim();
 
       if (!purchaseId) {
         throw new Error('Missing purchase id.');
       }
 
-      if (
-        category !== 'equipment' &&
-        category !== 'food' &&
-        category !== 'travel' &&
-        category !== 'registration'
-      ) {
-        throw new Error('Invalid category.');
-      }
-
       const admin = createAdminClient();
-      const { data: purchase } = await admin.from('purchase_logs').select('id, team_id').eq('id', purchaseId).single();
+      const { data: purchase } = await admin.from('purchase_logs').select('id, team_id, academic_year, expense_type').eq('id', purchaseId).single();
 
       if (!purchase) {
         throw new Error('Purchase not found.');
       }
 
+      if (!purchase.team_id || purchase.expense_type !== 'team') throw new Error('Only team purchases can be reassigned here.');
       const { user } = await requireLeadTeam(purchase.team_id);
-      const { error } = await admin.from('purchase_logs').update({ category }).eq('id', purchaseId);
+      if (purchase.academic_year !== await getCurrentAcademicYear()) throw new Error('Past-year purchases are closed.');
+      const charge = resolveCharge(await getChargeCatalog(purchase.academic_year), 'team', purchase.team_id, budgetExpenseItemId, fundingSourceId);
+      const { error } = await admin.from('purchase_logs').update({
+        category: charge.category,
+        budget_plan_id: charge.planId,
+        budget_expense_item_id: charge.expenseId,
+        budget_expense_label: charge.expenseLabel,
+        funding_source_id: charge.sourceId,
+        funding_source_label: charge.sourceLabel
+      }).eq('id', purchaseId);
 
       if (error) {
         throw new Error(error.message);
@@ -2006,10 +2041,12 @@ export async function updatePurchaseCategoryAction(formData: FormData) {
         action: 'purchase.category.updated',
         targetType: 'purchase_log',
         targetId: purchaseId,
-        summary: `Updated purchase category to ${category}.`,
+        summary: `Updated purchase budget account to ${charge.expenseLabel} / ${charge.sourceLabel}.`,
         details: {
           teamId: purchase.team_id,
-          category
+          category: charge.category,
+          budgetExpenseItemId: charge.expenseId,
+          fundingSourceId: charge.sourceId
         }
       });
 
@@ -5194,6 +5231,8 @@ export async function resolveStatementItemAction(formData: FormData) {
       const itemId = String(formData.get('item_id') || '').trim();
       const decision = String(formData.get('decision') || '').trim();
       const teamId = String(formData.get('team_id') || '').trim();
+      const budgetExpenseItemId = String(formData.get('budget_expense_item_id') || '').trim();
+      const fundingSourceId = String(formData.get('funding_source_id') || '').trim();
       if (!itemId) {
         throw new Error('Missing statement line item.');
       }
@@ -5233,6 +5272,13 @@ export async function resolveStatementItemAction(formData: FormData) {
 
         const purchaseId = crypto.randomUUID();
         const academicYear = await getCurrentAcademicYear();
+        const charge = resolveCharge(
+          await getChargeCatalog(academicYear),
+          decision,
+          decision === 'team' ? teamId : null,
+          budgetExpenseItemId,
+          fundingSourceId
+        );
         const { error: insertError } = await admin.from('purchase_logs').insert({
           id: purchaseId,
           team_id: decision === 'team' ? teamId : null,
@@ -5244,7 +5290,12 @@ export async function resolveStatementItemAction(formData: FormData) {
           person_name: item.person_name || null,
           purchased_at: item.statement_date ? `${item.statement_date}T12:00:00Z` : now,
           payment_method: 'unknown',
-          category: detectPurchaseCategory(item.description),
+          category: charge.category || detectPurchaseCategory(item.description),
+          budget_plan_id: charge.planId,
+          budget_expense_item_id: charge.expenseId,
+          budget_expense_label: charge.expenseLabel,
+          funding_source_id: charge.sourceId,
+          funding_source_label: charge.sourceLabel,
           receipt_not_needed: true
         });
         if (insertError) {

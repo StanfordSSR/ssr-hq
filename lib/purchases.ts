@@ -1,4 +1,4 @@
-export type PurchaseCategory = 'equipment' | 'food' | 'travel' | 'registration';
+export type PurchaseCategory = 'equipment' | 'food' | 'travel' | 'registration' | 'other';
 export type PurchasePaymentMethod = 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
 export type ReceiptNotificationSettings = {
   emailEnabled: boolean;

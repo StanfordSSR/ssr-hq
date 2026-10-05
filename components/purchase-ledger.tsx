@@ -10,7 +10,7 @@ export type PurchaseLedgerRow = {
   purchasedAt: string;
   personName: string;
   paymentMethod: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
-  category: 'equipment' | 'food' | 'travel' | 'registration';
+  category: 'equipment' | 'food' | 'travel' | 'registration' | 'other';
 };
 
 const paymentMethodLabel: Record<PurchaseLedgerRow['paymentMethod'], string> = {
@@ -24,7 +24,8 @@ const categoryLabel: Record<PurchaseLedgerRow['category'], string> = {
   equipment: 'Equipment',
   food: 'Food',
   travel: 'Travel',
-  registration: 'Registration'
+  registration: 'Registration',
+  other: 'Other'
 };
 
 type SortKey = 'purchasedAt' | 'teamName' | 'description' | 'amountCents' | 'personName' | 'paymentMethod' | 'category';

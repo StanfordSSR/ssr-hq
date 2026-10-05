@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getViewerContext } from '@/lib/auth';
+import { getViewerContext, profileHasPresidentRole } from '@/lib/auth';
 import { recordAuditEvent } from '@/lib/audit';
 import { getReimbursementById, finalizeReimbursementDecision, canFileInGranted } from '@/lib/reimbursements';
 import { getLeadTeamIds } from '@/lib/lead-state';
@@ -68,7 +68,7 @@ export async function decideReimbursementInPortalAction(
   _prev: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
-  const { user } = await getViewerContext();
+  const { user, profile } = await getViewerContext();
   const id = String(formData.get('reimbursement_id') || '').trim();
   const decision = String(formData.get('decision') || '') as 'approved' | 'rejected';
   if (!id || (decision !== 'approved' && decision !== 'rejected')) {
@@ -84,9 +84,15 @@ export async function decideReimbursementInPortalAction(
   }
 
   // Only an active lead of this reimbursement's team can decide it.
-  const myLeadTeams = await getLeadTeamIds(user.id);
-  if (!myLeadTeams.includes(reimbursement.team_id)) {
-    return { ok: false, message: 'Only a team lead of this team can approve its reimbursements.' };
+  if (reimbursement.expense_type === 'leadership') {
+    if (!profileHasPresidentRole(profile)) {
+      return { ok: false, message: 'Only a club president can approve leadership reimbursements.' };
+    }
+  } else {
+    const myLeadTeams = await getLeadTeamIds(user.id);
+    if (!reimbursement.team_id || !myLeadTeams.includes(reimbursement.team_id)) {
+      return { ok: false, message: 'Only a team lead of this team can approve its reimbursements.' };
+    }
   }
 
   if (reimbursement.requires_signature && decision === 'approved') {

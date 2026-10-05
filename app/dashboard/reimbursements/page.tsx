@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getViewerContext } from '@/lib/auth';
+import { getViewerContext, profileHasPresidentRole } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
 import { formatDateLabel } from '@/lib/academic-calendar';
+import { BUDGET_CATEGORY_LABELS, type BudgetCategory } from '@/lib/team-budget-application-rules';
 import { CopyRNumber, FinanceFileToggle, PortalDecideButtons } from '@/components/reimbursement-actions';
 import {
   canFileInGranted,
@@ -16,7 +17,11 @@ import {
 
 type ReimbursementRow = {
   id: string;
-  team_id: string;
+  team_id: string | null;
+  expense_type: 'team' | 'leadership';
+  budget_category: BudgetCategory | null;
+  budget_expense_label: string | null;
+  funding_source_label: string | null;
   submitter_name: string;
   item_name: string;
   amount_cents: number;
@@ -44,6 +49,13 @@ function purchaseTypeLabel(row: Pick<ReimbursementRow, 'purchase_type' | 'travel
   return base;
 }
 
+function accountLabel(row: ReimbursementRow) {
+  const category = row.expense_type === 'leadership'
+    ? row.budget_expense_label || 'Leadership'
+    : row.budget_category ? BUDGET_CATEGORY_LABELS[row.budget_category] : row.budget_expense_label;
+  return [category, row.funding_source_label].filter(Boolean).join(' · ');
+}
+
 // Where FOs actually approve reimbursements. Overridable per deployment.
 const GRANTED_URL = process.env.NEXT_PUBLIC_GRANTED_URL || 'https://granted.stanford.edu';
 
@@ -65,7 +77,7 @@ function ReceiptCell({ links }: { links: Array<{ url: string; label: string }> }
 }
 
 export default async function ReimbursementsPage() {
-  const { user, currentRole } = await getViewerContext();
+  const { user, profile, currentRole } = await getViewerContext();
   const isFinance =
     currentRole === 'admin' ||
     currentRole === 'president' ||
@@ -86,7 +98,7 @@ export default async function ReimbursementsPage() {
   let query = admin
     .from('member_reimbursements')
     .select(
-      'id, team_id, submitter_name, item_name, amount_cents, reimbursement_number, purchase_type, travel_subtype, receipt_path, status, requires_signature, approval_kind, decided_at, decided_by_profile_id, finance_processed_at, decision_token, off_campus_ack, created_at'
+      'id, team_id, expense_type, budget_category, budget_expense_label, funding_source_label, submitter_name, item_name, amount_cents, reimbursement_number, purchase_type, travel_subtype, receipt_path, status, requires_signature, approval_kind, decided_at, decided_by_profile_id, finance_processed_at, decision_token, off_campus_ack, created_at'
     )
     .order('created_at', { ascending: false })
     .limit(500);
@@ -105,7 +117,7 @@ export default async function ReimbursementsPage() {
   const { data: rowsData } = await query;
   const rows = (rowsData || []) as ReimbursementRow[];
 
-  const teamIds = Array.from(new Set(rows.map((r) => r.team_id)));
+  const teamIds = Array.from(new Set(rows.map((r) => r.team_id).filter((id): id is string => Boolean(id))));
   const deciderIds = Array.from(
     new Set(rows.map((r) => r.decided_by_profile_id).filter((v): v is string => Boolean(v)))
   );
@@ -144,6 +156,9 @@ export default async function ReimbursementsPage() {
   };
 
   const teamName = new Map((teamsData || []).map((t) => [t.id, t.name]));
+  const scopeName = (row: ReimbursementRow) => row.expense_type === 'leadership'
+    ? 'SSR Club / Leadership'
+    : teamName.get(row.team_id || '') || '—';
   const deciderName = new Map((decidersData || []).map((p) => [p.id, p.full_name]));
 
   const pending = rows.filter((r) => r.status === 'pending');
@@ -237,7 +252,7 @@ export default async function ReimbursementsPage() {
                         <td style={{ whiteSpace: 'nowrap' }}>
                           {r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}
                         </td>
-                        <td>{teamName.get(r.team_id) || '—'}</td>
+                        <td>{scopeName(r)}</td>
                         <td>{r.submitter_name}</td>
                         <td style={{ fontWeight: 700 }}>
                           {r.item_name}
@@ -246,6 +261,7 @@ export default async function ReimbursementsPage() {
                               {purchaseTypeLabel(r)}
                             </span>
                           ) : null}
+                          {accountLabel(r) ? <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>{accountLabel(r)}</span> : null}
                         </td>
                         <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{money(r.amount_cents)}</td>
                         <td>
@@ -309,7 +325,7 @@ export default async function ReimbursementsPage() {
                   {pending.map((r) => (
                     <tr key={r.id}>
                       <td style={{ whiteSpace: 'nowrap' }}>{formatDateLabel(new Date(r.created_at))}</td>
-                      <td>{teamName.get(r.team_id) || '—'}</td>
+                      <td>{scopeName(r)}</td>
                       <td>
                         {r.submitter_name}
                         {r.off_campus_ack ? (
@@ -329,6 +345,7 @@ export default async function ReimbursementsPage() {
                             {purchaseTypeLabel(r)}
                           </span>
                         ) : null}
+                        {accountLabel(r) ? <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>{accountLabel(r)}</span> : null}
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {money(r.amount_cents)}
@@ -339,14 +356,18 @@ export default async function ReimbursementsPage() {
                         <ReceiptCell links={attachmentLinksFor(r)} />
                       </td>
                       <td>
-                        {leadTeamSet.has(r.team_id) ? (
+                        {(r.expense_type === 'leadership'
+                          ? profileHasPresidentRole(profile)
+                          : Boolean(r.team_id && leadTeamSet.has(r.team_id))) ? (
                           <PortalDecideButtons
                             id={r.id}
                             requiresSignature={r.requires_signature}
                             token={r.decision_token}
                           />
                         ) : (
-                          <span className="hq-inline-note">Awaiting team lead</span>
+                          <span className="hq-inline-note">
+                            Awaiting {r.expense_type === 'leadership' ? 'president' : 'team lead'}
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -393,9 +414,12 @@ export default async function ReimbursementsPage() {
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {r.decided_at ? formatDateLabel(new Date(r.decided_at)) : '—'}
                       </td>
-                      <td>{teamName.get(r.team_id) || '—'}</td>
+                      <td>{scopeName(r)}</td>
                       <td>{r.submitter_name}</td>
-                      <td style={{ fontWeight: 700 }}>{r.item_name}</td>
+                      <td style={{ fontWeight: 700 }}>
+                        {r.item_name}
+                        {accountLabel(r) ? <span className="hq-inline-note" style={{ display: 'block', fontWeight: 400 }}>{accountLabel(r)}</span> : null}
+                      </td>
                       <td style={{ whiteSpace: 'nowrap' }}>{money(r.amount_cents)}</td>
                       <td>{r.reimbursement_number}</td>
                       <td>

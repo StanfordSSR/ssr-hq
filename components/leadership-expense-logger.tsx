@@ -3,6 +3,8 @@
 import { useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { logPurchaseAction } from '@/app/dashboard/actions';
+import { BudgetChargeFields } from '@/components/budget-charge-fields';
+import type { ChargeCatalog } from '@/lib/budget-charge-routing';
 
 // Disables itself while the server action runs so a double-click can't log twice.
 function ExpenseSubmitButton() {
@@ -20,10 +22,12 @@ function ExpenseSubmitButton() {
 // purchases reveal a drag-and-drop receipt uploader.
 export function LeadershipExpenseLogger({
   academicYear,
-  personName
+  personName,
+  catalog
 }: {
   academicYear: string;
   personName: string;
+  catalog: ChargeCatalog | null;
 }) {
   const [open, setOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'credit_card' | 'reimbursement'>('credit_card');
@@ -194,9 +198,11 @@ export function LeadershipExpenseLogger({
             </div>
           </div>
 
+          <BudgetChargeFields accounts={catalog?.leadership || []} idPrefix="leadership-expense" leadership />
+
           <div className="field">
             <label className="label" htmlFor="leadership-category">
-              Category
+              Purchase type
             </label>
             <select
               className="select"
@@ -209,6 +215,7 @@ export function LeadershipExpenseLogger({
               <option value="food">Food</option>
               <option value="travel">Travel</option>
               <option value="registration">Registration</option>
+              <option value="other">Other</option>
             </select>
           </div>
 

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase-server';
 import {
   finalizeReimbursementDecision,
-  getActiveTeamLeads,
+  getActivePresidentReviewers,
+  getReimbursementReviewers,
   getReimbursementByToken,
   verifyReimbursementSignature
 } from '@/lib/reimbursements';
@@ -33,12 +35,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let presidentId: string | null = null;
+  if (reimbursement.expense_type === 'leadership') {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    const presidents = await getActivePresidentReviewers();
+    if (!user || !presidents.some((president) => president.userId === user.id)) {
+      return NextResponse.json({ error: 'Sign in as a club president to review this reimbursement.' }, { status: 403 });
+    }
+    presidentId = user.id;
+  }
+
   try {
     if (decision === 'rejected') {
       await finalizeReimbursementDecision({
         reimbursement,
         decision: 'rejected',
-        deciderProfileId: null,
+        deciderProfileId: presidentId,
         approvalKind: reimbursement.requires_signature ? 'signature' : 'button',
         source: 'token_link'
       });
@@ -60,11 +73,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Below threshold: a tap is enough. Attribute to the first active lead.
-    const leads = await getActiveTeamLeads(reimbursement.team_id);
+    const leads = await getReimbursementReviewers(reimbursement);
     await finalizeReimbursementDecision({
       reimbursement,
       decision: 'approved',
-      deciderProfileId: leads[0]?.userId ?? null,
+      deciderProfileId: presidentId ?? leads[0]?.userId ?? null,
       approvalKind: 'button',
       source: 'token_link'
     });

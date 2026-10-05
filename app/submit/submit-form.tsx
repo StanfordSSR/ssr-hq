@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { BUDGET_CATEGORY_LABELS } from '@/lib/team-budget-application-rules';
+import type { ChargeAccount } from '@/lib/budget-charge-routing';
 
-type TeamOption = { id: string; name: string };
+type TeamOption = { id: string; name: string; accounts: ChargeAccount[] };
 
 type PurchaseType = 'equipment' | 'event_food' | 'travel' | 'other';
 type TravelSubtype = 'vehicle_rental' | 'gas_reimbursement' | 'food';
@@ -42,6 +44,8 @@ export function SubmitReimbursementForm({
   offCampus?: boolean;
 }) {
   const [teamId, setTeamId] = useState(teams[0]?.id || '');
+  const [accountId, setAccountId] = useState('');
+  const [sourceId, setSourceId] = useState('');
   const [submitterName, setSubmitterName] = useState('');
   const [purchaseType, setPurchaseType] = useState<PurchaseType | ''>('');
   const [travelSubtype, setTravelSubtype] = useState<TravelSubtype | ''>('');
@@ -85,6 +89,9 @@ export function SubmitReimbursementForm({
 
   const isGasReimbursement = purchaseType === 'travel' && travelSubtype === 'gas_reimbursement';
   const gasNeedsMoreFiles = isGasReimbursement && receipts.length < GAS_MIN_ATTACHMENTS;
+  const accounts = teams.find((team) => team.id === teamId)?.accounts || [];
+  const selectedAccount = accounts.find((account) => account.expenseId === accountId);
+  const selectedSourceId = selectedAccount?.sources.length === 1 ? selectedAccount.sources[0].id : sourceId;
 
   // Auto-fill the member's name across visits.
   useEffect(() => {
@@ -299,6 +306,14 @@ export function SubmitReimbursementForm({
       setError('Choose a purchase type.');
       return;
     }
+    if (!selectedAccount) {
+      setError('Choose a budget category.');
+      return;
+    }
+    if (!selectedAccount.sources.some((source) => source.id === selectedSourceId)) {
+      setError('Choose a funding source for this category.');
+      return;
+    }
     if (purchaseType === 'travel' && !travelSubtype) {
       setError('Choose a travel type.');
       return;
@@ -318,7 +333,10 @@ export function SubmitReimbursementForm({
 
     try {
       const body = new FormData();
-      body.append('team_id', teamId);
+      body.append('expense_type', teamId === 'leadership' ? 'leadership' : 'team');
+      if (teamId !== 'leadership') body.append('team_id', teamId);
+      body.append('budget_expense_item_id', accountId);
+      body.append('funding_source_id', selectedSourceId);
       body.append('submitter_name', submitterName);
       body.append('purchase_type', purchaseType);
       if (purchaseType === 'travel') body.append('travel_subtype', travelSubtype);
@@ -343,7 +361,7 @@ export function SubmitReimbursementForm({
       }
 
       window.localStorage.setItem(NAME_STORAGE_KEY, submitterName.trim());
-      setDone(data?.message || 'Submitted! Your team lead has been notified.');
+      setDone(data?.message || 'Submitted for review.');
     } catch {
       setError('Network error. Please try again.');
       setSubmitting(false);
@@ -361,6 +379,8 @@ export function SubmitReimbursementForm({
           onClick={() => {
             setDone(null);
             setPurchaseType('');
+            setAccountId('');
+            setSourceId('');
             setTravelSubtype('');
             setItemName('');
             setAmount('');
@@ -386,7 +406,11 @@ export function SubmitReimbursementForm({
           className="select"
           id="team_id"
           value={teamId}
-          onChange={(event) => setTeamId(event.target.value)}
+          onChange={(event) => {
+            setTeamId(event.target.value);
+            setAccountId('');
+            setSourceId('');
+          }}
           required
         >
           {teams.length === 0 ? <option value="">No teams available</option> : null}
@@ -399,6 +423,48 @@ export function SubmitReimbursementForm({
       </div>
 
       <div className="field">
+        <label className="label" htmlFor="budget_account">
+          {teamId === 'leadership' ? 'Club budget line' : 'Budget category'}
+        </label>
+        <select
+          className="select"
+          id="budget_account"
+          value={accountId}
+          onChange={(event) => {
+            setAccountId(event.target.value);
+            setSourceId('');
+          }}
+          required
+        >
+          <option value="" disabled>Select a category…</option>
+          {accounts.map((account) => (
+            <option key={account.expenseId} value={account.expenseId} disabled={account.sources.length === 0}>
+              {account.category ? BUDGET_CATEGORY_LABELS[account.category] : account.label}
+            </option>
+          ))}
+        </select>
+        {accounts.length === 0 ? <span className="helper">No budget categories are configured for this selection.</span> : null}
+      </div>
+
+      {selectedAccount && selectedAccount.sources.length > 1 ? (
+        <div className="field">
+          <label className="label" htmlFor="funding_source">Funding source</label>
+          <select
+            className="select"
+            id="funding_source"
+            value={sourceId}
+            onChange={(event) => setSourceId(event.target.value)}
+            required
+          >
+            <option value="" disabled>Select a source…</option>
+            {selectedAccount.sources.map((source) => (
+              <option key={source.id} value={source.id}>{source.label}</option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      <div className="field">
         <label className="label" htmlFor="submitter_name">
           Your name
         </label>
@@ -407,11 +473,11 @@ export function SubmitReimbursementForm({
           id="submitter_name"
           value={submitterName}
           onChange={(event) => setSubmitterName(event.target.value)}
-          placeholder="As it appears on your team roster"
+          placeholder={teamId === 'leadership' ? 'Your full name' : 'As it appears on your team roster'}
           autoComplete="name"
           required
         />
-        <span className="helper">Must match your name on the team roster.</span>
+        {teamId !== 'leadership' ? <span className="helper">Must match your name on the team roster.</span> : null}
       </div>
 
       <div className="field">
@@ -694,8 +760,9 @@ export function SubmitReimbursementForm({
         </p>
       ) : (
         <p className="helper">
-          Your lead gets a Slack notification to approve or reject. Once approved, it&apos;s logged to
-          your team&apos;s budget.
+          {teamId === 'leadership'
+            ? 'A president gets a Slack notification to review this club expense.'
+            : 'Your team lead gets a Slack notification to review this purchase.'}
         </p>
       )}
     </form>

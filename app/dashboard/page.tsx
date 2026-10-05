@@ -33,6 +33,7 @@ import {
 import { SummerSpendPanel } from '@/components/summer-spend-panel';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
 import { TeamExpenseLogger } from '@/components/team-expense-logger';
+import { getChargeCatalog } from '@/lib/budget-charge-routing';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
 import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
@@ -215,6 +216,7 @@ export default async function DashboardPage() {
       getCurrentAcademicYear(),
       isAdmin ? getAcademicCalendarSettings() : Promise.resolve(null)
     ]);
+    const chargeCatalog = await getChargeCatalog(academicYear);
     const manualRolloverTarget = calendarSettings ? getManualRolloverTarget(calendarSettings) : null;
     const nextAcademicYear = getNextAcademicYear(academicYear);
     const [
@@ -312,7 +314,7 @@ export default async function DashboardPage() {
       person_name: string | null;
       amount_cents: number;
       purchased_at: string;
-      category: 'equipment' | 'food' | 'travel' | 'registration' | null;
+      category: 'equipment' | 'food' | 'travel' | 'registration' | 'other' | null;
       payment_method: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown' | null;
       receipt_path: string | null;
       receipt_not_needed: boolean;
@@ -758,10 +760,11 @@ export default async function DashboardPage() {
             </summary>
             <div className="th-body">
               {isAdmin || isPresident || isVicePresident ? (
-                <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} />
+                <LeadershipExpenseLogger academicYear={academicYear} personName={me.full_name || ''} catalog={chargeCatalog} />
               ) : null}
               {isPresident || isFinancialOfficer ? (
                 <TeamExpenseLogger
+                  catalog={chargeCatalog}
                   teams={teams.map((teamRow) => ({ id: teamRow.id, name: teamRow.name }))}
                   academicYear={academicYear}
                   personName={me.full_name || ''}
@@ -990,7 +993,7 @@ export default async function DashboardPage() {
     person_name: string | null;
     amount_cents: number;
     purchased_at: string;
-    category: 'equipment' | 'food' | 'travel' | 'registration' | null;
+    category: 'equipment' | 'food' | 'travel' | 'registration' | 'other' | null;
   }>;
   const spent = purchases.reduce(
     (sum, purchase) => sum + purchase.amount_cents / 100,
@@ -1021,7 +1024,8 @@ export default async function DashboardPage() {
     equipment: 'Equipment',
     food: 'Food',
     travel: 'Travel',
-    registration: 'Registration'
+    registration: 'Registration',
+    other: 'Other'
   };
   const budgetCents = teamBudget?.annual_budget_cents || 0;
   const spentCents = sumAmounts(purchases);

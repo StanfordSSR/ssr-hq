@@ -3,6 +3,8 @@ import { headers } from 'next/headers';
 import { Header } from '@/components/header';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { extractSubmissionFootprint, getReimbursementSettings } from '@/lib/reimbursements';
+import { getCurrentAcademicYear } from '@/lib/academic-calendar';
+import { getChargeCatalog } from '@/lib/budget-charge-routing';
 import { SubmitReimbursementForm } from '@/app/submit/submit-form';
 
 export const dynamic = 'force-dynamic';
@@ -15,14 +17,19 @@ export const metadata = {
 // Public, login-free page. Anyone with the link can submit a reimbursement.
 export default async function SubmitPage() {
   const admin = createAdminClient();
-  const [{ data: teams }, settings, requestHeaders] = await Promise.all([
+  const academicYear = await getCurrentAcademicYear();
+  const [{ data: teams }, settings, requestHeaders, catalog] = await Promise.all([
     admin.from('teams').select('id, name').eq('is_active', true).order('name', { ascending: true }),
     getReimbursementSettings(),
-    headers()
+    headers(),
+    getChargeCatalog(academicYear)
   ]);
 
   const offCampus = extractSubmissionFootprint(requestHeaders).geo.outsideBayArea;
-  const teamOptions = (teams || []).map((t) => ({ id: t.id, name: t.name }));
+  const teamOptions = (teams || []).map((t) => ({ id: t.id, name: t.name, accounts: catalog?.teams[t.id] || [] }));
+  if (catalog?.leadership.length) {
+    teamOptions.push({ id: 'leadership', name: 'SSR Club / Leadership', accounts: catalog.leadership });
+  }
   const threshold = (settings.signatureThresholdCents / 100).toLocaleString('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -38,9 +45,8 @@ export default async function SubmitPage() {
             <p className="auth-kicker">Reimbursements</p>
             <h1 className="auth-title">Log a purchase</h1>
             <p className="auth-subtitle">
-              Paid for something with your own money? Submit it here and your team lead will be
-              notified to approve the reimbursement. No account needed — just make sure your name is
-              on your team&apos;s roster.
+              Paid for something with your own money? Submit it here for review by your team lead,
+              or choose SSR Club / Leadership for a club expense reviewed by a president. No account needed.
             </p>
             <ul className="helper" style={{ lineHeight: 1.7, paddingLeft: '1.1rem' }}>
               <li>Paste a photo of the receipt to auto-fill the details, or type them in.</li>
@@ -48,7 +54,7 @@ export default async function SubmitPage() {
                 You&apos;ll need your Stanford Granted reimbursement number (e.g. <strong>R-119704</strong>)
                 — file in the Granted portal first to get it.
               </li>
-              <li>Purchases over {threshold} require your lead to sign to approve.</li>
+              <li>Purchases over {threshold} require the reviewer to sign to approve.</li>
             </ul>
             <Link className="text-link" href="/">
               Back to home

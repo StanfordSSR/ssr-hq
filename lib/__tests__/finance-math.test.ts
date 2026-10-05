@@ -100,9 +100,10 @@ describe('categoryTotals', () => {
       p(2000, { category: 'food' }),
       p(3000, { category: 'travel' }),
       p(4000, { category: 'registration' }),
+      p(600, { category: 'other' }),
       p(500, { category: 'equipment' })
     ]);
-    expect(totals).toEqual({ equipment: 1500, food: 2000, travel: 3000, registration: 4000 });
+    expect(totals).toEqual({ equipment: 1500, food: 2000, travel: 3000, registration: 4000, other: 600 });
   });
 
   it('treats missing or unknown categories as equipment', () => {
@@ -111,7 +112,7 @@ describe('categoryTotals', () => {
   });
 
   it('returns all-zero totals for no rows', () => {
-    expect(categoryTotals([])).toEqual({ equipment: 0, food: 0, travel: 0, registration: 0 });
+    expect(categoryTotals([])).toEqual({ equipment: 0, food: 0, travel: 0, registration: 0, other: 0 });
   });
 
   it('conserves the total across buckets', () => {
@@ -137,7 +138,7 @@ describe('chartDenominator', () => {
 });
 
 describe('donutSlices', () => {
-  const totals = { equipment: 5000, food: 2500, travel: 2500, registration: 0 };
+  const totals = { equipment: 5000, food: 2500, travel: 2500, registration: 0, other: 0 };
 
   it('produces contiguous slices that end at 100%', () => {
     const slices = donutSlices(totals, 20000);
