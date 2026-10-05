@@ -29,19 +29,22 @@ export function getFoodQuarterItems(foodCapCents: number): BudgetApplicationItem
 }
 
 export function withFoodQuarterItems(items: BudgetApplicationItem[], foodCapCents: number) {
-  const prefill = getFoodQuarterItems(foodCapCents);
+  if (hasFixedFoodQuarterItems(items, foodCapCents)) return items;
+  return [...items.filter((item) => item.category !== 'food'), ...getFoodQuarterItems(foodCapCents)];
+}
+
+export function hasFixedFoodQuarterItems(items: BudgetApplicationItem[], foodCapCents: number) {
+  const expected = getFoodQuarterItems(foodCapCents);
   const food = items.filter((item) => item.category === 'food');
-  const legacyQuarterRows = food.length === prefill.length &&
-    prefill.every((item) => food.some((existing) => existing.description === item.description)) &&
-    food.every((item) => !item.id.startsWith('prefill-food-'));
-  const originalCap = Number(food[0]?.id.match(/^prefill-food-fall-(\d+)$/)?.[1]);
-  const originalPrefill = Number.isSafeInteger(originalCap) ? getFoodQuarterItems(originalCap) : [];
-  const untouchedPrefill = food.length === originalPrefill.length && originalPrefill.every((expected, index) => {
-    const item = food[index];
-    return item.id === expected.id && item.description === expected.description && item.amountCents === expected.amountCents;
-  });
-  if (prefill.length === 0) return untouchedPrefill && food.length > 0 ? items.filter((item) => item.category !== 'food') : items;
-  if (untouchedPrefill && originalCap === foodCapCents) return items;
-  if (food.length > 0 && !legacyQuarterRows && !untouchedPrefill) return items;
-  return [...items.filter((item) => item.category !== 'food'), ...prefill];
+  return food.length === expected.length && food.every((item, index) =>
+    item.id === expected[index].id &&
+    item.description === expected[index].description &&
+    item.amountCents === expected[index].amountCents
+  );
+}
+
+export function assertFixedFoodQuarterItems(items: BudgetApplicationItem[], foodCapCents: number) {
+  if (!hasFixedFoodQuarterItems(items, foodCapCents)) {
+    throw new Error('Food quarters are fixed by the club budget plan. Refresh to see the approved amounts.');
+  }
 }

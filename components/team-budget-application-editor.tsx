@@ -30,7 +30,7 @@ function initialRows(items: BudgetApplicationItem[], canEdit: boolean, caps: Bud
   }));
   if (canEdit) {
     for (const category of BUDGET_CATEGORIES) {
-      if (caps[category] > 0 && !rows.some((row) => row.category === category)) {
+      if (category !== 'food' && caps[category] > 0 && !rows.some((row) => row.category === category)) {
         rows.push({ id: `empty-${category}`, category, description: '', amount: '' });
       }
     }
@@ -190,7 +190,7 @@ export function TeamBudgetApplicationEditor({
 
       {BUDGET_CATEGORIES.map((category) => {
         const categoryRows = rows.filter((row) => row.category === category);
-        const categoryEditable = editable && !(category === 'travel' && fixedTravelItems.length > 0);
+        const categoryEditable = editable && category !== 'food' && !(category === 'travel' && fixedTravelItems.length > 0);
         const request = getCategoryRequest(parsed.items, category, caps);
         const blankRowsNeeded = Math.max(0, request.requiredItemCount - categoryRows.length);
         return (
@@ -198,7 +198,7 @@ export function TeamBudgetApplicationEditor({
             <div className="budget-app-category-head">
               <div>
                 <h2 id={`budget-app-${category}`}>{BUDGET_CATEGORY_LABELS[category]}</h2>
-                <p>Cap {formatBudgetMoney(caps[category])}{category === 'travel' && fixedTravelItems.length > 0 ? ' · Fixed by club plan' : ''}</p>
+                <p>Cap {formatBudgetMoney(caps[category])}{category === 'food' || (category === 'travel' && fixedTravelItems.length > 0) ? ' · Fixed by club plan' : ''}</p>
               </div>
               <strong className={request.overLimit ? 'th-bad' : request.overCap ? 'th-warn' : undefined}>
                 {formatBudgetMoney(request.totalCents)} requested

@@ -14,6 +14,7 @@ import {
 } from '@/lib/team-budget-application-rules';
 import { getTeamBudgetCaps } from '@/lib/team-budget-application';
 import { assertFixedTravelItems, getFixedTravelItems } from '@/lib/team-budget-fixed-travel';
+import { assertFixedFoodQuarterItems } from '@/lib/team-budget-food';
 
 type SaveApplicationInput = {
   teamId: string;
@@ -69,6 +70,7 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
     const { plan, caps } = await getTeamBudgetCaps(input.teamId, academicYear);
     if (!plan) throw new Error(`The ${academicYear} budget plan is not available yet.`);
     assertFixedTravelItems(items, fixedTravel, caps.travel);
+    assertFixedFoodQuarterItems(items, caps.food);
     if (input.intent === 'submit') {
       const submissionError = getSubmissionError(items, caps);
       if (submissionError) throw new Error(submissionError);
