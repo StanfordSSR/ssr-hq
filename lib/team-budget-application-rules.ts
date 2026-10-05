@@ -81,7 +81,7 @@ export function normalizeApplicationItems(value: unknown): BudgetApplicationItem
 export function getCategoryRequest(items: BudgetApplicationItem[], category: BudgetCategory, capCents: number) {
   const categoryItems = items.filter((item) => item.category === category);
   const totalCents = categoryItems.reduce((sum, item) => sum + item.amountCents, 0);
-  const maxCents = Math.floor((capCents * 115) / 100);
+  const maxCents = Math.floor((capCents * 110) / 100);
   const requiredItemCount = Math.ceil(totalCents / 100_000);
   return {
     totalCents,

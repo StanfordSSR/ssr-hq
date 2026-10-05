@@ -64,22 +64,22 @@ describe('team budget application limits', () => {
     expect(getSubmissionError([equipment(1_000_00)], caps)).toBeNull();
   });
 
-  it('warns but allows a request exactly 15% over the cap', () => {
-    const items = [equipment(575_00), equipment(575_00, 2)];
+  it('warns but allows a request exactly 10% over the cap', () => {
+    const items = [equipment(550_00), equipment(550_00, 2)];
     expect(getCategoryRequest(items, 'equipment', caps.equipment)).toMatchObject({
       overCap: true,
       overLimit: false,
-      maxCents: 1_150_00
+      maxCents: 1_100_00
     });
     expect(getSubmissionError(items, caps)).toBeNull();
   });
 
-  it('blocks a request one cent past the 15% ceiling', () => {
-    const items = [equipment(575_01), equipment(575_00, 2)];
+  it('blocks a request one cent past the 10% ceiling', () => {
+    const items = [equipment(550_01), equipment(550_00, 2)];
     expect(getCategoryRequest(items, 'equipment', caps.equipment).overLimit).toBe(true);
     expect(getSubmissionError(items, caps)).toContain('too far over its category cap');
-    expect(getSubmissionError(items, caps)).not.toContain('15%');
-    expect(getSubmissionError(items, caps)).not.toContain('$1,150.00');
+    expect(getSubmissionError(items, caps)).not.toContain('10%');
+    expect(getSubmissionError(items, caps)).not.toContain('$1,100.00');
   });
 
   it('blocks any positive request against a zero cap', () => {
