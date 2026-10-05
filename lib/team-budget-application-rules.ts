@@ -57,7 +57,7 @@ export function isBudgetCategory(value: unknown): value is BudgetCategory {
   return typeof value === 'string' && BUDGET_CATEGORIES.includes(value as BudgetCategory);
 }
 
-export function normalizeApplicationItems(value: unknown): BudgetApplicationItem[] {
+export function normalizeApplicationItems(value: unknown, allowedZeroIds: ReadonlySet<string> = new Set()): BudgetApplicationItem[] {
   if (!Array.isArray(value) || value.length > 200) {
     throw new Error('An application can have at most 200 line items.');
   }
@@ -72,8 +72,9 @@ export function normalizeApplicationItems(value: unknown): BudgetApplicationItem
     if (!/^[a-zA-Z0-9-]{1,80}$/.test(id) || ids.has(id)) throw new Error('Invalid line item ID.');
     if (!isBudgetCategory(row.category)) throw new Error('Choose a valid category for every line item.');
     if (!description || description.length > 160) throw new Error('Each line item needs a description of at most 160 characters.');
-    if (!Number.isSafeInteger(amountCents) || (amountCents as number) < 1 || (amountCents as number) > 100_000_000) {
-      throw new Error('Each line item needs an amount between $0.01 and $1,000,000.');
+    if (!Number.isSafeInteger(amountCents) || (amountCents as number) > 100_000_000 ||
+        ((amountCents as number) < 1 && !(amountCents === 0 && row.category === 'travel' && allowedZeroIds.has(id)))) {
+      throw new Error('Each line item needs an amount between $0.01 and $1,000,000, except approved $0 travel lines.');
     }
     ids.add(id);
     return { id, category: row.category, description, amountCents: amountCents as number };
@@ -86,11 +87,13 @@ export function getCategoryRequest(items: BudgetApplicationItem[], category: Bud
   const capCents = caps[category];
   const teamCapCents = BUDGET_CATEGORIES.reduce((sum, current) => sum + caps[current], 0);
   const maxCents = teamCapCents > NO_OVERAGE_ABOVE_CENTS ? capCents : Math.floor((capCents * 110) / 100);
-  const requiredItemCount = Math.ceil(totalCents / 100_000);
+  const lineItemTargetCents = teamCapCents > NO_OVERAGE_ABOVE_CENTS ? 150_000 : 100_000;
+  const requiredItemCount = category === 'equipment' ? Math.ceil(totalCents / lineItemTargetCents) : 0;
   return {
     totalCents,
     itemCount: categoryItems.length,
     requiredItemCount,
+    lineItemTargetCents,
     overCap: totalCents > capCents,
     overLimit: totalCents > maxCents,
     maxCents,
@@ -106,7 +109,7 @@ export function getSubmissionError(items: BudgetApplicationItem[], caps: BudgetC
       return `${BUDGET_CATEGORY_LABELS[category]} exceeds its category cap. Reduce the request before submitting.`;
     }
     if (request.missingItems > 0) {
-      return `${BUDGET_CATEGORY_LABELS[category]} needs ${request.missingItems} more line item${request.missingItems === 1 ? '' : 's'} (about one per $1,000 requested).`;
+      return `${BUDGET_CATEGORY_LABELS[category]} needs ${request.missingItems} more line item${request.missingItems === 1 ? '' : 's'} (about one per ${formatBudgetMoney(request.lineItemTargetCents)} requested).`;
     }
   }
   return null;

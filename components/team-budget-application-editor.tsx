@@ -38,7 +38,7 @@ function initialRows(items: BudgetApplicationItem[], canEdit: boolean, caps: Bud
   return rows;
 }
 
-function parseRows(rows: EditorRow[]): { items: BudgetApplicationItem[]; error: string | null } {
+function parseRows(rows: EditorRow[], allowedZeroIds: ReadonlySet<string>): { items: BudgetApplicationItem[]; error: string | null } {
   const items: BudgetApplicationItem[] = [];
   for (const row of rows) {
     const description = row.description.trim();
@@ -50,8 +50,8 @@ function parseRows(rows: EditorRow[]): { items: BudgetApplicationItem[]; error: 
       return { items, error: `${BUDGET_CATEGORY_LABELS[row.category]} has an invalid amount.` };
     }
     const amountCents = Math.round(Number(amount) * 100);
-    if (amountCents < 1 || amountCents > 100_000_000) {
-      return { items, error: 'Each line amount must be between $0.01 and $1,000,000.' };
+    if ((amountCents < 1 && !(amountCents === 0 && row.category === 'travel' && allowedZeroIds.has(row.id))) || amountCents > 100_000_000) {
+      return { items, error: 'Each line amount must be between $0.01 and $1,000,000, except approved $0 travel lines.' };
     }
     items.push({ id: row.id, category: row.category, description, amountCents });
   }
@@ -70,6 +70,8 @@ export function TeamBudgetApplicationEditor({
   academicYear,
   caps,
   initialItems,
+  fixedTravelItems,
+  initialPrefillPending,
   initialVersion,
   initialStatus,
   initialUpdatedAt,
@@ -79,6 +81,8 @@ export function TeamBudgetApplicationEditor({
   academicYear: string;
   caps: BudgetCaps;
   initialItems: BudgetApplicationItem[];
+  fixedTravelItems: BudgetApplicationItem[];
+  initialPrefillPending: boolean;
   initialVersion: number;
   initialStatus: 'draft' | 'submitted';
   initialUpdatedAt: string | null;
@@ -89,12 +93,16 @@ export function TeamBudgetApplicationEditor({
   const [version, setVersion] = useState(initialVersion);
   const [status, setStatus] = useState(initialStatus);
   const [savedAt, setSavedAt] = useState(initialUpdatedAt);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(initialPrefillPending);
   const [hasConflict, setHasConflict] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'success'; message: string } | null>(null);
   const [isPending, startTransition] = useTransition();
   const editable = canEdit && status === 'draft';
-  const parsed = useMemo(() => parseRows(rows), [rows]);
+  const allowedZeroIds = useMemo(
+    () => new Set(fixedTravelItems.filter((item) => item.amountCents === 0).map((item) => item.id)),
+    [fixedTravelItems]
+  );
+  const parsed = useMemo(() => parseRows(rows, allowedZeroIds), [rows, allowedZeroIds]);
   const submissionError = parsed.error || getSubmissionError(parsed.items, caps);
   const totalCents = parsed.items.reduce((sum, item) => sum + item.amountCents, 0);
 
@@ -182,6 +190,7 @@ export function TeamBudgetApplicationEditor({
 
       {BUDGET_CATEGORIES.map((category) => {
         const categoryRows = rows.filter((row) => row.category === category);
+        const categoryEditable = editable && !(category === 'travel' && fixedTravelItems.length > 0);
         const request = getCategoryRequest(parsed.items, category, caps);
         const blankRowsNeeded = Math.max(0, request.requiredItemCount - categoryRows.length);
         return (
@@ -189,7 +198,7 @@ export function TeamBudgetApplicationEditor({
             <div className="budget-app-category-head">
               <div>
                 <h2 id={`budget-app-${category}`}>{BUDGET_CATEGORY_LABELS[category]}</h2>
-                <p>Cap {formatBudgetMoney(caps[category])}</p>
+                <p>Cap {formatBudgetMoney(caps[category])}{category === 'travel' && fixedTravelItems.length > 0 ? ' · Fixed by club plan' : ''}</p>
               </div>
               <strong className={request.overLimit ? 'th-bad' : request.overCap ? 'th-warn' : undefined}>
                 {formatBudgetMoney(request.totalCents)} requested
@@ -207,7 +216,7 @@ export function TeamBudgetApplicationEditor({
             ) : null}
             {request.missingItems > 0 ? (
               <p className="budget-app-notice budget-app-notice-warning" role="status">
-                Add {request.missingItems} more line item{request.missingItems === 1 ? '' : 's'}; average no more than $1,000 per line.
+                Add {request.missingItems} more line item{request.missingItems === 1 ? '' : 's'}; average no more than {formatBudgetMoney(request.lineItemTargetCents)} per line.
               </p>
             ) : null}
 
@@ -217,7 +226,7 @@ export function TeamBudgetApplicationEditor({
                   <div className="budget-app-line" key={row.id}>
                     <label>
                       <span>Line {index + 1}</span>
-                      {editable ? (
+                      {categoryEditable ? (
                         <input
                           type="text"
                           value={row.description}
@@ -230,7 +239,7 @@ export function TeamBudgetApplicationEditor({
                     </label>
                     <label>
                       <span>Amount</span>
-                      {editable ? (
+                      {categoryEditable ? (
                         <span className="budget-app-money-input">
                           <span>$</span>
                           <input
@@ -246,7 +255,7 @@ export function TeamBudgetApplicationEditor({
                         </span>
                       ) : <span className="budget-app-readonly">{row.amount ? formatBudgetMoney(Math.round(Number(row.amount) * 100)) : ''}</span>}
                     </label>
-                    {editable ? (
+                    {categoryEditable ? (
                       <button type="button" className="budget-app-remove" onClick={() => removeRow(row.id)} disabled={isPending} aria-label={`Remove ${BUDGET_CATEGORY_LABELS[category]} line ${index + 1}`}>
                         Remove
                       </button>
@@ -256,7 +265,7 @@ export function TeamBudgetApplicationEditor({
               </div>
             ) : <p className="empty-note">No {category} items.</p>}
 
-            {editable && caps[category] > 0 ? (
+            {categoryEditable && caps[category] > 0 ? (
               <div className="budget-app-add-actions">
                 <button type="button" className="button-secondary" onClick={() => addRows(category, 1)} disabled={isPending || rows.length >= 200}>
                   Add line

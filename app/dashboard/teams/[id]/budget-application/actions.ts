@@ -13,6 +13,7 @@ import {
   type BudgetApplicationItem
 } from '@/lib/team-budget-application-rules';
 import { getTeamBudgetCaps } from '@/lib/team-budget-application';
+import { assertFixedTravelItems, getFixedTravelItems } from '@/lib/team-budget-fixed-travel';
 
 type SaveApplicationInput = {
   teamId: string;
@@ -45,7 +46,18 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
       throw new Error('Invalid application action.');
     }
 
-    const items = normalizeApplicationItems(input.items);
+    const admin = createAdminClient();
+    const { data: team, error: teamError } = await admin
+      .from('teams')
+      .select('id, name, slug')
+      .eq('id', input.teamId)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (teamError || !team) throw new Error('This team is no longer active.');
+
+    const fixedTravel = getFixedTravelItems(team.slug, input.academicYear);
+    const allowedZeroIds = new Set(fixedTravel.filter((item) => item.amountCents === 0).map((item) => item.id));
+    const items = normalizeApplicationItems(input.items, allowedZeroIds);
     const setup = await getBudgetSetupState();
     const academicYear = input.academicYear;
     if (
@@ -56,19 +68,11 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
     }
     const { plan, caps } = await getTeamBudgetCaps(input.teamId, academicYear);
     if (!plan) throw new Error(`The ${academicYear} budget plan is not available yet.`);
+    assertFixedTravelItems(items, fixedTravel, caps.travel);
     if (input.intent === 'submit') {
       const submissionError = getSubmissionError(items, caps);
       if (submissionError) throw new Error(submissionError);
     }
-
-    const admin = createAdminClient();
-    const { data: team, error: teamError } = await admin
-      .from('teams')
-      .select('id, name')
-      .eq('id', input.teamId)
-      .eq('is_active', true)
-      .maybeSingle();
-    if (teamError || !team) throw new Error('This team is no longer active.');
 
     const { data: existing, error: existingError } = await admin
       .from('team_budget_applications')
