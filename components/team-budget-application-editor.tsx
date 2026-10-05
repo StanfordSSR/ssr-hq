@@ -222,44 +222,47 @@ export function TeamBudgetApplicationEditor({
 
             {categoryRows.length > 0 ? (
               <div className="budget-app-lines">
+                <div className="budget-app-line-head" aria-hidden="true">
+                  <span>#</span>
+                  <span>Line item</span>
+                  <span>Amount</span>
+                  <span />
+                </div>
                 {categoryRows.map((row, index) => (
                   <div className="budget-app-line" key={row.id}>
-                    <label>
-                      <span>Line {index + 1}</span>
-                      {categoryEditable ? (
+                    <span className="budget-app-line-number" aria-hidden="true">{index + 1}</span>
+                    {categoryEditable ? (
+                      <input
+                        type="text"
+                        aria-label={`${BUDGET_CATEGORY_LABELS[category]} line ${index + 1} description`}
+                        value={row.description}
+                        maxLength={160}
+                        onChange={(event) => changeRow(row.id, 'description', event.target.value)}
+                        placeholder="Item or grouped purpose"
+                        disabled={isPending}
+                      />
+                    ) : <span className="budget-app-readonly">{row.description}</span>}
+                    {categoryEditable ? (
+                      <span className="budget-app-money-input">
+                        <span>$</span>
                         <input
-                          type="text"
-                          value={row.description}
-                          maxLength={160}
-                          onChange={(event) => changeRow(row.id, 'description', event.target.value)}
-                          placeholder="Item or grouped purpose"
+                          type="number"
+                          aria-label={`${BUDGET_CATEGORY_LABELS[category]} line ${index + 1} amount`}
+                          min="0.01"
+                          max="1000000"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={row.amount}
+                          onChange={(event) => changeRow(row.id, 'amount', event.target.value)}
                           disabled={isPending}
                         />
-                      ) : <span className="budget-app-readonly">{row.description}</span>}
-                    </label>
-                    <label>
-                      <span>Amount</span>
-                      {categoryEditable ? (
-                        <span className="budget-app-money-input">
-                          <span>$</span>
-                          <input
-                            type="number"
-                            min="0.01"
-                            max="1000000"
-                            step="0.01"
-                            inputMode="decimal"
-                            value={row.amount}
-                            onChange={(event) => changeRow(row.id, 'amount', event.target.value)}
-                            disabled={isPending}
-                          />
-                        </span>
-                      ) : <span className="budget-app-readonly">{row.amount ? formatBudgetMoney(Math.round(Number(row.amount) * 100)) : ''}</span>}
-                    </label>
+                      </span>
+                    ) : <span className="budget-app-readonly budget-app-readonly-amount">{row.amount ? formatBudgetMoney(Math.round(Number(row.amount) * 100)) : ''}</span>}
                     {categoryEditable ? (
                       <button type="button" className="budget-app-remove" onClick={() => removeRow(row.id)} disabled={isPending} aria-label={`Remove ${BUDGET_CATEGORY_LABELS[category]} line ${index + 1}`}>
-                        Remove
+                        &times;
                       </button>
-                    ) : null}
+                    ) : <span aria-hidden="true" />}
                   </div>
                 ))}
               </div>
