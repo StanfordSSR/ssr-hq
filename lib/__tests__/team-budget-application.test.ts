@@ -66,7 +66,7 @@ describe('team budget application limits', () => {
 
   it('warns but allows a request exactly 10% over the cap', () => {
     const items = [equipment(550_00), equipment(550_00, 2)];
-    expect(getCategoryRequest(items, 'equipment', caps.equipment)).toMatchObject({
+    expect(getCategoryRequest(items, 'equipment', caps)).toMatchObject({
       overCap: true,
       overLimit: false,
       maxCents: 1_100_00
@@ -76,14 +76,36 @@ describe('team budget application limits', () => {
 
   it('blocks a request one cent past the 10% ceiling', () => {
     const items = [equipment(550_01), equipment(550_00, 2)];
-    expect(getCategoryRequest(items, 'equipment', caps.equipment).overLimit).toBe(true);
-    expect(getSubmissionError(items, caps)).toContain('too far over its category cap');
+    expect(getCategoryRequest(items, 'equipment', caps).overLimit).toBe(true);
+    expect(getSubmissionError(items, caps)).toContain('exceeds its category cap');
     expect(getSubmissionError(items, caps)).not.toContain('10%');
     expect(getSubmissionError(items, caps)).not.toContain('$1,100.00');
   });
 
   it('blocks any positive request against a zero cap', () => {
-    expect(getSubmissionError([equipment(100_00)], emptyBudgetCaps())).toContain('too far over its category cap');
+    expect(getSubmissionError([equipment(100_00)], emptyBudgetCaps())).toContain('exceeds its category cap');
+  });
+
+  it('keeps the 10% allowance at exactly $10,000 in total plan funding', () => {
+    const teamCaps = { ...emptyBudgetCaps(), equipment: 9_000_00, food: 1_000_00 };
+    const items = Array.from({ length: 10 }, (_, index) => equipment(990_00, index + 1));
+    expect(getCategoryRequest(items, 'equipment', teamCaps)).toMatchObject({
+      overCap: true,
+      overLimit: false,
+      maxCents: 9_900_00
+    });
+    expect(getSubmissionError(items, teamCaps)).toBeNull();
+  });
+
+  it('blocks any category overage when total plan funding exceeds $10,000', () => {
+    const teamCaps = { ...emptyBudgetCaps(), equipment: 8_000_00, food: 2_000_01 };
+    const items = [equipment(8_000_01)];
+    expect(getCategoryRequest(items, 'equipment', teamCaps)).toMatchObject({
+      overCap: true,
+      overLimit: true,
+      maxCents: 8_000_00
+    });
+    expect(getSubmissionError(items, teamCaps)).toContain('Equipment exceeds its category cap');
   });
 
   it('requires an average of at least one line per $1,000 in each category', () => {

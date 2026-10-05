@@ -18,6 +18,8 @@ export type BudgetApplicationItem = {
 
 export type BudgetCaps = Record<BudgetCategory, number>;
 
+const NO_OVERAGE_ABOVE_CENTS = 10_000_00;
+
 // Seven days after the October 4, 2026 request, at 7:08 PM Pacific (PDT).
 export const TEAM_BUDGET_ACADEMIC_YEAR = '2026-27';
 export const TEAM_BUDGET_DEADLINE_AT = '2026-10-12T02:08:00.000Z';
@@ -78,10 +80,12 @@ export function normalizeApplicationItems(value: unknown): BudgetApplicationItem
   });
 }
 
-export function getCategoryRequest(items: BudgetApplicationItem[], category: BudgetCategory, capCents: number) {
+export function getCategoryRequest(items: BudgetApplicationItem[], category: BudgetCategory, caps: BudgetCaps) {
   const categoryItems = items.filter((item) => item.category === category);
   const totalCents = categoryItems.reduce((sum, item) => sum + item.amountCents, 0);
-  const maxCents = Math.floor((capCents * 110) / 100);
+  const capCents = caps[category];
+  const teamCapCents = BUDGET_CATEGORIES.reduce((sum, current) => sum + caps[current], 0);
+  const maxCents = teamCapCents > NO_OVERAGE_ABOVE_CENTS ? capCents : Math.floor((capCents * 110) / 100);
   const requiredItemCount = Math.ceil(totalCents / 100_000);
   return {
     totalCents,
@@ -97,9 +101,9 @@ export function getCategoryRequest(items: BudgetApplicationItem[], category: Bud
 export function getSubmissionError(items: BudgetApplicationItem[], caps: BudgetCaps): string | null {
   if (items.length === 0) return 'Add at least one line item before submitting.';
   for (const category of BUDGET_CATEGORIES) {
-    const request = getCategoryRequest(items, category, caps[category]);
+    const request = getCategoryRequest(items, category, caps);
     if (request.overLimit) {
-      return `${BUDGET_CATEGORY_LABELS[category]} is too far over its category cap. Reduce the request before submitting.`;
+      return `${BUDGET_CATEGORY_LABELS[category]} exceeds its category cap. Reduce the request before submitting.`;
     }
     if (request.missingItems > 0) {
       return `${BUDGET_CATEGORY_LABELS[category]} needs ${request.missingItems} more line item${request.missingItems === 1 ? '' : 's'} (about one per $1,000 requested).`;
