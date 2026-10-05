@@ -186,7 +186,8 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
 
   // Budget math for the current cycle.
   const annualBudgetCents = budgetData?.annual_budget_cents || 0;
-  const cycleSpentCents = sumAmounts(purchases.filter((p) => p.academic_year === cycle));
+  const cyclePurchases = purchases.filter((p) => p.academic_year === cycle);
+  const cycleSpentCents = sumAmounts(cyclePurchases);
   const remaining = remainingCents(annualBudgetCents, cycleSpentCents);
   const utilization = utilizationPercent(annualBudgetCents, cycleSpentCents);
   const summerRow = summerSummary.teams.find((row) => row.teamId === teamId) || null;
@@ -240,7 +241,7 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
   const leadNames = leads.map((lead) => lead.full_name).filter(Boolean).join(', ');
   const latestReport = reports[0] || null;
   const latestEoy = eoyReports[0] || null;
-  const cyclePurchaseCount = purchases.filter((p) => p.academic_year === cycle).length;
+  const cyclePurchaseCount = cyclePurchases.length;
 
   return (
     <div className="th-page">
@@ -415,8 +416,8 @@ export default async function TeamHubPage({ params }: { params: Promise<{ id: st
           <span className="th-sec-label">Purchases</span>
           <span className="th-sec-preview">
             {cyclePurchaseCount} this cycle · {money(cycleSpentCents)} spent
-            {purchases[0]
-              ? ` · latest: ${purchases[0].description || 'Untitled'} (${money(purchases[0].amount_cents)})`
+            {cyclePurchases[0]
+              ? ` · latest: ${cyclePurchases[0].description || 'Untitled'} (${money(cyclePurchases[0].amount_cents)})`
               : ''}
           </span>
           <span className="th-sec-count">{purchases.length}</span>
