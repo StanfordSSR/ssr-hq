@@ -1536,7 +1536,7 @@ export async function logPurchaseAction(formData: FormData) {
           academicYear,
           amountCents,
           paymentMethod,
-          category,
+          category: expenseType === 'team' ? charge.category : category,
           budgetExpenseItemId: charge.expenseId,
           fundingSourceId: charge.sourceId,
           receiptUploaded: Boolean(receiptPath)
@@ -1857,17 +1857,16 @@ export async function importPurchasesAction(
   }
 
   const catalog = await getChargeCatalog(academicYear);
-  const charges = new Map<number, ReturnType<typeof resolveCharge>>();
+  let charges: Array<ReturnType<typeof resolveCharge>>;
   try {
-    for (const purchase of parsed.purchases || []) {
-      charges.set(Number(purchase.rowNumber), resolveCharge(
+    if (!Array.isArray(parsed.purchases)) throw new Error('The import file could not be parsed.');
+    charges = parsed.purchases.map((purchase) => resolveCharge(
         catalog,
         'team',
         teamId,
         String(purchase.budgetExpenseItemId || ''),
         String(purchase.fundingSourceId || '')
       ));
-    }
   } catch (error) {
     return { message: error instanceof Error ? error.message : 'Choose a budget account for every row.', addedAmount: 0, skippedRows: [] };
   }
@@ -1897,7 +1896,7 @@ export async function importPurchasesAction(
     )
   );
   let duplicateCount = 0;
-  const validPurchases = (parsed.purchases || []).flatMap((purchase) => {
+  const validPurchases = parsed.purchases.flatMap((purchase, index) => {
     const description = String(purchase.description || '').trim();
     const amount = parsePurchaseAmount(purchase.amount);
     const rowNumber = Number(purchase.rowNumber || 0);
@@ -1931,7 +1930,7 @@ export async function importPurchasesAction(
 
     seenKeys.add(dedupKey);
 
-    const charge = charges.get(rowNumber)!;
+    const charge = charges[index];
 
     return [
       {
