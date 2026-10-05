@@ -18,16 +18,23 @@ export type BudgetApplicationItem = {
 
 export type BudgetCaps = Record<BudgetCategory, number>;
 
-// October 4, 2026 at 7:20 PM Pacific (PDT).
-export const TEAM_BUDGET_OPENS_AT = '2026-10-05T02:20:00.000Z';
+// Seven days after the October 4, 2026 request, at 7:08 PM Pacific (PDT).
+export const TEAM_BUDGET_ACADEMIC_YEAR = '2026-27';
+export const TEAM_BUDGET_DEADLINE_AT = '2026-10-12T02:08:00.000Z';
 
-export function isTeamBudgetApplicationOpen(now = new Date()): boolean {
-  return now.getTime() >= Date.parse(TEAM_BUDGET_OPENS_AT);
+export function isTeamBudgetApplicationClosed(now = new Date()): boolean {
+  return now.getTime() >= Date.parse(TEAM_BUDGET_DEADLINE_AT);
 }
 
-export function canViewTeamBudgetApplication(role: string, isLead: boolean, isPresident: boolean, now = new Date()): boolean {
-  if (!isTeamBudgetApplicationOpen(now)) return isPresident;
-  return isLead || ['admin', 'president', 'vice_president', 'financial_officer'].includes(role);
+export function canViewTeamBudgetApplication(role: string, isLead: boolean, isPresident: boolean): boolean {
+  return isLead || isPresident || ['admin', 'vice_president', 'financial_officer'].includes(role);
+}
+
+export function formatTeamBudgetDeadline(): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    timeZone: 'America/Los_Angeles', timeZoneName: 'short'
+  }).format(new Date(TEAM_BUDGET_DEADLINE_AT));
 }
 
 export function selectTeamApplicationYear(

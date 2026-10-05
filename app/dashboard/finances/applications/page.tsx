@@ -1,15 +1,14 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getViewerContext, profileHasPresidentRole } from '@/lib/auth';
+import { getViewerContext } from '@/lib/auth';
 import { formatDateLabel } from '@/lib/academic-calendar';
 import { getBudgetSetupState } from '@/lib/budget-plan';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { formatBudgetMoney, isTeamBudgetApplicationOpen, normalizeApplicationItems, selectTeamApplicationYear } from '@/lib/team-budget-application-rules';
+import { formatBudgetMoney, formatTeamBudgetDeadline, normalizeApplicationItems, selectTeamApplicationYear } from '@/lib/team-budget-application-rules';
 
 export default async function BudgetApplicationsPage({ searchParams }: { searchParams?: Promise<{ year?: string | string[] }> }) {
-  const { currentRole, profile } = await getViewerContext();
-  const isOpen = isTeamBudgetApplicationOpen();
-  if ((!isOpen && !profileHasPresidentRole(profile)) || (isOpen && !['admin', 'president', 'vice_president', 'financial_officer'].includes(currentRole))) {
+  const { currentRole } = await getViewerContext();
+  if (!['admin', 'president', 'vice_president', 'financial_officer'].includes(currentRole)) {
     redirect('/dashboard');
   }
 
@@ -34,7 +33,7 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{academicYear}</p>
           <h1 className="hq-page-title">Team budget applications</h1>
-          <p className="hq-subtitle">{!isOpen ? 'President preview · Opens October 4 at 7:20 PM Pacific' : `${submittedCount} of ${(teams || []).length} active teams submitted`}</p>
+          <p className="hq-subtitle">{submittedCount} of {(teams || []).length} active teams submitted · Due {formatTeamBudgetDeadline()}</p>
         </div>
         <div className="hq-page-head-action">
           <Link href="/dashboard/finances/plan" className="button-secondary">Budget plan</Link>
@@ -71,7 +70,7 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
                   <td>{application ? formatBudgetMoney(totalCents) : '—'}</td>
                   <td>{items.length}</td>
                   <td>{application ? formatDateLabel(new Date(application.updated_at)) : '—'}</td>
-                  <td><Link href={`/dashboard/teams/${team.id}/budget-application?year=${academicYear}`} className="th-link">{isOpen ? 'View' : 'Preview'} →</Link></td>
+                  <td><Link href={`/dashboard/teams/${team.id}/budget-application?year=${academicYear}`} className="th-link">View →</Link></td>
                 </tr>
               );
             })}

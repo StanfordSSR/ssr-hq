@@ -4,7 +4,8 @@ import {
   emptyBudgetCaps,
   getCategoryRequest,
   getSubmissionError,
-  isTeamBudgetApplicationOpen,
+  formatTeamBudgetDeadline,
+  isTeamBudgetApplicationClosed,
   normalizeApplicationItems,
   selectTeamApplicationYear,
   type BudgetApplicationItem
@@ -17,26 +18,22 @@ const equipment = (amountCents: number, index = 1): BudgetApplicationItem => ({
   amountCents
 });
 
-describe('timed application access', () => {
-  const before = new Date('2026-10-05T02:19:59.999Z');
-  const opens = new Date('2026-10-05T02:20:00.000Z');
+describe('budget application access and deadline', () => {
+  const before = new Date('2026-10-12T02:07:59.999Z');
+  const deadline = new Date('2026-10-12T02:08:00.000Z');
 
-  it('opens at 7:20 PM Pacific on October 4', () => {
-    expect(isTeamBudgetApplicationOpen(before)).toBe(false);
-    expect(isTeamBudgetApplicationOpen(opens)).toBe(true);
+  it('closes at 7:08 PM Pacific on October 11', () => {
+    expect(isTeamBudgetApplicationClosed(before)).toBe(false);
+    expect(isTeamBudgetApplicationClosed(deadline)).toBe(true);
+    expect(formatTeamBudgetDeadline()).toContain('Oct 11, 2026');
+    expect(formatTeamBudgetDeadline()).toContain('7:08 PM');
   });
 
-  it('allows only the president to preview before opening', () => {
-    expect(canViewTeamBudgetApplication('president', false, true, before)).toBe(true);
-    expect(canViewTeamBudgetApplication('admin', false, true, before)).toBe(true);
-    expect(canViewTeamBudgetApplication('team_lead', true, false, before)).toBe(false);
-    expect(canViewTeamBudgetApplication('admin', false, false, before)).toBe(false);
-  });
-
-  it('allows every active lead and the reviewing officers at opening', () => {
-    expect(canViewTeamBudgetApplication('team_lead', true, false, opens)).toBe(true);
-    expect(canViewTeamBudgetApplication('president', false, true, opens)).toBe(true);
-    expect(canViewTeamBudgetApplication('team_lead', false, false, opens)).toBe(false);
+  it('lets active leads and reviewing officers view the form immediately', () => {
+    expect(canViewTeamBudgetApplication('team_lead', true, false)).toBe(true);
+    expect(canViewTeamBudgetApplication('president', false, true)).toBe(true);
+    expect(canViewTeamBudgetApplication('admin', false, false)).toBe(true);
+    expect(canViewTeamBudgetApplication('team_lead', false, false)).toBe(false);
   });
 });
 
