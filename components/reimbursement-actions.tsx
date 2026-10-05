@@ -3,10 +3,24 @@
 import { useActionState, useState } from 'react';
 import {
   decideReimbursementInPortalAction,
+  retryReimbursementNotificationAction,
   setReimbursementProcessedAction
 } from '@/app/dashboard/reimbursements/actions';
 
 const initial = { ok: false, message: '' };
+
+export function SlackDeliveryRetry({ id }: { id: string }) {
+  const [state, formAction, pending] = useActionState(retryReimbursementNotificationAction, initial);
+  return (
+    <form action={formAction} className="hq-inline-form">
+      <input type="hidden" name="reimbursement_id" value={id} />
+      <button className="button-secondary" type="submit" disabled={pending} title="Check the bot acknowledgement and retry missing DMs">
+        {pending ? 'Checking...' : 'Check / retry'}
+      </button>
+      {state.message ? <span className="helper" role="status">{state.message}</span> : null}
+    </form>
+  );
+}
 
 export function FinanceFileToggle({ id, processed }: { id: string; processed: boolean }) {
   const [state, formAction, pending] = useActionState(setReimbursementProcessedAction, initial);

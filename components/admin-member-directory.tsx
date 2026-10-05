@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { Fragment, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   deletePortalLeadInlineAction,
@@ -23,6 +23,7 @@ type AdminMemberRow = {
   email: string;
   role: string;
   permissions: string;
+  permissionCodes: string;
   teams: string;
   accessLabel?: string;
   accessDetail?: string;
@@ -100,18 +101,17 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
   };
 
   return (
-    <div className="table-wrap">
-      <table>
+    <div className="table-wrap hq-member-table-wrap">
+      <table className="hq-member-table">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Email</th>
+            <th>Member</th>
             <th>Role</th>
             <th>Status</th>
-            <th style={{ width: '1%', textAlign: 'center', whiteSpace: 'nowrap' }} title="Signature enrolled">
+            <th style={{ textAlign: 'center', whiteSpace: 'nowrap' }} title="Signature enrolled">
               Sig
             </th>
-            <th>Perms</th>
+            <th title="A: admin; C: club-wide; F: finance; L: team lead; R: recorded member">Perms</th>
             <th>Team</th>
             <th>Portal</th>
           </tr>
@@ -121,24 +121,26 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
             const expanded = expandedId === row.id;
 
             return (
-              <>
+              <Fragment key={row.id}>
                 <tr key={row.id}>
-                  <td style={{ fontWeight: 700 }}>{row.name}</td>
-                  <td>{row.email}</td>
-                  <td>{row.role}</td>
-                  <td>
+                  <td data-label="Member" className="hq-member-identity">
+                    <strong>{row.name}</strong>
+                    <span title={row.email}>{row.email}</span>
+                  </td>
+                  <td data-label="Role" className="hq-member-role" title={row.role}>{row.role}</td>
+                  <td data-label="Status">
                     {row.accessLabel ? (
-                      <div className="hq-member-access">
-                        <strong className={row.accessLabel === 'Active' ? 'hq-member-access-on' : 'hq-member-access-off'}>
-                          {row.accessLabel === 'Active' ? '✓' : '○'} {row.accessLabel}
-                        </strong>
-                        {row.accessDetail ? <span>{row.accessDetail}</span> : null}
-                      </div>
+                      <span
+                        className={row.accessLabel === 'Active' ? 'hq-member-access-on' : 'hq-member-access-off'}
+                        title={row.accessDetail}
+                        aria-label={`${row.accessLabel}. ${row.accessDetail || ''}`}
+                        tabIndex={0}
+                      >{row.accessLabel}</span>
                     ) : (
                       <span className="hq-member-static-note">No portal</span>
                     )}
                   </td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td data-label="Signature" style={{ textAlign: 'center' }}>
                     {row.signatureEnrolled === undefined ? (
                       <span className="hq-member-static-note">—</span>
                     ) : row.signatureEnrolled ? (
@@ -151,9 +153,13 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                       </span>
                     )}
                   </td>
-                  <td>{row.permissions}</td>
-                  <td>{row.teams}</td>
-                  <td>
+                  <td data-label="Permissions">
+                    <span className="hq-member-permissions" title={row.permissions} aria-label={row.permissions} tabIndex={0}>
+                      {row.permissionCodes}
+                    </span>
+                  </td>
+                  <td data-label="Team" className="hq-member-team" title={row.teams}>{row.teams}</td>
+                  <td data-label="Portal">
                     {row.profileId && (row.canResendInvite || row.canManagePassword || row.canDeletePortal) ? (
                       <div className="hq-inline-editor-actions">
                         {row.canResendInvite ? (
@@ -206,7 +212,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
 
                 {expanded && expandedMode === 'delete' && row.canDeletePortal && row.profileId ? (
                   <tr key={`${row.id}-confirm`}>
-                    <td colSpan={8}>
+                    <td colSpan={7}>
                       <form action={handleDelete} className="hq-admin-delete-form">
                         <input type="hidden" name="lead_id" value={row.profileId} />
                         <input type="hidden" name="confirmation_phrase" value={confirmationPhrase} />
@@ -246,7 +252,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
 
                 {expanded && expandedMode === 'password' && row.canManagePassword && row.profileId ? (
                   <tr key={`${row.id}-password`}>
-                    <td colSpan={8}>
+                    <td colSpan={7}>
                       <form action={handlePasswordSet} className="hq-admin-delete-form">
                         <input type="hidden" name="profile_id" value={row.profileId} />
                         <input type="hidden" name="password" value={passwordValue} />
@@ -281,7 +287,7 @@ export function AdminMemberDirectory({ rows }: AdminMemberDirectoryProps) {
                     </td>
                   </tr>
                 ) : null}
-              </>
+              </Fragment>
             );
           })}
         </tbody>

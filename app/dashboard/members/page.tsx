@@ -67,6 +67,7 @@ type AdminMemberRow = {
   email: string;
   role: string;
   permissions: string;
+  permissionCodes: string;
   teams: string;
   accessLabel?: string;
   accessDetail?: string;
@@ -174,6 +175,12 @@ export default async function ManageMembersPage() {
         profileHasFinancialOfficerRole(profile) ? 'Read-only finance access' : null,
         profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)) ? 'Lead workspace, purchases, tasks' : null
       ].filter(Boolean) as string[];
+      const permissionCodes = [
+        profileHasAdminRole(profile) ? 'A' : null,
+        profileHasPresidentRole(profile) || profileHasVicePresidentRole(profile) ? 'C' : null,
+        profileHasFinancialOfficerRole(profile) ? 'F' : null,
+        profileHasLeadRole(profile, leadMembershipUserIds.has(profile.id)) ? 'L' : null
+      ].filter(Boolean).join(', ');
 
       return {
       id: `profile-${profile.id}`,
@@ -182,13 +189,14 @@ export default async function ManageMembersPage() {
       email: profile.email || 'No email found',
       role: roleLabels.join(', ') || 'Lead',
       permissions: permissionLabels.join(' · ') || 'Lead workspace, purchases, tasks',
+      permissionCodes: permissionCodes || 'L',
       teams: (teamNamesByUser.get(profile.id) || []).join(', ') || 'None',
-      accessLabel: loginMap.get(profile.id) ? 'Active' : 'Inactive',
-      accessDetail: loginMap.get(profile.id) ? `Last login ${formatLastSeen(loginMap.get(profile.id)!)}` : 'Invite not accepted yet',
+      accessLabel: !profile.active ? 'Disabled' : loginMap.get(profile.id) ? 'Active' : 'Invited',
+      accessDetail: !profile.active ? 'Portal account disabled' : loginMap.get(profile.id) ? `Last login ${formatLastSeen(loginMap.get(profile.id)!)}` : 'Invite not accepted yet',
       canManagePassword: isAdmin && Boolean(profile.email),
       // Their invite link expired or never arrived: the account exists but has
       // never been signed into. Admins can email a fresh link.
-      canResendInvite: isAdmin && Boolean(profile.email) && !loginMap.get(profile.id),
+      canResendInvite: isAdmin && profile.active && Boolean(profile.email) && !loginMap.get(profile.id),
       canDeletePortal:
         isAdmin &&
         !profileHasAdminRole(profile) &&
@@ -209,6 +217,7 @@ export default async function ManageMembersPage() {
       email: member.stanford_email,
       role: 'Recorded member',
       permissions: 'Record only',
+      permissionCodes: 'R',
       teams: teamMap.get(member.team_id) || 'Unknown team',
       accessLabel: '',
       accessDetail: '',
@@ -237,64 +246,32 @@ export default async function ManageMembersPage() {
           </div>
         </section>
 
-        <div className="hq-admin-members-layout">
-          <section className="hq-panel hq-admin-members-main hq-surface-muted">
-            <AdminMemberDirectory rows={rows} />
-          </section>
-
-          {isAdmin ? <aside className="hq-panel hq-admin-members-side hq-surface-muted">
-            <div className="hq-section-head">
-              <div className="hq-section-head-copy">
-                <p className="hq-eyebrow">Invite</p>
-                <h2 className="hq-section-title hq-section-title-compact">Add portal member</h2>
-              </div>
-            </div>
-
-            <form action={invitePortalMemberAction} className="form-stack">
+        {isAdmin ? (
+          <section className="hq-member-invite" aria-label="Invite a portal member">
+            <form action={invitePortalMemberAction} className="hq-member-invite-form">
               <div className="field">
-                <label className="label" htmlFor="admin-member-name">
-                  Full name
-                </label>
-                <input className="input" id="admin-member-name" name="full_name" required />
+                <label className="label" htmlFor="admin-member-name">Full name</label>
+                <input className="input" id="admin-member-name" name="full_name" autoComplete="name" required />
               </div>
-
               <div className="field">
-                <label className="label" htmlFor="admin-member-email">
-                  Stanford email
-                </label>
-                <input
-                  className="input"
-                  id="admin-member-email"
-                  name="email"
-                  type="email"
-                  placeholder="sunet@stanford.edu"
-                  required
-                />
+                <label className="label" htmlFor="admin-member-email">Stanford email</label>
+                <input className="input" id="admin-member-email" name="email" type="email" placeholder="sunet@stanford.edu" autoComplete="email" required />
               </div>
-
               <div className="field">
-                <label className="label" htmlFor="admin-member-team">
-                  Lead assignment
-                </label>
+                <label className="label" htmlFor="admin-member-team">Lead assignment</label>
                 <select className="select" id="admin-member-team" name="team_id" defaultValue="">
-                  <option value="">Invite without team assignment</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
+                  <option value="">No team yet</option>
+                  {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
                 </select>
-                <span className="helper">Inviting without assigning them to a team is not recommended.</span>
               </div>
-
-              <div className="button-row">
-                <button className="button-secondary" type="submit">
-                  Send invite
-                </button>
-              </div>
+              <button className="button-secondary" type="submit">Send invite</button>
             </form>
-          </aside> : null}
-        </div>
+          </section>
+        ) : null}
+
+        <section className="hq-member-directory" aria-label="Members">
+          <AdminMemberDirectory rows={rows} />
+        </section>
       </div>
     );
   }

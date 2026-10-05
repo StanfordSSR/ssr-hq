@@ -7,8 +7,17 @@ import { getCurrentAcademicYear } from '@/lib/academic-calendar';
 import {
   SLACKBOT_SYSTEM_TEAM_ID,
   SLACKBOT_SYSTEM_TEAM_NAME,
+  getSlackbotNotificationStatus,
   sendSlackbotNotification
 } from '@/lib/slackbot';
+import {
+  deliveryStatus,
+  mergeDeliveryResults,
+  normalizeRecipientEmails,
+  parseDeliveryAck,
+  type DeliveryResult,
+  type DeliveryStatus
+} from '@/lib/reimbursement-delivery';
 import {
   extractSignatureFeatures,
   parseStrokes,
@@ -229,6 +238,12 @@ export type ReimbursementRow = {
   receipt_file_name: string | null;
   decision_token: string;
   status: 'pending' | 'approved' | 'rejected';
+  slack_delivery_status: DeliveryStatus;
+  slack_delivery_key: string | null;
+  slack_delivery_attempts: number;
+  slack_delivery_results: DeliveryResult[];
+  slack_delivery_target_emails: string[];
+  slack_delivery_requested_at: string | null;
   requires_signature: boolean;
   approval_kind: 'button' | 'signature' | null;
   decided_by_profile_id: string | null;
@@ -444,18 +459,98 @@ export async function getReimbursementAttachments(
   return grouped;
 }
 
-// Sends the Slack push to the team lead(s). Below-threshold submissions can be
-// approved with a single button (and the bot may render native Approve/Reject
-// buttons that POST to /api/internal/reimbursement-approval); above-threshold
-// ones require a drawn signature on the tokenized link. We never let a Slack
-// failure block the submission — the lead can still act from the portal.
+async function updateReimbursementDelivery(id: string, values: Record<string, unknown>) {
+  const { error } = await createAdminClient().from('member_reimbursements').update(values).eq('id', id);
+  if (error) throw new Error(`Could not save reimbursement delivery state: ${error.message}`);
+}
+
+function storedDeliveryResults(value: unknown): DeliveryResult[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((row): row is DeliveryResult =>
+    Boolean(row && typeof row.email === 'string' && typeof row.ok === 'boolean')
+  );
+}
+
+// Delivery is separate from submission: a failed or uncertain Slack push never
+// undoes the saved reimbursement. Retry uses the bot's key lookup first.
 export async function sendReimbursementSlackPush(
   reimbursement: ReimbursementRow,
   leads: TeamLead[],
   teamName: string
-) {
-  const emails = leads.map((l) => (l.email || '').toLowerCase()).filter(Boolean);
-  if (emails.length === 0) return;
+): Promise<DeliveryStatus> {
+  const emails = normalizeRecipientEmails(leads.map((lead) => lead.email || ''));
+  if (emails.length === 0) {
+    await updateReimbursementDelivery(reimbursement.id, {
+      slack_delivery_status: 'failed',
+      slack_delivery_error: 'No reviewer has an email address.'
+    });
+    return 'failed';
+  }
+
+  let previous = storedDeliveryResults(reimbursement.slack_delivery_results);
+  const previousKey = reimbursement.slack_delivery_key;
+  const previousTarget = normalizeRecipientEmails(
+    Array.isArray(reimbursement.slack_delivery_target_emails) ? reimbursement.slack_delivery_target_emails : []
+  );
+  let previousNotFound = false;
+
+  if (reimbursement.slack_delivery_status === 'delivered') return 'delivered';
+
+  if (previousKey && reimbursement.slack_delivery_attempts > 0) {
+    try {
+      const lookup = await getSlackbotNotificationStatus(previousKey);
+      if (lookup.found && lookup.status === 'processing') {
+        await updateReimbursementDelivery(reimbursement.id, {
+          slack_delivery_status: 'unknown',
+          slack_delivery_error: 'The bot is still processing this notification.'
+        });
+        return 'unknown';
+      }
+      previousNotFound = !lookup.found;
+      if (lookup.found) {
+        const ack = parseDeliveryAck(lookup.response_payload, previousKey, previousTarget);
+        if (!ack) throw new Error('The bot returned an invalid delivery acknowledgement.');
+        previous = mergeDeliveryResults(emails, previous, ack);
+        const status = deliveryStatus(previous);
+        if (status === 'delivered') {
+          await updateReimbursementDelivery(reimbursement.id, {
+            slack_delivery_status: status,
+            slack_delivery_results: previous,
+            slack_delivery_error: null,
+            slack_delivery_acknowledged_at: new Date().toISOString()
+          });
+          return status;
+        }
+      }
+    } catch (error) {
+      await updateReimbursementDelivery(reimbursement.id, {
+        slack_delivery_status: 'unknown',
+        slack_delivery_error: error instanceof Error ? error.message : 'Could not verify bot delivery.'
+      });
+      return 'unknown';
+    }
+  }
+
+  const targets = emails.filter((email) => !previous.some((result) => result.email === email && result.ok));
+  if (targets.length === 0) {
+    await updateReimbursementDelivery(reimbursement.id, { slack_delivery_status: 'delivered' });
+    return 'delivered';
+  }
+  const reuseKey = previousKey && previousNotFound && previousTarget.length === targets.length &&
+    previousTarget.every((email) => targets.includes(email));
+  const attempt = reimbursement.slack_delivery_attempts + 1;
+  const key = reuseKey ? previousKey : attempt === 1
+    ? `reimbursement_approval:${reimbursement.id}`
+    : `reimbursement_approval:${reimbursement.id}:retry:${attempt}`;
+  await updateReimbursementDelivery(reimbursement.id, {
+    slack_delivery_status: 'pending',
+    slack_delivery_key: key,
+    slack_delivery_attempts: attempt,
+    slack_delivery_results: previous,
+    slack_delivery_target_emails: targets,
+    slack_delivery_requested_at: new Date().toISOString(),
+    slack_delivery_error: null
+  });
 
   const amount = (reimbursement.amount_cents / 100).toLocaleString('en-US', {
     style: 'currency',
@@ -476,15 +571,15 @@ export async function sendReimbursementSlackPush(
   ];
 
   const basePayload = {
-    idempotency_key: `reimbursement_approval:${reimbursement.id}`,
+    idempotency_key: key,
     team_id: SLACKBOT_SYSTEM_TEAM_ID,
     team_name: SLACKBOT_SYSTEM_TEAM_NAME,
-    recipient_emails: emails,
+    recipient_emails: targets,
     title,
     message: lines.filter(Boolean).join('\n'),
     metadata: {
       reimbursement_id: reimbursement.id,
-      team_id: reimbursement.team_id,
+      team_id: reimbursement.team_id || 'leadership',
       team_name: teamName,
       amount_cents: reimbursement.amount_cents,
       reimbursement_number: reimbursement.reimbursement_number,
@@ -505,23 +600,47 @@ export async function sendReimbursementSlackPush(
     ? { cta_label: 'Review & sign', cta_url: approveUrl }
     : {};
 
+  let ack: DeliveryResult[] | null = null;
+  let failure: string | null = null;
   try {
-    await sendSlackbotNotification({ ...basePayload, ...cta, type: 'reimbursement_approval' });
+    const response = await sendSlackbotNotification(
+      { ...basePayload, ...cta, type: 'reimbursement_approval' },
+      { allowFailedAck: true }
+    );
+    ack = parseDeliveryAck(response, key, targets);
+    if (!ack) failure = 'The bot returned an invalid delivery acknowledgement.';
   } catch (error) {
-    console.error('Reimbursement Slack push (typed) failed, retrying as manual_message:', error);
-    // Fallback only matters if the bot can't render native buttons for the typed
-    // event; in that degraded case include the link so the lead can still act.
+    failure = error instanceof Error ? error.message : 'Could not reach the Slack bot.';
+  }
+
+  if (!ack) {
     try {
-      await sendSlackbotNotification({
-        ...basePayload,
-        cta_label: reimbursement.requires_signature ? 'Review & sign' : 'Review reimbursement',
-        cta_url: approveUrl,
-        type: 'manual_message'
-      });
-    } catch (innerError) {
-      console.error('Reimbursement Slack push fallback failed:', innerError);
+      const lookup = await getSlackbotNotificationStatus(key);
+      if (lookup.found && lookup.status !== 'processing') {
+        ack = parseDeliveryAck(lookup.response_payload, key, targets);
+      }
+    } catch (error) {
+      failure = error instanceof Error ? error.message : failure;
     }
   }
+
+  if (!ack) {
+    await updateReimbursementDelivery(reimbursement.id, {
+      slack_delivery_status: 'unknown',
+      slack_delivery_error: failure || 'Delivery has not been confirmed by the bot.'
+    });
+    return 'unknown';
+  }
+
+  const results = mergeDeliveryResults(emails, previous, ack);
+  const status = deliveryStatus(results);
+  await updateReimbursementDelivery(reimbursement.id, {
+    slack_delivery_status: status,
+    slack_delivery_results: results,
+    slack_delivery_error: status === 'delivered' ? null : 'Some reviewer DMs were not delivered.',
+    slack_delivery_acknowledged_at: new Date().toISOString()
+  });
+  return status;
 }
 
 // Verify a drawn signature on the public approval link against the enrolled
