@@ -80,6 +80,7 @@ export default async function TeamBudgetApplicationPage({
           initialItems={application?.items || []}
           initialVersion={application?.version || 0}
           initialStatus={application?.status || 'draft'}
+          initialUpdatedAt={application?.updatedAt || null}
           canEdit={canEdit}
         />
       )}

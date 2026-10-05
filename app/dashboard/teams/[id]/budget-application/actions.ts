@@ -23,8 +23,10 @@ type SaveApplicationInput = {
 };
 
 type SaveApplicationResult =
-  | { ok: true; version: number; status: 'draft' | 'submitted' }
-  | { ok: false; error: string };
+  | { ok: true; version: number; status: 'draft' | 'submitted'; updatedAt: string }
+  | { ok: false; error: string; code?: 'conflict' };
+
+const conflictError = 'Another lead saved a newer draft. Your entries are still here; load the latest draft before editing further.';
 
 export async function saveTeamBudgetApplicationAction(input: SaveApplicationInput): Promise<SaveApplicationResult> {
   const { user } = await getViewerContext();
@@ -75,9 +77,11 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
       .eq('academic_year', academicYear)
       .maybeSingle();
     if (existingError) throw new Error('Could not load the current application.');
-    if (existing?.status === 'submitted') throw new Error('This application has already been submitted.');
+    if (existing?.status === 'submitted') {
+      return { ok: false, error: 'A co-lead submitted this application. Load the latest version to see it.', code: 'conflict' };
+    }
     if ((existing?.version || 0) !== input.expectedVersion) {
-      throw new Error('Another lead changed this application. Refresh to see their edits.');
+      return { ok: false, error: conflictError, code: 'conflict' };
     }
 
     const submitted = input.intent === 'submit';
@@ -102,7 +106,8 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
         .eq('status', 'draft')
         .select('version')
         .maybeSingle();
-      if (error || !data) throw new Error('Another lead changed this application. Refresh and try again.');
+      if (error) throw new Error('Could not save the application. Try again.');
+      if (!data) return { ok: false, error: conflictError, code: 'conflict' };
       applicationId = existing.id;
     } else {
       const { data, error } = await admin
@@ -115,6 +120,7 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
         })
         .select('id')
         .single();
+      if (error?.code === '23505') return { ok: false, error: conflictError, code: 'conflict' };
       if (error || !data) throw new Error('Could not create this application. Refresh and try again.');
       applicationId = data.id;
     }
@@ -133,7 +139,7 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
     revalidatePath('/dashboard/finances/applications');
     revalidatePath('/dashboard');
     revalidatePath('/dashboard/tasks');
-    return { ok: true, version: input.expectedVersion + 1, status: submitted ? 'submitted' : 'draft' };
+    return { ok: true, version: input.expectedVersion + 1, status: submitted ? 'submitted' : 'draft', updatedAt: now };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Could not save the application.' };
   }

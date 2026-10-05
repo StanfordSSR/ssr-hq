@@ -8130,8 +8130,17 @@ a.th-stat:focus-visible {
   line-height: 1.15;
 }
 
+.budget-app-save-state {
+  display: block;
+  margin-top: 3px;
+  color: var(--th-muted);
+  font-size: 11px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
 .budget-app-category {
-  padding: 22px 18px;
+  padding: 16px 18px;
   border-bottom: 1px solid var(--th-hairline);
 }
 
@@ -8140,7 +8149,7 @@ a.th-stat:focus-visible {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 14px;
+  margin-bottom: 9px;
 }
 
 .budget-app-category-head h2 {
@@ -8187,14 +8196,14 @@ a.th-stat:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(150px, 190px) auto;
   align-items: end;
-  gap: 12px;
-  padding: 10px 0;
+  gap: 9px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--th-hairline);
 }
 
 .budget-app-line label {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -8208,11 +8217,11 @@ a.th-stat:focus-visible {
 .budget-app-line input {
   width: 100%;
   min-width: 0;
-  height: 40px;
+  height: 34px;
   border: 1px solid var(--th-hairline);
   border-radius: 0;
   background: #fff;
-  padding: 8px 10px;
+  padding: 6px 9px;
   color: var(--th-ink);
   font: inherit;
 }
@@ -8240,14 +8249,14 @@ a.th-stat:focus-visible {
 }
 
 .budget-app-readonly {
-  min-height: 40px;
+  min-height: 34px;
   display: flex;
   align-items: center;
   overflow-wrap: anywhere;
 }
 
 .budget-app-remove {
-  min-height: 40px;
+  min-height: 34px;
   border: 0;
   background: transparent;
   color: var(--th-cardinal);
@@ -8261,7 +8270,7 @@ a.th-stat:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .budget-app-actions {
@@ -8291,6 +8300,10 @@ a.th-stat:focus-visible {
   background: #eaf7ef;
 }
 
+.budget-app-conflict-action {
+  padding: 0 18px 18px;
+}
+
 @media (max-width: 640px) {
   .budget-app-overview > div {
     padding: 10px;
@@ -8301,7 +8314,7 @@ a.th-stat:focus-visible {
   }
 
   .budget-app-category {
-    padding: 16px 12px;
+    padding: 13px 12px;
   }
 
   .budget-app-category-head {
@@ -8324,5 +8337,9 @@ a.th-stat:focus-visible {
 
   .budget-app-actions {
     padding: 14px 12px;
+  }
+
+  .budget-app-conflict-action {
+    padding: 0 12px 14px;
   }
 }
