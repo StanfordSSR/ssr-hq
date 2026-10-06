@@ -34,6 +34,8 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
 
   const byTeam = new Map((applications || []).map((application) => [application.team_id, application]));
   const submittedCount = (teams || []).filter((team) => byTeam.get(team.id)?.status === 'submitted').length;
+  const draftCount = (teams || []).filter((team) => byTeam.get(team.id)?.status === 'draft').length;
+  const notStartedCount = (teams || []).length - submittedCount - draftCount;
 
   return (
     <div className="hq-page th-page">
@@ -41,7 +43,10 @@ export default async function BudgetApplicationsPage({ searchParams }: { searchP
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{academicYear}</p>
           <h1 className="hq-page-title">Team budget applications</h1>
-          <p className="hq-subtitle">{submittedCount} of {(teams || []).length} active teams submitted{academicYear === TEAM_BUDGET_ACADEMIC_YEAR ? ` · Due ${formatTeamBudgetDeadline()}` : ''}</p>
+          <p className="hq-subtitle">
+            {submittedCount} submitted · {draftCount} drafting · {notStartedCount} not started
+            {academicYear === TEAM_BUDGET_ACADEMIC_YEAR ? ` · Due ${formatTeamBudgetDeadline()}` : ''}
+          </p>
         </div>
         <div className="hq-page-head-action">
           <Link href="/dashboard/finances/plan" className="button-secondary">Budget plan</Link>
