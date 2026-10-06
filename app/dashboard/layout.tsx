@@ -38,6 +38,7 @@ const adminNav: NavItem[] = [
     children: [
       { href: '/dashboard/finances', label: 'Manage Finances' },
       { href: '/dashboard/finances/plan', label: 'Budget Plan' },
+      { href: '/dashboard/finances/applications', label: 'Budget Applications' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
       ...creditCardNavItems
     ]
@@ -56,6 +57,7 @@ const presidentNav: NavItem[] = [
     children: [
       { href: '/dashboard/finances', label: 'Overview' },
       { href: '/dashboard/finances/plan', label: 'Budget Plan' },
+      { href: '/dashboard/finances/applications', label: 'Budget Applications' },
       { href: '/dashboard/purchases', label: 'Purchases' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
