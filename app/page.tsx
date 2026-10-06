@@ -14,7 +14,10 @@ export default function HomePage() {
             <HomeTypewriter />
 
             <div className="button-row">
-              <Link className="button-primary" href="/login">
+              <Link className="button-primary" href="/submit">
+                Submit a reimbursement
+              </Link>
+              <Link className="button-secondary" href="/login">
                 Log in
               </Link>
             </div>
