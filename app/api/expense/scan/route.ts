@@ -6,20 +6,29 @@ import {
   RECEIPT_EXTRACT_MAX_BYTES
 } from '@/lib/openai-receipt';
 import { env } from '@/lib/env';
+import { getLeadTeamIds } from '@/lib/lead-state';
 
-// Authenticated receipt autofill for the leadership and team expense loggers.
-// Admins, presidents, vice presidents, and financial officers can upload a
-// receipt (image or PDF) and have the item, amount, and category read with
-// OpenAI vision. Best-effort only — the values land in editable fields, so a
-// failed or low-confidence read never blocks logging.
+// Best-effort receipt autofill for finance officers and active team leads.
 export const runtime = 'nodejs';
 
 const ALLOWED_ROLES = new Set(['admin', 'president', 'vice_president', 'financial_officer']);
 
 export async function POST(request: NextRequest) {
-  const { currentRole } = await getViewerContext();
+  const { currentRole, user } = await getViewerContext();
+
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: 'Could not read the uploaded file.' }, { status: 400 });
+  }
+
   if (!ALLOWED_ROLES.has(currentRole)) {
-    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+    const teamId = String(formData.get('team_id') || '').trim();
+    const leadTeams = currentRole === 'team_lead' ? await getLeadTeamIds(user.id) : [];
+    if (!teamId || !leadTeams.includes(teamId)) {
+      return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+    }
   }
 
   if (!env.openaiApiKey) {
@@ -27,13 +36,6 @@ export async function POST(request: NextRequest) {
       { error: 'Receipt scanning is not configured. Enter the details manually.' },
       { status: 503 }
     );
-  }
-
-  let formData: FormData;
-  try {
-    formData = await request.formData();
-  } catch {
-    return NextResponse.json({ error: 'Could not read the uploaded file.' }, { status: 400 });
   }
 
   const file = formData.get('image');
