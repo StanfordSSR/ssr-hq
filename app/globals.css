@@ -1185,7 +1185,8 @@ tr:last-child td {
   text-decoration: none;
 }
 
-.hq-team-row-selected {
+.hq-team-row-selected,
+.hq-team-row:has(.hq-team-heading-link[aria-current="page"]) {
   background: #faf7f7;
 }
 
