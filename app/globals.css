@@ -8521,6 +8521,15 @@ a.th-stat:focus-visible {
   padding-bottom: 48px;
 }
 
+.hq-page.th-page.hq-expenses-page {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hq-expenses-page > *,
+.hq-expenses-page .hq-expense-overview > * {
+  min-width: 0;
+}
+
 /* Page head becomes the cardinal masthead. */
 .th-page .hq-page-head {
   background: var(--th-cardinal);
