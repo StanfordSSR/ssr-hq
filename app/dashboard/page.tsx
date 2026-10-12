@@ -36,6 +36,7 @@ import { TeamExpenseLogger } from '@/components/team-expense-logger';
 import { getChargeCatalog } from '@/lib/budget-charge-routing';
 import { allocatedClubBudgetCents } from '@/lib/finance-overview';
 import { buildTeamBuckets } from '@/lib/finance-team-buckets';
+import { getBudgetReferenceAliases, remapBudgetReferences } from '@/lib/budget-reference-aliases';
 import { TeamBudgetBucketList } from '@/components/team-budget-bucket-list';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
@@ -1073,7 +1074,19 @@ export default async function DashboardPage() {
   }));
   const donutDenominator = chartDenominator(budgetCents, spentCents);
   const donutBackground = donutGradient(donutSlices(totalsByCategory, donutDenominator));
-  const teamBuckets = buildTeamBuckets(chargeCatalog?.teams[team.id] || [], purchases, pendingReimbursements);
+  const teamAccounts = chargeCatalog?.teams[team.id] || [];
+  const currentAccountIds = new Set(teamAccounts.map((account) => account.expenseId));
+  const hasPriorReferences = [...purchases, ...pendingReimbursements].some(
+    (row) => row.budget_expense_item_id && !currentAccountIds.has(row.budget_expense_item_id)
+  );
+  const budgetAliases = hasPriorReferences
+    ? await getBudgetReferenceAliases(cycle, chargeCatalog?.planId)
+    : null;
+  const teamBuckets = buildTeamBuckets(
+    teamAccounts,
+    budgetAliases ? remapBudgetReferences(purchases, budgetAliases) : purchases,
+    budgetAliases ? remapBudgetReferences(pendingReimbursements, budgetAliases) : pendingReimbursements
+  );
 
   const pendingReceipts = (pendingReceiptsData || []) as PendingReceipt[];
   const spentPercent = annualBudget > 0 ? Math.min(100, Math.round((spent / annualBudget) * 100)) : 0;

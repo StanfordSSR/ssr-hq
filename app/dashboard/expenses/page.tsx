@@ -5,6 +5,7 @@ import { getCurrentAcademicYear, formatAcademicYear, formatDateLabel } from '@/l
 import { ClearExpenseLogForm } from '@/components/clear-expense-log-form';
 import { PurchaseCategoryForm } from '@/components/purchase-category-form';
 import { getChargeCatalog } from '@/lib/budget-charge-routing';
+import { getBudgetReferenceAliases } from '@/lib/budget-reference-aliases';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { PurchaseEntryActions } from '@/components/purchase-entry-actions';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
@@ -162,6 +163,15 @@ export default async function ExpenseLogPage({
     ...((teamPurchasesData || []) as Purchase[]),
     ...((leadershipPurchasesData || []) as Purchase[])
   ].sort((a, b) => new Date(b.purchased_at).getTime() - new Date(a.purchased_at).getTime());
+  const currentAccountIds = new Set(Object.values(chargeCatalog?.teams || {})
+    .flatMap((accounts) => accounts.map((account) => account.expenseId)));
+  const hasPriorReferences = purchases.some((purchase) =>
+    purchase.academic_year === currentCycle && purchase.expense_type === 'team' &&
+    purchase.budget_expense_item_id && !currentAccountIds.has(purchase.budget_expense_item_id)
+  );
+  const budgetAliases = hasPriorReferences
+    ? await getBudgetReferenceAliases(currentCycle, chargeCatalog?.planId)
+    : null;
 
   const academicYearOptions = Array.from(new Set(purchases.map((purchase) => purchase.academic_year)))
     .filter(Boolean)
@@ -642,7 +652,7 @@ export default async function ExpenseLogPage({
                     <td>{paymentMethodLabel[purchase.payment_method]}</td>
                     <td>
                       {!isReadOnlyFinanceViewer && purchase.expense_type === 'team' && purchase.academic_year === currentCycle ? (
-                        <PurchaseCategoryForm purchaseId={purchase.id} accounts={chargeCatalog?.teams[purchase.team_id || ''] || []} expenseId={purchase.budget_expense_item_id || ''} sourceId={purchase.funding_source_id || ''} />
+                        <PurchaseCategoryForm purchaseId={purchase.id} accounts={chargeCatalog?.teams[purchase.team_id || ''] || []} expenseId={budgetAliases?.expenseIds.get(purchase.budget_expense_item_id || '') || purchase.budget_expense_item_id || ''} sourceId={budgetAliases?.sourceIds.get(purchase.funding_source_id || '') || purchase.funding_source_id || ''} />
                       ) : (
                         <>{categoryLabel[purchase.category]}{purchase.funding_source_label ? ` · ${purchase.funding_source_label}` : ''}</>
                       )}
