@@ -11,6 +11,11 @@ import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-le
 import { getViewerContext } from '@/lib/auth';
 import { buildClubBuckets, type FinanceExpense } from '@/lib/finance-overview';
 import { buildTeamBuckets } from '@/lib/finance-team-buckets';
+import {
+  FinanceQuickSwitchProvider, FinanceQuickHeader, FinanceQuickLink,
+  FinanceQuickOverview, FinanceQuickDetail,
+  type QuickPurchase, type QuickPending
+} from '@/components/finance-quick-switch';
 
 type Team = {
   id: string;
@@ -88,6 +93,12 @@ function money(cents: number) {
   return `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 }
 
+function pacificDate(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: 'numeric', day: 'numeric'
+  }).format(new Date(value));
+}
+
 function utilizationLabel(spentCents: number, budgetCents: number) {
   if (budgetCents <= 0 || spentCents <= 0) return '0%';
   const percent = (spentCents / budgetCents) * 100;
@@ -132,7 +143,7 @@ export default async function FinancesPage({
     admin.from('team_budgets').select('team_id, academic_year, annual_budget_cents').eq('academic_year', cycle),
     admin.from('club_budgets').select('academic_year, total_budget_cents').eq('academic_year', cycle).maybeSingle(),
     admin.from('purchase_logs')
-      .select('team_id, amount_cents, category, budget_expense_item_id, funding_source_id')
+      .select('id, team_id, expense_type, academic_year, description, amount_cents, purchased_at, person_name, payment_method, category, budget_expense_item_id, funding_source_id')
       .eq('academic_year', cycle).eq('expense_type', 'team').gte('purchased_at', cycleStart),
     admin.from('purchase_logs')
       .select('amount_cents, budget_expense_item_id')
@@ -194,17 +205,9 @@ export default async function FinancesPage({
   // only by a high safety limit).
   const ledgerQuery = admin
     .from('purchase_logs')
-    .select('id, team_id, expense_type, description, amount_cents, purchased_at, person_name, payment_method, category')
+    .select('id, team_id, expense_type, academic_year, description, amount_cents, purchased_at, person_name, payment_method, category')
     .order('purchased_at', { ascending: false })
     .limit(1000);
-  if (validSelectedTeamId !== 'all') {
-    ledgerQuery.eq('team_id', validSelectedTeamId).eq('expense_type', 'team');
-  }
-  if (selectedRange === 'current_cycle') {
-    ledgerQuery.eq('academic_year', cycle).gte('purchased_at', cycleStart);
-  } else if (selectedRange === 'last_90_days') {
-    ledgerQuery.gte('purchased_at', daysAgoIso(90));
-  }
   const [
     chargeCatalog,
     { data: budgetExpensesData, error: budgetExpensesError },
@@ -251,17 +254,23 @@ export default async function FinancesPage({
   const unassignedClubSpent = Math.max(0, leadershipCycleSpentCents - clubBucketSpent);
   const filteredPurchases = (filteredPurchasesData || []) as PurchaseLog[];
   const teamNameById = new Map(allTeams.map((team) => [team.id, team.name]));
-  const ledgerRows: PurchaseLedgerRow[] = ((ledgerData || []) as Array<{
+  const allLedgerPurchases = (ledgerData || []) as Array<{
     id: string;
     team_id: string | null;
     expense_type: 'team' | 'leadership';
+    academic_year: string;
     description: string | null;
     amount_cents: number;
     purchased_at: string;
     person_name: string | null;
     payment_method: PurchaseLog['payment_method'];
     category: PurchaseLog['category'];
-  }>).map((purchase) => ({
+  }>;
+  const ledgerRows: PurchaseLedgerRow[] = allLedgerPurchases.filter((purchase) =>
+    (validSelectedTeamId === 'all' || purchase.team_id === validSelectedTeamId && purchase.expense_type === 'team') &&
+    (selectedRange === 'all_time' || selectedRange === 'last_90_days' && purchase.purchased_at >= daysAgoIso(90) ||
+      selectedRange === 'current_cycle' && purchase.academic_year === cycle && purchase.purchased_at >= cycleStart)
+  ).map((purchase) => ({
     id: purchase.id,
     teamName:
       purchase.expense_type === 'leadership'
@@ -279,15 +288,11 @@ export default async function FinancesPage({
   const allocatedTotal = teamAllocatedTotal + clubBucketTotal;
   const chartColors = ['#8c1515', '#3f6e8f', '#b27a2c', '#5d7c63', '#875e8c', '#bf5f4d', '#3f7c7c'];
   const spentByTeam = new Map<string, number>();
-  const cyclePurchases = (cyclePurchasesData || []) as Array<{
-    team_id: string;
-    amount_cents: number;
-    category: PurchaseLog['category'];
-    budget_expense_item_id: string | null;
-    funding_source_id: string | null;
-  }>;
+  const cyclePurchases = (cyclePurchasesData || []) as QuickPurchase[];
   for (const purchase of cyclePurchases) {
-    spentByTeam.set(purchase.team_id, (spentByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
+    if (purchase.team_id) {
+      spentByTeam.set(purchase.team_id, (spentByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
+    }
   }
   const clubSpent = cyclePurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0) + leadershipCycleSpentCents;
   const clubRemaining = Math.max(0, allocatedTotal - clubSpent);
@@ -423,6 +428,25 @@ export default async function FinancesPage({
     overviewMetrics.push({ label: 'Average purchase in range', value: money(filteredAverageSpend) });
   }
 
+  const quickData = {
+    cycle,
+    recentCutoffIso: daysAgoIso(90),
+    teams,
+    teamNames: Object.fromEntries(teamNameById),
+    budgets: Object.fromEntries(teamBudgets),
+    catalog: chargeCatalog,
+    clubBuckets,
+    cyclePurchases,
+    ledgerPurchases: allLedgerPurchases.map((purchase) => ({
+      ...purchase, budget_expense_item_id: null, funding_source_id: null
+    })) as QuickPurchase[],
+    pending: pendingReimbursements as QuickPending[],
+    leadershipSpentCents: leadershipCycleSpentCents,
+    canLogPurchases,
+    canLogLeadership,
+    profileName: profile.full_name || ''
+  };
+
   return (
     <div className="hq-page th-page hq-finance-page">
       <section className="hq-page-head">
@@ -457,33 +481,12 @@ export default async function FinancesPage({
         </section>
       ) : null}
 
+      <FinanceQuickSwitchProvider initialTeam={validSelectedTeamId} initialRange={selectedRange} data={quickData}>
       <div className="hq-finance-layout">
         <div className="hq-finance-column">
+        <FinanceQuickOverview>
         <aside className="hq-panel hq-lead-sidebar hq-surface-muted hq-finance-overview">
-          <div className="hq-section-head">
-            <div className="hq-section-head-copy">
-              <p className="hq-eyebrow">{selectedTeam ? 'Team financial overview' : 'Club financial overview'}</p>
-              <h2 className="hq-section-title hq-section-title-compact">{selectedTeam ? selectedTeam.name : cycle}</h2>
-            </div>
-            <form className="hq-finance-filter-bar" method="get">
-              <select className="select" name="team" defaultValue={validSelectedTeamId}>
-                <option value="all">All teams</option>
-                {teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </select>
-              <select className="select" name="range" defaultValue={selectedRange}>
-                <option value="current_cycle">Current cycle</option>
-                <option value="last_90_days">Last 90 days</option>
-                <option value="all_time">All time</option>
-              </select>
-              <button className="button-secondary" type="submit">
-                Apply
-              </button>
-            </form>
-          </div>
+          <FinanceQuickHeader />
 
           <div className="hq-finance-hero">
             <div className="hq-budget-ring-wrap hq-budget-ring-wrap-large">
@@ -627,6 +630,7 @@ export default async function FinancesPage({
                 : 'Every purchase ever logged, newest first. Click a column to sort.'
           }
         />
+        </FinanceQuickOverview>
         </div>
 
         <section className="hq-panel hq-lead-main hq-surface-muted hq-finance-allocations">
@@ -642,24 +646,9 @@ export default async function FinancesPage({
               const budgetCents = teamBudgets.get(team.id) || 0;
               const spentCents = spentByTeam.get(team.id) || 0;
               return (
-                <div key={team.id} className={`hq-team-row${selectedTeam?.id === team.id ? ' hq-team-row-selected' : ''}`}>
+                <div key={team.id} className="hq-team-row">
                   <div className="hq-finance-team-top">
-                    <Link
-                      href={`/dashboard/finances?team=${team.id}&range=${selectedRange}`}
-                      className="hq-team-heading hq-team-heading-link"
-                    >
-                      <div className="hq-team-title-row">
-                        {team.logo_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={team.logo_url} alt="" className="hq-team-logo hq-team-logo-medium" />
-                        ) : (
-                          <div className="hq-team-logo hq-team-logo-medium hq-team-logo-fallback">
-                            {team.name.slice(0, 1)}
-                          </div>
-                        )}
-                        <h3>{team.name}</h3>
-                      </div>
-                    </Link>
+                    <FinanceQuickLink team={team} />
                     <div className="hq-finance-team-amount">
                       {canEditBudgets ? (
                         <InlineBudgetEditor
@@ -711,6 +700,7 @@ export default async function FinancesPage({
             })}
           </div>
 
+          <FinanceQuickDetail>
           {!selectedTeam ? (
             <section className="hq-finance-drilldown">
               <div className="hq-block-head">
@@ -755,7 +745,7 @@ export default async function FinancesPage({
                     <tbody>
                       {leadershipRecent.map((purchase) => (
                         <tr key={purchase.id}>
-                          <td>{new Date(purchase.purchased_at).toLocaleDateString('en-US')}</td>
+                          <td>{pacificDate(purchase.purchased_at)}</td>
                           <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
                           <td>${(purchase.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                           <td>{purchase.person_name || 'Unknown'}</td>
@@ -828,7 +818,7 @@ export default async function FinancesPage({
                     <tbody>
                       {selectedTeamPurchases.map((purchase) => (
                         <tr key={purchase.id}>
-                          <td>{new Date(purchase.purchased_at).toLocaleDateString('en-US')}</td>
+                          <td>{pacificDate(purchase.purchased_at)}</td>
                           <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
                           <td>${(purchase.amount_cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                           <td>{purchase.person_name || 'Unknown'}</td>
@@ -844,8 +834,10 @@ export default async function FinancesPage({
               </div>
             </section>
           ) : null}
+          </FinanceQuickDetail>
         </section>
       </div>
+      </FinanceQuickSwitchProvider>
     </div>
   );
 }
