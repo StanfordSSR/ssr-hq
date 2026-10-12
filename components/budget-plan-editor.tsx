@@ -1368,12 +1368,13 @@ export function BudgetApprovalPanel({
 
       <div className="hq-summary-list">
         {presidents.map((president) => {
-          const signed = approvals.some((a) => a.presidentId === president.id && a.hasSignature);
-          const intent = approvals.some((a) => a.presidentId === president.id);
+          const approval = approvals.find((a) => a.presidentId === president.id);
           return (
             <div key={president.id} className="hq-summary-row">
               <span>{president.fullName}</span>
-              <strong>{signed ? 'Signed in portal' : intent ? 'Approved in Slack (signature pending)' : 'Not signed'}</strong>
+              <strong>{approval?.hasSignature
+                ? approval.source === 'in_person' ? 'Signed in person · admin certified' : 'Signed in portal'
+                : approval ? 'Approved in Slack (signature pending)' : 'Not signed'}</strong>
             </div>
           );
         })}
