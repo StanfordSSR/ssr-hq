@@ -75,6 +75,7 @@ type Props = {
   allocations: Allocation[];
   teams: Team[];
   approvals: Approval[];
+  adminAmendment: { certifiedByName: string } | null;
   presidents: President[];
   totalFundingCents: number;
   totalExpenseCents: number;
@@ -168,6 +169,7 @@ export function BudgetPlanEditor(props: Props) {
     allocations,
     teams,
     approvals,
+    adminAmendment,
     presidents,
     totalFundingCents,
     totalExpenseCents,
@@ -1011,6 +1013,7 @@ export function BudgetPlanEditor(props: Props) {
         currentUserIsPresident={currentUserIsPresident}
         currentUserId={currentUserId}
         approvals={approvals}
+        adminAmendment={adminAmendment}
         presidents={presidents}
         uncoveredCents={uncoveredCents}
       />
@@ -1336,6 +1339,7 @@ export function BudgetApprovalPanel({
   currentUserIsPresident,
   currentUserId,
   approvals,
+  adminAmendment,
   presidents,
   uncoveredCents,
   academicYear
@@ -1349,6 +1353,7 @@ export function BudgetApprovalPanel({
   currentUserIsPresident: boolean;
   currentUserId: string;
   approvals: Approval[];
+  adminAmendment?: { certifiedByName: string } | null;
   presidents: President[];
   uncoveredCents: number;
 }) {
@@ -1359,7 +1364,7 @@ export function BudgetApprovalPanel({
   return (
     <section className="hq-question-card eoy-ack-card">
       <div className="hq-block-head">
-        <h3>President approval</h3>
+        <h3>{adminAmendment && status === 'approved' ? 'Admin-approved amendment' : 'President approval'}</h3>
         <span className={`hq-status-chip hq-status-${status === 'approved' ? 'open' : 'pending'}`}>
           {status === 'approved' ? 'Approved' : status === 'pending_approval' ? 'Awaiting signatures' : 'Draft'}
           {version > 1 ? ` · v${version}` : ''}
@@ -1367,7 +1372,11 @@ export function BudgetApprovalPanel({
       </div>
 
       <div className="hq-summary-list">
-        {presidents.map((president) => {
+        {adminAmendment && status === 'approved' ? (
+          <p className="helper">
+            Certified by {adminAmendment.certifiedByName}. The presidents signed the previous plan version, not this amendment.
+          </p>
+        ) : presidents.map((president) => {
           const approval = approvals.find((a) => a.presidentId === president.id);
           return (
             <div key={president.id} className="hq-summary-row">
@@ -1378,7 +1387,7 @@ export function BudgetApprovalPanel({
             </div>
           );
         })}
-        {presidents.length !== 2 ? (
+        {!adminAmendment && presidents.length !== 2 ? (
           <p className="eoy-over-limit helper">Approval needs exactly two active presidents (currently {presidents.length}).</p>
         ) : null}
       </div>

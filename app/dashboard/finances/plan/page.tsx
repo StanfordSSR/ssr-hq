@@ -213,9 +213,17 @@ async function renderPlan(
     presidents: Array<{ id: string; fullName: string }>;
   }
 ) {
-  const [{ sources, expenses, allocations, approvals }, rollup] = await Promise.all([
+  const admin = createAdminClient();
+  const [{ sources, expenses, allocations, approvals }, rollup, { data: amendment }] = await Promise.all([
     getPlanBundle(plan.id),
-    computePlanRollup(plan.id, plan.academicYear)
+    computePlanRollup(plan.id, plan.academicYear),
+    admin
+      .from('audit_log_entries')
+      .select('details')
+      .eq('action', 'budget.plan.admin_amendment_approved')
+      .eq('target_id', plan.id)
+      .limit(1)
+      .maybeSingle()
   ]);
 
   const sourceProps = sources.map((source) => {
@@ -267,6 +275,9 @@ async function renderPlan(
         allocations={allocations.map((a) => ({ id: a.id, sourceId: a.sourceId, expenseId: a.expenseId, amountCents: a.amountCents }))}
         teams={ctx.teams}
         approvals={approvals.map((a) => ({ presidentId: a.presidentId, hasSignature: a.hasSignature, source: a.source }))}
+        adminAmendment={amendment?.details && typeof amendment.details.certifiedByName === 'string'
+          ? { certifiedByName: amendment.details.certifiedByName }
+          : null}
         presidents={ctx.presidents}
         totalFundingCents={rollup.totalFundingCents}
         totalExpenseCents={rollup.totalExpenseCents}
