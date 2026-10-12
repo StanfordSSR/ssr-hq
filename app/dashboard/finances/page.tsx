@@ -10,11 +10,13 @@ import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
 import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
 import { getViewerContext } from '@/lib/auth';
+import { buildClubBuckets, type FinanceExpense } from '@/lib/finance-overview';
 
 type Team = {
   id: string;
   name: string;
   logo_url: string | null;
+  is_active: boolean;
 };
 
 type TeamBudget = {
@@ -63,6 +65,10 @@ function daysAgoIso(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function money(cents: number) {
+  return `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+}
+
 export default async function FinancesPage({
   searchParams
 }: {
@@ -90,7 +96,7 @@ export default async function FinancesPage({
   const showPlanCta = budgetSetup.setupState !== 'upcoming';
   const selectedTeamId = readSingle(params.team) || 'all';
   const selectedRange = readSingle(params.range) || 'current_cycle';
-  const { data: teamsData } = await admin.from('teams').select('id, name, logo_url').order('name');
+  const { data: teamsData } = await admin.from('teams').select('id, name, logo_url, is_active').order('name');
   const { data: teamBudgetsData } = await admin
     .from('team_budgets')
     .select('team_id, academic_year, annual_budget_cents')
@@ -100,19 +106,22 @@ export default async function FinancesPage({
     .select('academic_year, total_budget_cents')
     .eq('academic_year', cycle)
     .maybeSingle();
-  const purchaseScopeQuery = admin
-    .from('purchase_logs')
-    .select('team_id, amount_cents, purchased_at, category, academic_year')
-    .eq('expense_type', 'team');
+  const { data: budgetExpensesData, error: budgetExpensesError } = activeBudgetPlan?.status === 'approved'
+    ? await admin
+        .from('budget_expense_items')
+        .select('id, kind, team_id, parent_id, label, amount_cents, sort_order')
+        .eq('plan_id', activeBudgetPlan.id)
+    : { data: [], error: null };
+  if (budgetExpensesError) throw new Error('Could not load the approved budget buckets.');
   const filteredPurchaseQuery = admin
     .from('purchase_logs')
     .select('team_id, amount_cents, purchased_at, category, academic_year')
     .eq('expense_type', 'team');
 
-  const teams = (teamsData || []) as Team[];
+  const allTeams = (teamsData || []) as Team[];
+  const teams = allTeams.filter((team) => team.is_active);
   const validSelectedTeamId = selectedTeamId === 'all' || teams.some((team) => team.id === selectedTeamId) ? selectedTeamId : 'all';
   if (validSelectedTeamId !== 'all') {
-    purchaseScopeQuery.eq('team_id', validSelectedTeamId);
     filteredPurchaseQuery.eq('team_id', validSelectedTeamId);
   }
 
@@ -123,16 +132,14 @@ export default async function FinancesPage({
   }
 
   const [
-    { data: purchasesData },
     { data: filteredPurchasesData },
     { data: cyclePurchasesData },
     { data: leadershipCycleData },
     { data: leadershipRecentData }
   ] = await Promise.all([
-    purchaseScopeQuery,
     filteredPurchaseQuery,
-    admin.from('purchase_logs').select('team_id, amount_cents').eq('academic_year', cycle).eq('expense_type', 'team'),
-    admin.from('purchase_logs').select('amount_cents').eq('expense_type', 'leadership').eq('academic_year', cycle),
+    admin.from('purchase_logs').select('team_id, amount_cents, category').eq('academic_year', cycle).eq('expense_type', 'team'),
+    admin.from('purchase_logs').select('amount_cents, budget_expense_item_id').eq('expense_type', 'leadership').eq('academic_year', cycle),
     admin
       .from('purchase_logs')
       .select('id, description, amount_cents, purchased_at, person_name, payment_method, category')
@@ -140,10 +147,15 @@ export default async function FinancesPage({
       .order('purchased_at', { ascending: false })
       .limit(25)
   ]);
-  const leadershipCycleSpentCents = ((leadershipCycleData || []) as Array<{ amount_cents: number }>).reduce(
+  const leadershipPurchases = (leadershipCycleData || []) as Array<{ amount_cents: number; budget_expense_item_id: string | null }>;
+  const leadershipCycleSpentCents = leadershipPurchases.reduce(
     (sum, entry) => sum + entry.amount_cents,
     0
   );
+  const clubBuckets = buildClubBuckets((budgetExpensesData || []) as FinanceExpense[], leadershipPurchases);
+  const clubBucketTotal = clubBuckets.reduce((sum, bucket) => sum + bucket.budgetCents, 0);
+  const clubBucketSpent = clubBuckets.reduce((sum, bucket) => sum + bucket.spentCents, 0);
+  const unassignedClubSpent = Math.max(0, leadershipCycleSpentCents - clubBucketSpent);
   const leadershipRecent = (leadershipRecentData || []) as PurchaseLog[];
   const canLogLeadership =
     currentRole === 'admin' ||
@@ -154,7 +166,6 @@ export default async function FinancesPage({
     ((teamBudgetsData || []) as TeamBudget[]).map((entry) => [entry.team_id, entry.annual_budget_cents])
   );
   const clubBudget = (clubBudgetData || { academic_year: cycle, total_budget_cents: 0 }) as ClubBudget;
-  const purchases = (purchasesData || []) as PurchaseLog[];
   const filteredPurchases = (filteredPurchasesData || []) as PurchaseLog[];
   // Full purchase rows backing the sortable ledger below the overview panel.
   // Mirrors the active team + range filters, newest first, uncapped (bounded
@@ -195,7 +206,7 @@ export default async function FinancesPage({
         : Promise.resolve({ data: [] }),
       ledgerQuery
     ]);
-  const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
+  const teamNameById = new Map(allTeams.map((team) => [team.id, team.name]));
   const ledgerRows: PurchaseLedgerRow[] = ((ledgerData || []) as Array<{
     id: string;
     team_id: string | null;
@@ -220,35 +231,27 @@ export default async function FinancesPage({
     category: purchase.category || 'equipment'
   }));
 
-  const allocatedTotal = teams.reduce((sum, team) => sum + (teamBudgets.get(team.id) || 0), 0);
-  const remainingBudget = Math.max(0, clubBudget.total_budget_cents - allocatedTotal);
-  const allocationPercent =
-    clubBudget.total_budget_cents > 0 ? Math.min(100, Math.round((allocatedTotal / clubBudget.total_budget_cents) * 100)) : 0;
+  const teamAllocatedTotal = teams.reduce((sum, team) => sum + (teamBudgets.get(team.id) || 0), 0);
+  const allocatedTotal = teamAllocatedTotal + clubBucketTotal;
   const chartColors = ['#8c1515', '#3f6e8f', '#b27a2c', '#5d7c63', '#875e8c', '#bf5f4d', '#3f7c7c'];
   const spentByTeam = new Map<string, number>();
-  for (const purchase of ((cyclePurchasesData || []) as Array<{ team_id: string; amount_cents: number }>)) {
+  const cyclePurchases = (cyclePurchasesData || []) as Array<{ team_id: string; amount_cents: number; category: PurchaseLog['category'] }>;
+  for (const purchase of cyclePurchases) {
     spentByTeam.set(purchase.team_id, (spentByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
   }
+  const clubSpent = cyclePurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0) + leadershipCycleSpentCents;
+  const clubRemaining = Math.max(0, allocatedTotal - clubSpent);
+  const clubUtilization = allocatedTotal > 0 ? Math.min(100, Math.round((clubSpent / allocatedTotal) * 100)) : 0;
   const filteredSpendTotal = filteredPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
   const filteredPurchaseCount = filteredPurchases.length;
   const filteredAverageSpend = filteredPurchaseCount > 0 ? Math.round(filteredSpendTotal / filteredPurchaseCount) : 0;
-  const filteredSpentTeams = new Set(filteredPurchases.map((purchase) => purchase.team_id)).size;
-  const filteredAllocatedBudget =
-    validSelectedTeamId === 'all'
-      ? allocatedTotal
-      : teamBudgets.get(validSelectedTeamId) || 0;
-  const filteredRemainingAllocated = Math.max(0, filteredAllocatedBudget - filteredSpendTotal);
-  const filteredTotalBudget =
-    validSelectedTeamId === 'all'
-      ? clubBudget.total_budget_cents
-      : teamBudgets.get(validSelectedTeamId) || 0;
-  const filteredRemainingTotal = Math.max(0, filteredTotalBudget - filteredSpendTotal);
-  const totalSpendForSelection = purchases
-    .filter((purchase) => (validSelectedTeamId === 'all' ? true : purchase.team_id === validSelectedTeamId))
+  const filteredAllocatedBudget = validSelectedTeamId === 'all' ? allocatedTotal : teamBudgets.get(validSelectedTeamId) || 0;
+  const selectedCyclePurchases = cyclePurchases.filter((purchase) =>
+    validSelectedTeamId === 'all' || purchase.team_id === validSelectedTeamId
+  );
+  const totalSpendForSelection = selectedCyclePurchases
     .reduce((sum, purchase) => sum + purchase.amount_cents, 0);
-  const alreadySpentOutsideFilter = Math.max(0, totalSpendForSelection - filteredSpendTotal);
   const trueRemainingAllocated = Math.max(0, filteredAllocatedBudget - totalSpendForSelection);
-  const trueRemainingTotal = Math.max(0, filteredTotalBudget - totalSpendForSelection);
   const utilizationPercent =
     filteredAllocatedBudget > 0 ? Math.min(100, Math.round((totalSpendForSelection / filteredAllocatedBudget) * 100)) : 0;
   const selectedTeam = validSelectedTeamId === 'all' ? null : teams.find((team) => team.id === validSelectedTeamId) || null;
@@ -262,21 +265,24 @@ export default async function FinancesPage({
     food: '#d17c3f',
     travel: '#3f6e8f',
     registration: '#5b8c5a',
-    prior: '#8c8585',
+    other: '#875e8c',
     unused: '#dfd7d7'
   } as const;
   const categoryTotals = {
-    equipment: filteredPurchases
+    equipment: selectedCyclePurchases
       .filter((purchase) => purchase.category === 'equipment')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
-    food: filteredPurchases
+    food: selectedCyclePurchases
       .filter((purchase) => purchase.category === 'food')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
-    travel: filteredPurchases
+    travel: selectedCyclePurchases
       .filter((purchase) => purchase.category === 'travel')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
-    registration: filteredPurchases
+    registration: selectedCyclePurchases
       .filter((purchase) => purchase.category === 'registration')
+      .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
+    other: selectedCyclePurchases
+      .filter((purchase) => purchase.category === 'other')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0)
   };
 
@@ -288,6 +294,9 @@ export default async function FinancesPage({
       color: chartColors[index % chartColors.length]
     }))
     .filter((team) => team.amount > 0);
+  if (clubBucketTotal > 0) {
+    allocationChartEntries.push({ id: 'club', name: 'Club programs', amount: clubBucketTotal, color: '#bf5f4d' });
+  }
 
   let cursor = 0;
   const slices: string[] = [];
@@ -298,24 +307,21 @@ export default async function FinancesPage({
           { id: 'equipment', name: 'Equipment', amount: categoryTotals.equipment, color: categoryColors.equipment },
           { id: 'food', name: 'Food', amount: categoryTotals.food, color: categoryColors.food },
           { id: 'travel', name: 'Travel', amount: categoryTotals.travel, color: categoryColors.travel },
-          { id: 'registration', name: 'Registration', amount: categoryTotals.registration, color: categoryColors.registration }
+          { id: 'registration', name: 'Registration', amount: categoryTotals.registration, color: categoryColors.registration },
+          { id: 'other', name: 'Other', amount: categoryTotals.other, color: categoryColors.other }
         ].filter((entry) => entry.amount > 0) as Array<{ id: string; name: string; amount: number; color: string }>);
 
   if (validSelectedTeamId === 'all') {
     for (const team of chartEntries) {
       const amount = team.amount;
-      if (clubBudget.total_budget_cents <= 0 || amount <= 0) {
+      if (allocatedTotal <= 0 || amount <= 0) {
         continue;
       }
 
       const start = cursor;
-      const end = cursor + (amount / clubBudget.total_budget_cents) * 100;
+      const end = Math.min(100, cursor + (amount / allocatedTotal) * 100);
       cursor = end;
       slices.push(`${team.color} ${start}% ${end}%`);
-    }
-
-    if (clubBudget.total_budget_cents > 0 && remainingBudget > 0) {
-      slices.push(`#e5e1e1 ${cursor}% 100%`);
     }
   } else {
     for (const entry of chartEntries) {
@@ -324,37 +330,51 @@ export default async function FinancesPage({
       }
 
       const start = cursor;
-      const end = cursor + (entry.amount / filteredAllocatedBudget) * 100;
+      const end = Math.min(100, cursor + (entry.amount / filteredAllocatedBudget) * 100);
       cursor = end;
       slices.push(`${entry.color} ${start}% ${end}%`);
     }
 
-    if (filteredAllocatedBudget > 0 && filteredRemainingAllocated > 0) {
-      if (alreadySpentOutsideFilter > 0) {
-        const spentStart = cursor;
-        const spentEnd = cursor + (alreadySpentOutsideFilter / filteredAllocatedBudget) * 100;
-        cursor = spentEnd;
-        slices.push(`${categoryColors.prior} ${spentStart}% ${spentEnd}%`);
-      }
-
-      if (trueRemainingAllocated > 0) {
-        slices.push(`${categoryColors.unused} ${cursor}% 100%`);
-      }
+    if (filteredAllocatedBudget > 0 && trueRemainingAllocated > 0) {
+      slices.push(`${categoryColors.unused} ${cursor}% 100%`);
     }
   }
 
   const chartBackground = slices.length > 0 ? `conic-gradient(${slices.join(', ')})` : 'conic-gradient(#e5e1e1 0 100%)';
+  const overviewMetrics = selectedTeam
+    ? [
+        { label: 'Annual budget', value: money(filteredAllocatedBudget) },
+        { label: 'Spent this cycle', value: money(totalSpendForSelection) },
+        { label: 'Remaining', value: money(trueRemainingAllocated) },
+        { label: 'Utilization', value: `${utilizationPercent}%` },
+        { label: 'Members', value: String(selectedTeamMemberCount) },
+        { label: 'Cost per member', value: money(costPerMember) }
+      ]
+    : [
+        { label: 'Total club budget', value: money(allocatedTotal) },
+        { label: 'Team budgets', value: money(teamAllocatedTotal) },
+        { label: 'Club buckets', value: money(clubBucketTotal) },
+        { label: 'Spent this cycle', value: money(clubSpent) },
+        { label: 'Remaining', value: money(clubRemaining) },
+        { label: 'Utilization', value: `${clubUtilization}%` }
+      ];
+  if (selectedRange !== 'current_cycle') {
+    overviewMetrics.push({ label: 'Team spend in selected range', value: money(filteredSpendTotal) });
+    overviewMetrics.push({ label: 'Average purchase in range', value: money(filteredAverageSpend) });
+  }
 
   return (
-    <div className="hq-page th-page">
+    <div className="hq-page th-page hq-finance-page">
       <section className="hq-page-head">
         <div className="hq-page-head-copy">
           <p className="hq-eyebrow">{canEdit ? 'Admin' : currentRole === 'president' ? 'President' : currentRole === 'vice_president' ? 'Vice president' : 'Financial officer'}</p>
           <h1 className="hq-page-title">Manage finances</h1>
           <p className="hq-subtitle">
-            {canEdit
-              ? 'Set the total club budget and allocate annual budgets to each team for the current cycle.'
-              : 'Review the total club budget and each team allocation for the current cycle.'}
+            {planManagesBudgets
+              ? 'Track spending against the approved team and club allocations for the current cycle.'
+              : canEdit
+                ? 'Set team budgets and track current-cycle spending.'
+                : 'Review allocations and current-cycle spending.'}
           </p>
         </div>
       </section>
@@ -409,93 +429,84 @@ export default async function FinancesPage({
             <div className="hq-budget-ring-wrap hq-budget-ring-wrap-large">
               <div className="hq-budget-ring hq-budget-ring-large" style={{ background: chartBackground } as CSSProperties}>
                 <div className="hq-budget-ring-inner hq-budget-ring-inner-large">
-                  <strong>{selectedTeam ? `${utilizationPercent}%` : `${allocationPercent}%`}</strong>
-                  <span>{selectedTeam ? 'used' : 'allocated'}</span>
+                  <strong>{selectedTeam ? `${utilizationPercent}%` : money(allocatedTotal)}</strong>
+                  <span>{selectedTeam ? 'used this cycle' : 'budgeted'}</span>
                 </div>
               </div>
             </div>
 
             <div className="hq-finance-callouts">
-              {chartEntries.map((team) => (
-                <div key={team.id} className="hq-finance-callout">
-                  <span className="hq-finance-callout-line" style={{ color: team.color }} aria-hidden="true" />
-                  <div>
-                    <span>{team.name}</span>
-                    <strong>${(team.amount / 100).toLocaleString()}</strong>
-                  </div>
+              {chartEntries.map((entry) => (
+                <div key={entry.id} className="hq-finance-callout">
+                  <span className="hq-finance-swatch" style={{ backgroundColor: entry.color }} aria-hidden="true" />
+                  <span>{entry.name}</span>
+                  <strong>{money(entry.amount)}</strong>
                 </div>
               ))}
-              <div className="hq-finance-callout">
-                <span
-                  className="hq-finance-callout-line"
-                  style={{ color: selectedTeam ? categoryColors.prior : '#8f8888' }}
-                  aria-hidden="true"
-                />
-                <div>
-                  <span>{selectedTeam ? 'Already spent' : 'Unallocated'}</span>
-                  <strong>${((selectedTeam ? alreadySpentOutsideFilter : remainingBudget) / 100).toLocaleString()}</strong>
-                </div>
-              </div>
-              {selectedTeam ? (
+              {selectedTeam && trueRemainingAllocated > 0 ? (
                 <div className="hq-finance-callout">
-                  <span className="hq-finance-callout-line" style={{ color: categoryColors.unused }} aria-hidden="true" />
-                  <div>
-                    <span>Remaining</span>
-                    <strong>${(trueRemainingAllocated / 100).toLocaleString()}</strong>
-                  </div>
+                  <span className="hq-finance-swatch" style={{ backgroundColor: categoryColors.unused }} aria-hidden="true" />
+                  <span>Remaining</span>
+                  <strong>{money(trueRemainingAllocated)}</strong>
                 </div>
               ) : null}
+              {chartEntries.length === 0 && !selectedTeam ? <p className="empty-note">No budget allocations yet.</p> : null}
             </div>
           </div>
+
+          {!selectedTeam && clubBuckets.length > 0 ? (
+            <section className="hq-finance-buckets" aria-labelledby="club-buckets-heading">
+              <div className="hq-finance-buckets-head">
+                <h3 id="club-buckets-heading">Club programs & operations</h3>
+                <strong>{money(clubBucketTotal)}</strong>
+              </div>
+              <div className="hq-finance-bucket-list">
+                {clubBuckets.map((bucket) => (
+                  <div className="hq-finance-bucket" key={bucket.id}>
+                    <div className="hq-finance-bucket-line">
+                      <span title={bucket.label}>{bucket.label}</span>
+                      <strong>{money(bucket.spentCents)} <span className="hq-finance-bucket-cap">/ {money(bucket.budgetCents)}</span></strong>
+                    </div>
+                    <div
+                      className="hq-budget-progress"
+                      role="progressbar"
+                      aria-label={`${bucket.label} spent`}
+                      aria-valuemin={0}
+                      aria-valuemax={bucket.budgetCents}
+                      aria-valuenow={Math.min(bucket.budgetCents, bucket.spentCents)}
+                    >
+                      <div
+                        className={`hq-budget-progress-fill${bucket.spentCents > bucket.budgetCents ? ' hq-budget-progress-fill-over' : ''}`}
+                        style={{ width: `${Math.min(100, (bucket.spentCents / bucket.budgetCents) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {unassignedClubSpent > 0 ? (
+                <p className="hq-finance-unassigned">{money(unassignedClubSpent)} in club spending is not assigned to a budget bucket.</p>
+              ) : null}
+            </section>
+          ) : null}
 
           {canEditBudgets ? (
             <InlineBudgetEditor
               action={updateClubBudgetAction}
               academicYear={cycle}
               fieldName="total_budget"
-              label="Total club budget"
+              label="Funding available"
               value={clubBudget.total_budget_cents / 100}
               confirmMessage="Update the total club budget for this cycle?"
             />
           ) : null}
 
           <div className="hq-finance-metric-grid">
-            <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Team total budget' : 'Total club budget'}</span>
-              <strong>${((selectedTeam ? filteredAllocatedBudget : clubBudget.total_budget_cents) / 100).toLocaleString()}</strong>
-            </div>
-            <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Spent' : 'Allocated'}</span>
-              <strong>${((selectedTeam ? totalSpendForSelection : allocatedTotal) / 100).toLocaleString()}</strong>
-            </div>
-            <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Utilization' : 'Unallocated'}</span>
-              <strong>{selectedTeam ? `${utilizationPercent}%` : `$${(remainingBudget / 100).toLocaleString()}`}</strong>
-            </div>
-            <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Cost per member' : 'Filtered spend'}</span>
-              <strong>{selectedTeam ? `$${(costPerMember / 100).toLocaleString()}` : `$${(filteredSpendTotal / 100).toLocaleString()}`}</strong>
-            </div>
-            <div className="hq-finance-metric-card">
-              <span>Avg purchase</span>
-              <strong>${(filteredAverageSpend / 100).toLocaleString()}</strong>
-            </div>
-            <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Remaining' : 'Utilization'}</span>
-              <strong>{selectedTeam ? `$${(trueRemainingAllocated / 100).toLocaleString()}` : `${utilizationPercent}%`}</strong>
-            </div>
-            <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Spend in selected range' : 'Remaining from allocated'}</span>
-              <strong>{selectedTeam ? `$${(filteredSpendTotal / 100).toLocaleString()}` : `$${(trueRemainingAllocated / 100).toLocaleString()}`}</strong>
-            </div>
-            <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Already spent before range' : 'Remaining from total'}</span>
-              <strong>{selectedTeam ? `$${(alreadySpentOutsideFilter / 100).toLocaleString()}` : `$${(trueRemainingTotal / 100).toLocaleString()}`}</strong>
-            </div>
-            <div className="hq-finance-metric-card">
-              <span>{selectedTeam ? 'Members' : 'Teams with spend'}</span>
-              <strong>{selectedTeam ? selectedTeamMemberCount : filteredSpentTeams}</strong>
-            </div>
+            {overviewMetrics.map((metric) => (
+              <div className="hq-finance-metric-card" key={metric.label}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+              </div>
+            ))}
           </div>
         </aside>
 
@@ -522,71 +533,74 @@ export default async function FinancesPage({
           </div>
 
           <div className="hq-team-list hq-team-list-compact">
-            {teams.map((team) => (
-              <div key={team.id} className={`hq-team-row${selectedTeam?.id === team.id ? ' hq-team-row-selected' : ''}`}>
-                <div className="hq-team-row-head">
-                  <Link
-                    href={`/dashboard/finances?team=${team.id}&range=${selectedRange}`}
-                    className="hq-team-heading hq-team-heading-link"
-                  >
-                    <div className="hq-team-title-row">
-                      {team.logo_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={team.logo_url} alt="" className="hq-team-logo hq-team-logo-medium" />
+            {teams.map((team) => {
+              const budgetCents = teamBudgets.get(team.id) || 0;
+              const spentCents = spentByTeam.get(team.id) || 0;
+              return (
+                <div key={team.id} className={`hq-team-row${selectedTeam?.id === team.id ? ' hq-team-row-selected' : ''}`}>
+                  <div className="hq-finance-team-top">
+                    <Link
+                      href={`/dashboard/finances?team=${team.id}&range=${selectedRange}`}
+                      className="hq-team-heading hq-team-heading-link"
+                    >
+                      <div className="hq-team-title-row">
+                        {team.logo_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={team.logo_url} alt="" className="hq-team-logo hq-team-logo-medium" />
+                        ) : (
+                          <div className="hq-team-logo hq-team-logo-medium hq-team-logo-fallback">
+                            {team.name.slice(0, 1)}
+                          </div>
+                        )}
+                        <h3>{team.name}</h3>
+                      </div>
+                    </Link>
+                    <div className="hq-finance-team-amount">
+                      {canEditBudgets ? (
+                        <InlineBudgetEditor
+                          action={updateTeamBudgetAction}
+                          academicYear={cycle}
+                          hiddenName="team_id"
+                          hiddenValue={team.id}
+                          fieldName="annual_budget"
+                          label="Annual budget"
+                          value={budgetCents / 100}
+                          confirmMessage={`Update the annual budget for ${team.name}?`}
+                        />
                       ) : (
-                        <div className="hq-team-logo hq-team-logo-medium hq-team-logo-fallback">
-                          {team.name.slice(0, 1)}
+                        <div>
+                          <span>Annual budget</span>
+                          <strong>{money(budgetCents)}</strong>
                         </div>
                       )}
-                      <h3>{team.name}</h3>
-                    </div>
-                  </Link>
-                </div>
-
-                <div className="hq-finance-team-row">
-                  <div className="hq-finance-team-budget">
-                    {canEditBudgets ? (
-                      <InlineBudgetEditor
-                        action={updateTeamBudgetAction}
-                        academicYear={cycle}
-                        hiddenName="team_id"
-                        hiddenValue={team.id}
-                        fieldName="annual_budget"
-                        label="Annual budget"
-                        value={(teamBudgets.get(team.id) || 0) / 100}
-                        confirmMessage={`Update the annual budget for ${team.name}?`}
-                      />
-                    ) : (
-                      <div className="hq-summary-list">
-                        <div className="hq-summary-row">
-                          <span>Annual budget</span>
-                          <strong>${((teamBudgets.get(team.id) || 0) / 100).toLocaleString()}</strong>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="hq-budget-row-meta">
-                    <div className="hq-budget-meta-line">
-                      <span>Spent</span>
-                      <strong>${((spentByTeam.get(team.id) || 0) / 100).toLocaleString()}</strong>
-                    </div>
-                    <div className="hq-budget-progress">
-                      <div
-                        className="hq-budget-progress-fill"
-                        style={{
-                          width: `${
-                            (teamBudgets.get(team.id) || 0) > 0
-                              ? Math.min(100, Math.round(((spentByTeam.get(team.id) || 0) / (teamBudgets.get(team.id) || 1)) * 100))
-                              : 0
-                          }%`
-                        }}
-                      />
                     </div>
                   </div>
-                </div>
+                  <div className="hq-finance-team-spend">
+                    <span>Spent <strong>{money(spentCents)}</strong></span>
+                    <span>
+                      {budgetCents === 0
+                        ? spentCents > 0 ? 'Unbudgeted spend' : 'No allocation'
+                        : spentCents > budgetCents
+                          ? `${money(spentCents - budgetCents)} over`
+                          : `${Math.round((spentCents / budgetCents) * 100)}% used`}
+                    </span>
+                  </div>
+                  <div
+                    className="hq-budget-progress"
+                    role="progressbar"
+                    aria-label={`${team.name} budget spent`}
+                    aria-valuemin={0}
+                    aria-valuemax={Math.max(budgetCents, 1)}
+                    aria-valuenow={Math.min(budgetCents, spentCents)}
+                  >
+                    <div
+                      className={`hq-budget-progress-fill${spentCents > budgetCents ? ' hq-budget-progress-fill-over' : ''}`}
+                      style={{ width: `${budgetCents > 0 ? Math.min(100, (spentCents / budgetCents) * 100) : 0}%` }}
+                    />
+                  </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {!selectedTeam ? (
