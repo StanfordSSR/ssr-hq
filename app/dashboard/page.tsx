@@ -34,6 +34,8 @@ import { SummerSpendPanel } from '@/components/summer-spend-panel';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
 import { TeamExpenseLogger } from '@/components/team-expense-logger';
 import { getChargeCatalog } from '@/lib/budget-charge-routing';
+import { buildTeamBuckets } from '@/lib/finance-team-buckets';
+import { TeamBudgetBucketList } from '@/components/team-budget-bucket-list';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
 import { type HighValueAssetView } from '@/components/high-value-asset-list';
 import { VisitorLinkGenerator } from '@/components/visitor-link-generator';
@@ -216,7 +218,7 @@ export default async function DashboardPage() {
       getCurrentAcademicYear(),
       isAdmin ? getAcademicCalendarSettings() : Promise.resolve(null)
     ]);
-    const chargeCatalog = await getChargeCatalog(academicYear);
+    const cyclePurchaseStart = new Date(`${academicYear.slice(0, 4)}-09-01T00:00:00-07:00`).toISOString();
     const manualRolloverTarget = calendarSettings ? getManualRolloverTarget(calendarSettings) : null;
     const nextAcademicYear = getNextAcademicYear(academicYear);
     const [
@@ -230,7 +232,8 @@ export default async function DashboardPage() {
       { data: teamBudgetsData },
       { data: clubBudgetData },
       { data: cyclePurchasesData },
-      { data: reimbursementRowsData }
+      { data: reimbursementRowsData },
+      chargeCatalog
     ] = await Promise.all([
       admin
         .from('teams')
@@ -257,11 +260,13 @@ export default async function DashboardPage() {
           'id, team_id, description, person_name, amount_cents, purchased_at, category, payment_method, receipt_path, receipt_not_needed'
         )
         .eq('expense_type', 'team')
-        .eq('academic_year', academicYear),
+        .eq('academic_year', academicYear)
+        .gte('purchased_at', cyclePurchaseStart),
       admin
         .from('member_reimbursements')
         .select('id, team_id, status, finance_processed_at, amount_cents')
-        .eq('academic_year', academicYear)
+        .eq('academic_year', academicYear),
+      getChargeCatalog(academicYear)
     ]);
     const pendingCardCount = pendingCardAgreements.length;
     const teams = (teamsData || []) as Team[];
@@ -860,6 +865,10 @@ export default async function DashboardPage() {
     );
   }
 
+  const reportStatePromise = getNextReportState();
+  const cyclePromise = getCurrentAcademicYear();
+  const eoyStatePromise = getEoyReportState();
+
   const [{ data: team }, { data: teamMembershipsData }, { data: rosterMembersData }, reportState, cycle] = await Promise.all([
     admin
       .from('teams')
@@ -875,8 +884,8 @@ export default async function DashboardPage() {
       .from('team_roster_members')
       .select('id, team_id')
       .eq('team_id', primaryTeamId),
-    getNextReportState(),
-    getCurrentAcademicYear()
+    reportStatePromise,
+    cyclePromise
   ]);
 
   if (!team) {
@@ -886,6 +895,22 @@ export default async function DashboardPage() {
   const teamMemberships = (teamMembershipsData || []) as Membership[];
   const rosterMembers = (rosterMembersData || []) as RosterMember[];
   const memberCount = teamMemberships.length + rosterMembers.length;
+  const reportRecordPromise = admin
+    .from('team_reports')
+    .select('id, status')
+    .eq('team_id', team.id)
+    .eq('academic_year', reportState.academicYear)
+    .eq('quarter', reportState.targetQuarter)
+    .maybeSingle();
+  const myTeamsPromise = admin.from('teams').select('id, name').in('id', myTeamIds);
+  const leadAssetsPromise = getHighValueAssetsForTeams(myTeamIds);
+  const eoyRecordPromise = eoyStatePromise.then((state) => admin
+    .from('eoy_reports')
+    .select('id, status')
+    .eq('team_id', team.id)
+    .eq('academic_year', state.academicYear)
+    .maybeSingle());
+  const cyclePurchaseStart = new Date(`${cycle.slice(0, 4)}-09-01T00:00:00-07:00`).toISOString();
   const [
     { data: teamBudget },
     { data: purchasesData },
@@ -897,7 +922,9 @@ export default async function DashboardPage() {
     { data: announcementsData },
     { data: announcementRecipientsData },
     { data: announcementRsvpsData },
-    reportingWindows
+    reportingWindows,
+    chargeCatalog,
+    { data: pendingReimbursementsData }
   ] =
     await Promise.all([
       admin
@@ -908,9 +935,10 @@ export default async function DashboardPage() {
         .maybeSingle(),
       admin
         .from('purchase_logs')
-        .select('id, description, person_name, amount_cents, purchased_at, category')
+        .select('id, description, person_name, amount_cents, purchased_at, category, budget_expense_item_id, funding_source_id')
         .eq('team_id', team.id)
-        .eq('academic_year', cycle),
+        .eq('academic_year', cycle)
+        .gte('purchased_at', cyclePurchaseStart),
       admin
         .from('purchase_logs')
         .select('id, description, purchased_at, payment_method, receipt_path, receipt_not_needed')
@@ -941,15 +969,16 @@ export default async function DashboardPage() {
         .order('event_at', { ascending: true }),
       admin.from('announcement_recipients').select('announcement_id, team_id').eq('team_id', team.id),
       admin.from('announcement_recipient_rsvps').select('announcement_id, response'),
-      getReportingWindows(cycle)
+      getReportingWindows(cycle),
+      getChargeCatalog(cycle),
+      admin
+        .from('member_reimbursements')
+        .select('id, submitter_name, item_name, amount_cents, reimbursement_number, requires_signature, created_at, budget_expense_item_id, funding_source_id')
+        .eq('team_id', team.id)
+        .eq('academic_year', cycle)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
     ]);
-  const { data: pendingReimbursementsData } = await admin
-    .from('member_reimbursements')
-    .select('id, submitter_name, item_name, amount_cents, reimbursement_number, requires_signature, created_at')
-    .eq('team_id', team.id)
-    .eq('academic_year', cycle)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false });
   const pendingReimbursements = (pendingReimbursementsData || []) as Array<{
     id: string;
     submitter_name: string;
@@ -958,6 +987,8 @@ export default async function DashboardPage() {
     reimbursement_number: string;
     requires_signature: boolean;
     created_at: string;
+    budget_expense_item_id: string | null;
+    funding_source_id: string | null;
   }>;
   const recipientTaskIds = new Set((taskRecipients || []).map((entry) => entry.task_id));
   const completedTaskIds = new Set((taskCompletions || []).map((entry) => entry.task_id));
@@ -994,6 +1025,8 @@ export default async function DashboardPage() {
     amount_cents: number;
     purchased_at: string;
     category: 'equipment' | 'food' | 'travel' | 'registration' | 'other' | null;
+    budget_expense_item_id: string | null;
+    funding_source_id: string | null;
   }>;
   const spent = purchases.reduce(
     (sum, purchase) => sum + purchase.amount_cents / 100,
@@ -1038,6 +1071,7 @@ export default async function DashboardPage() {
   }));
   const donutDenominator = chartDenominator(budgetCents, spentCents);
   const donutBackground = donutGradient(donutSlices(totalsByCategory, donutDenominator));
+  const teamBuckets = buildTeamBuckets(chargeCatalog?.teams[team.id] || [], purchases, pendingReimbursements);
 
   const pendingReceipts = (pendingReceiptsData || []) as PendingReceipt[];
   const spentPercent = annualBudget > 0 ? Math.min(100, Math.round((spent / annualBudget) * 100)) : 0;
@@ -1045,17 +1079,12 @@ export default async function DashboardPage() {
   // These queries only depend on values already known here (team.id, myTeamIds,
   // reportState), so fold them into a single round-trip block instead of
   // awaiting each sequentially.
-  const [{ data: reportRecord }, eoyState, { data: myTeamsData }, leadAssets] = await Promise.all([
-    admin
-      .from('team_reports')
-      .select('id, status')
-      .eq('team_id', team.id)
-      .eq('academic_year', reportState.academicYear)
-      .eq('quarter', reportState.targetQuarter)
-      .maybeSingle(),
-    getEoyReportState(),
-    admin.from('teams').select('id, name').in('id', myTeamIds),
-    getHighValueAssetsForTeams(myTeamIds)
+  const [{ data: reportRecord }, eoyState, { data: myTeamsData }, leadAssets, { data: eoyRecord }] = await Promise.all([
+    reportRecordPromise,
+    eoyStatePromise,
+    myTeamsPromise,
+    leadAssetsPromise,
+    eoyRecordPromise
   ]);
 
   // eoyRecord depends on eoyState (resolved above); the lead asset logger
@@ -1064,17 +1093,9 @@ export default async function DashboardPage() {
   const leadAssetLoggerIds = Array.from(
     new Set(leadAssets.map((asset) => asset.logged_by).filter((id): id is string => Boolean(id)))
   );
-  const [{ data: eoyRecord }, { data: leadAssetLoggerProfilesData }] = await Promise.all([
-    admin
-      .from('eoy_reports')
-      .select('id, status')
-      .eq('team_id', team.id)
-      .eq('academic_year', eoyState.academicYear)
-      .maybeSingle(),
-    leadAssetLoggerIds.length > 0
-      ? admin.from('profiles').select('id, full_name').in('id', leadAssetLoggerIds)
-      : Promise.resolve({ data: [] as { id: string; full_name: string | null }[] })
-  ]);
+  const { data: leadAssetLoggerProfilesData } = leadAssetLoggerIds.length > 0
+    ? await admin.from('profiles').select('id, full_name').in('id', leadAssetLoggerIds)
+    : { data: [] as { id: string; full_name: string | null }[] };
   const showEoyCard = eoyState.reportState !== 'closed' || eoyRecord?.status === 'submitted';
 
   const myTeams = ((myTeamsData || []) as { id: string; name: string }[]).sort((a, b) =>
@@ -1375,6 +1396,7 @@ export default async function DashboardPage() {
             </div>
           </div>
         </div>
+        <TeamBudgetBucketList summary={teamBuckets} />
       </section>
 
       <section className="th-section th-lead-activity" aria-label="Recent activity and upcoming work">

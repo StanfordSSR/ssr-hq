@@ -11,6 +11,7 @@ import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-le
 import { getViewerContext } from '@/lib/auth';
 import { buildClubBuckets, type FinanceExpense } from '@/lib/finance-overview';
 import { buildTeamBuckets } from '@/lib/finance-team-buckets';
+import { TeamBudgetBucketList } from '@/components/team-budget-bucket-list';
 import {
   FinanceQuickSwitchProvider, FinanceQuickHeader, FinanceQuickLink,
   FinanceQuickOverview, FinanceQuickDetail,
@@ -517,50 +518,7 @@ export default async function FinancesPage({
             </div>
           </div>
 
-          {selectedTeam && teamBuckets ? (
-            <section className="hq-finance-buckets hq-finance-team-buckets" aria-labelledby="team-buckets-heading">
-              <div className="hq-finance-buckets-head">
-                <h3 id="team-buckets-heading">Budget categories</h3>
-                <strong>{money(filteredAllocatedBudget)} allocated</strong>
-              </div>
-              {teamBuckets.buckets.length === 0 ? (
-                <p className="empty-note">No approved budget categories for this team.</p>
-              ) : (
-                <div className="hq-finance-team-bucket-list">
-                  {teamBuckets.buckets.map((bucket) => (
-                    <div className="hq-finance-team-bucket" key={bucket.expenseId}>
-                      <div className="hq-finance-bucket-line">
-                        <strong>{bucket.category ? categoryLabel[bucket.category] : bucket.label}</strong>
-                        <span>{money(bucket.spentCents)} spent / {money(bucket.capCents)}</span>
-                      </div>
-                      <div className="hq-budget-progress" role="progressbar"
-                        aria-label={`${bucket.label} spent`} aria-valuemin={0}
-                        aria-valuemax={Math.max(bucket.capCents, 1)}
-                        aria-valuenow={Math.min(bucket.capCents, bucket.spentCents)}>
-                        <div className={`hq-budget-progress-fill${bucket.spentCents > bucket.capCents ? ' hq-budget-progress-fill-over' : ''}`}
-                          style={{ width: `${bucket.capCents > 0 ? Math.min(100, bucket.spentCents / bucket.capCents * 100) : 0}%` }} />
-                      </div>
-                      {bucket.pendingCents > 0 ? <p className="hq-finance-pending-note">{money(bucket.pendingCents)} pending approval, not counted as spent</p> : null}
-                      <div className="hq-finance-source-list">
-                        {bucket.sourceTotals.map((source) => (
-                          <div className="hq-finance-source" key={source.id}>
-                            <span>{source.label}</span>
-                            <span>{money(source.spentCents)} / {money(source.capCents)}{source.pendingCents > 0 ? ` · ${money(source.pendingCents)} pending` : ''}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {teamBuckets.unassignedSpentCents > 0 ? (
-                <p className="hq-finance-unassigned">{money(teamBuckets.unassignedSpentCents)} in approved spending has no current-plan category.</p>
-              ) : null}
-              {teamBuckets.unassignedPendingCents > 0 ? (
-                <p className="hq-finance-pending-note">{money(teamBuckets.unassignedPendingCents)} pending without a current-plan category.</p>
-              ) : null}
-            </section>
-          ) : null}
+          {selectedTeam && teamBuckets ? <TeamBudgetBucketList summary={teamBuckets} /> : null}
 
           {!selectedTeam && clubBuckets.length > 0 ? (
             <section className="hq-finance-buckets" aria-labelledby="club-buckets-heading">

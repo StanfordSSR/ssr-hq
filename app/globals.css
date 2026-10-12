@@ -673,7 +673,7 @@ tr:last-child td {
 }
 
 .hq-topbar-inner {
-  width: min(1480px, calc(100% - 72px));
+  width: min(1720px, 90vw);
   margin: 0 auto;
   min-height: 72px;
   display: flex;
@@ -905,7 +905,7 @@ tr:last-child td {
 }
 
 .hq-main {
-  width: min(1400px, calc(100% - 36px));
+  width: min(1720px, 90vw);
   margin: 0 auto;
   padding: 28px 0 52px;
 }
@@ -2882,7 +2882,7 @@ tr:last-child td {
   --th-hairline: #d9d0cd;
   --th-muted: #6e6260;
   display: block;
-  max-width: 1080px;
+  max-width: none;
   margin: 0 auto;
   padding: 4px 0 48px;
   font-variant-numeric: tabular-nums;
@@ -3243,7 +3243,7 @@ tr:last-child td {
 }
 
 .th-lead-dashboard {
-  max-width: 1240px;
+  max-width: none;
 }
 
 .th-lead-dashboard .th-mast {
