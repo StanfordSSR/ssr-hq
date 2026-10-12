@@ -9,7 +9,7 @@ import { updateClubBudgetAction, updateTeamBudgetAction } from '@/app/dashboard/
 import { InlineBudgetEditor } from '@/components/inline-budget-editor';
 import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
 import { getViewerContext } from '@/lib/auth';
-import { buildClubBuckets, type FinanceExpense } from '@/lib/finance-overview';
+import { allocatedClubBudgetCents, buildClubBuckets, type FinanceExpense } from '@/lib/finance-overview';
 import { buildTeamBuckets } from '@/lib/finance-team-buckets';
 import { TeamBudgetBucketList } from '@/components/team-budget-bucket-list';
 import {
@@ -285,8 +285,8 @@ export default async function FinancesPage({
     category: purchase.category || 'equipment'
   }));
 
-  const teamAllocatedTotal = teams.reduce((sum, team) => sum + (teamBudgets.get(team.id) || 0), 0);
-  const allocatedTotal = teamAllocatedTotal + clubBucketTotal;
+  const allocatedTotal = allocatedClubBudgetCents(teams, teamBudgets, clubBuckets);
+  const teamAllocatedTotal = allocatedTotal - clubBucketTotal;
   const chartColors = ['#8c1515', '#3f6e8f', '#b27a2c', '#5d7c63', '#875e8c', '#bf5f4d', '#3f7c7c'];
   const spentByTeam = new Map<string, number>();
   const cyclePurchases = (cyclePurchasesData || []) as QuickPurchase[];

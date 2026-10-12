@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildClubBuckets, type FinanceExpense } from '../finance-overview';
+import { allocatedClubBudgetCents, buildClubBuckets, type FinanceExpense } from '../finance-overview';
 
 const expenses: FinanceExpense[] = [
   { id: 'team', kind: 'team', team_id: 'one', parent_id: null, label: 'Equipment', amount_cents: 700000, sort_order: 0 },
@@ -29,5 +29,15 @@ describe('buildClubBuckets', () => {
     expect(buildClubBuckets([expenses[4]], [])).toEqual([
       { id: 'event', label: 'Showcase', budgetCents: 100000, spentCents: 0 }
     ]);
+  });
+});
+
+describe('allocatedClubBudgetCents', () => {
+  it('counts active team allocations and club leaf buckets only', () => {
+    expect(allocatedClubBudgetCents(
+      [{ id: 'one' }],
+      new Map([['one', 700000], ['retired', 200000]]),
+      [{ budgetCents: 25000 }, { budgetCents: 100000 }]
+    )).toBe(825000);
   });
 });

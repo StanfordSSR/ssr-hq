@@ -34,6 +34,7 @@ import { SummerSpendPanel } from '@/components/summer-spend-panel';
 import { LeadershipExpenseLogger } from '@/components/leadership-expense-logger';
 import { TeamExpenseLogger } from '@/components/team-expense-logger';
 import { getChargeCatalog } from '@/lib/budget-charge-routing';
+import { allocatedClubBudgetCents } from '@/lib/finance-overview';
 import { buildTeamBuckets } from '@/lib/finance-team-buckets';
 import { TeamBudgetBucketList } from '@/components/team-budget-bucket-list';
 import { HighValueAssetPanel } from '@/components/high-value-asset-panel';
@@ -230,7 +231,6 @@ export default async function DashboardPage() {
       pendingCardAgreements,
       summerSpend,
       { data: teamBudgetsData },
-      { data: clubBudgetData },
       { data: cyclePurchasesData },
       { data: reimbursementRowsData },
       chargeCatalog
@@ -253,13 +253,11 @@ export default async function DashboardPage() {
       showCardApprovalBanner ? getPendingCardAgreements() : Promise.resolve([]),
       getSummerSpendSummary(academicYear),
       admin.from('team_budgets').select('team_id, annual_budget_cents').eq('academic_year', academicYear),
-      admin.from('club_budgets').select('total_budget_cents').eq('academic_year', academicYear).maybeSingle(),
       admin
         .from('purchase_logs')
         .select(
           'id, team_id, description, person_name, amount_cents, purchased_at, category, payment_method, receipt_path, receipt_not_needed'
         )
-        .eq('expense_type', 'team')
         .eq('academic_year', academicYear)
         .gte('purchased_at', cyclePurchaseStart),
       admin
@@ -335,7 +333,11 @@ export default async function DashboardPage() {
         monthByTeam.set(purchase.team_id, (monthByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
       }
     }
-    const clubBudgetCents = clubBudgetData?.total_budget_cents || 0;
+    const clubBudgetCents = allocatedClubBudgetCents(
+      teams,
+      teamBudgetById,
+      (chargeCatalog?.leadership || []).map((account) => ({ budgetCents: account.capCents }))
+    );
     const clubSpentCents = cyclePurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
     const teamFinanceRows = teams
       .map((teamRow) => {
@@ -603,7 +605,7 @@ export default async function DashboardPage() {
           <summary>
             <span className="th-sec-label">Team spending</span>
             <span className="th-sec-preview">
-              {usd(clubSpentCents)} spent across {teams.length} teams · {usd(clubBudgetCents)} club budget
+              {usd([...spentByTeam.values()].reduce((sum, amount) => sum + amount, 0))} team spend · {usd(clubBudgetCents)} club budget
             </span>
             <span className="th-sec-count">{teams.length}</span>
           </summary>
@@ -647,7 +649,7 @@ export default async function DashboardPage() {
             <span className="th-sec-label">Big-ticket items</span>
             <span className="th-sec-preview">
               {bigTickets.length > 0
-                ? `Latest: ${bigTickets[0].description || 'Untitled'} (${usd(bigTickets[0].amount_cents)}, ${teamNameById.get(bigTickets[0].team_id || '') || 'Unknown team'})`
+                ? `Latest: ${bigTickets[0].description || 'Untitled'} (${usd(bigTickets[0].amount_cents)}, ${bigTickets[0].team_id ? teamNameById.get(bigTickets[0].team_id) || 'Unknown team' : 'Club'})`
                 : 'No purchases of $250 or more this cycle'}
             </span>
             <span className="th-sec-count">{bigTickets.length}</span>
@@ -671,7 +673,7 @@ export default async function DashboardPage() {
                     {bigTickets.map((purchase) => (
                       <tr key={purchase.id}>
                         <td>{formatDateLabel(new Date(purchase.purchased_at))}</td>
-                        <td>{teamNameById.get(purchase.team_id || '') || '—'}</td>
+                        <td>{purchase.team_id ? teamNameById.get(purchase.team_id) || 'Unknown team' : 'Club'}</td>
                         <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
                         <td>{purchase.person_name || '—'}</td>
                         <td style={{ fontWeight: 700 }}>{usd(purchase.amount_cents)}</td>
@@ -720,7 +722,7 @@ export default async function DashboardPage() {
                     {recentPurchases.map((purchase) => (
                       <tr key={purchase.id}>
                         <td>{formatDateLabel(new Date(purchase.purchased_at))}</td>
-                        <td>{teamNameById.get(purchase.team_id || '') || '—'}</td>
+                        <td>{purchase.team_id ? teamNameById.get(purchase.team_id) || 'Unknown team' : 'Club'}</td>
                         <td style={{ fontWeight: 700 }}>{purchase.description || 'Untitled purchase'}</td>
                         <td>{purchase.person_name || '—'}</td>
                         <td>{usd(purchase.amount_cents)}</td>

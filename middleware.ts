@@ -63,7 +63,14 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  // Claims are verified locally when the project uses asymmetric signing keys.
+  // Keep the live Auth check for writes and the sensitive card API so a revoked
+  // session cannot keep mutating data until its access token expires.
+  if ((request.method !== 'GET' && request.method !== 'HEAD') || pathname.startsWith('/api/credit-card')) {
+    await supabase.auth.getUser();
+  } else {
+    await supabase.auth.getClaims();
+  }
 
   return response;
 }
