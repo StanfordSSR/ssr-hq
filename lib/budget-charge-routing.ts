@@ -58,7 +58,7 @@ export function buildChargeCatalog(
 
   for (const expense of expenses) {
     if (children.has(expense.id)) continue;
-    if (expense.kind !== 'team' && expense.kind !== 'operations') continue;
+    if (expense.kind !== 'team' && expense.kind !== 'operations' && expense.kind !== 'event') continue;
     if (expense.kind === 'team' && (!expense.team_id || !expense.category || expense.parent_id)) continue;
 
     const explicit = allocations.filter((allocation) => allocation.expense_id === expense.id && allocation.amount_cents > 0);
@@ -75,7 +75,7 @@ export function buildChargeCatalog(
 
     const account: ChargeAccount = {
       expenseId: expense.id,
-      label: expense.kind === 'operations' && expense.parent_id
+      label: expense.kind !== 'team' && expense.parent_id
         ? `${expenseById.get(expense.parent_id)?.label || 'Club'} / ${expense.label}`
         : expense.label,
       category: expense.kind === 'team' ? expense.category : null,

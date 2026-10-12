@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { signOutAction } from '@/app/dashboard/teams/actions';
@@ -119,6 +120,11 @@ const leadNav: NavItem[] = [
   { href: '/dashboard/tasks', label: 'Tasks', notificationKey: 'tasks' }
 ];
 
+async function LeadTaskDot({ userId }: { userId: string }) {
+  const state = await getLeadTaskIndicatorState(userId);
+  return state.hasPendingLeadTasks ? <span className="hq-nav-dot" aria-hidden="true" /> : null;
+}
+
 export default async function DashboardLayout({
   children
 }: Readonly<{
@@ -154,12 +160,6 @@ export default async function DashboardLayout({
           : currentRole === 'financial_officer'
             ? financialOfficerNav
             : leadNav;
-  let hasPendingLeadTasks = false;
-
-  if (currentRole === 'team_lead') {
-    hasPendingLeadTasks = (await getLeadTaskIndicatorState(user.id)).hasPendingLeadTasks;
-  }
-
   const initials =
     profile?.full_name
       ?.split(' ')
@@ -218,8 +218,8 @@ export default async function DashboardLayout({
                     className={`hq-nav-link${item.emphasis === 'primary' ? ' hq-nav-link-primary' : ''}`}
                   >
                     {item.label}
-                    {item.notificationKey === 'tasks' && hasPendingLeadTasks ? (
-                      <span className="hq-nav-dot" aria-hidden="true" />
+                    {item.notificationKey === 'tasks' && currentRole === 'team_lead' ? (
+                      <Suspense fallback={null}><LeadTaskDot userId={user.id} /></Suspense>
                     ) : null}
                   </Link>
                 )

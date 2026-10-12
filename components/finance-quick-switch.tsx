@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
 import { buildTeamBuckets } from '@/lib/finance-team-buckets';
+import { TeamBudgetBucketList } from '@/components/team-budget-bucket-list';
 import type { ChargeCatalog } from '@/lib/budget-charge-routing';
 import type { ClubBucket } from '@/lib/finance-overview';
 
@@ -177,41 +178,12 @@ export function FinanceQuickLink({ team }: { team: QuickTeam }) {
 
 function QuickBucketRows({ teamId }: { teamId: string }) {
   const { catalog, cyclePurchases, pending } = useFinanceQuick();
-  const buckets = buildTeamBuckets(
+  const summary = buildTeamBuckets(
     catalog?.teams[teamId] || [],
     cyclePurchases.filter((row) => row.team_id === teamId),
     pending.filter((row) => row.team_id === teamId)
   );
-  const labels: Record<string, string> = {
-    equipment: 'Equipment', food: 'Food', travel: 'Travel', registration: 'Registration', other: 'Other'
-  };
-  return (
-    <section className="hq-finance-buckets hq-finance-team-buckets" aria-label="Budget categories">
-      <div className="hq-finance-buckets-head"><h3>Budget categories</h3></div>
-      <div className="hq-finance-team-bucket-list">
-        {buckets.buckets.map((bucket) => (
-          <div className="hq-finance-team-bucket" key={bucket.expenseId}>
-            <div className="hq-finance-bucket-line">
-              <strong>{bucket.category ? labels[bucket.category] : bucket.label}</strong>
-              <span>{money(bucket.spentCents)} spent / {money(bucket.capCents)}</span>
-            </div>
-            {progress(`${bucket.label} spent`, bucket.spentCents, bucket.capCents)}
-            {bucket.pendingCents > 0 ? <p className="hq-finance-pending-note">{money(bucket.pendingCents)} pending approval, not counted as spent</p> : null}
-            <div className="hq-finance-source-list">
-              {bucket.sourceTotals.map((source) => (
-                <div className="hq-finance-source" key={source.id}>
-                  <span>{source.label}</span>
-                  <span>{money(source.spentCents)} / {money(source.capCents)}{source.pendingCents > 0 ? ` · ${money(source.pendingCents)} pending` : ''}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      {buckets.unassignedSpentCents > 0 ? <p className="hq-finance-unassigned">{money(buckets.unassignedSpentCents)} in approved spending has no current-plan category.</p> : null}
-      {buckets.unassignedPendingCents > 0 ? <p className="hq-finance-pending-note">{money(buckets.unassignedPendingCents)} pending without a current-plan category.</p> : null}
-    </section>
-  );
+  return <TeamBudgetBucketList summary={summary} />;
 }
 
 export function FinanceQuickOverview({ children }: { children: ReactNode }) {

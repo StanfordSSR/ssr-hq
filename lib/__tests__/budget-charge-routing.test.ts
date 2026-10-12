@@ -6,11 +6,14 @@ const expenses = [
   { id: 'sky-other', team_id: 'sky', kind: 'team', parent_id: null, category: 'other' as const, label: 'SkyRunners — Other', amount_cents: 500000, sort_order: 2 },
   { id: 'combat-equipment', team_id: 'combat', kind: 'team', parent_id: null, category: 'equipment' as const, label: 'Combat Robotics — Equipment', amount_cents: 600000, sort_order: 1 },
   { id: 'leadership', team_id: null, kind: 'operations', parent_id: null, category: null, label: 'Leadership Operations', amount_cents: 0, sort_order: 1 },
-  { id: 'leadership-food', team_id: null, kind: 'operations', parent_id: 'leadership', category: 'food' as const, label: 'Food', amount_cents: 25000, sort_order: 2 }
+  { id: 'leadership-food', team_id: null, kind: 'operations', parent_id: 'leadership', category: 'food' as const, label: 'Food', amount_cents: 25000, sort_order: 2 },
+  { id: 'fall-mixer', team_id: null, kind: 'event', parent_id: null, category: null, label: 'Robotics Club Fall Mixer', amount_cents: 0, sort_order: 3 },
+  { id: 'fall-mixer-food', team_id: null, kind: 'event', parent_id: 'fall-mixer', category: 'food' as const, label: 'Food', amount_cents: 80000, sort_order: 4 }
 ];
 const sources = [
   { id: 'grant-equipment', label: 'Annual Grant · Equipment', kind: 'annual_grant', category: 'equipment' as const, sort_order: 1 },
   { id: 'grant-other', label: 'Annual Grant · Other', kind: 'annual_grant', category: 'other' as const, sort_order: 2 },
+  { id: 'grant-food', label: 'Annual Grant · Food', kind: 'annual_grant', category: 'food' as const, sort_order: 3 },
   { id: 'hoover', label: 'Hoover', kind: 'grant', category: null, sort_order: 3 },
   { id: 'soe', label: 'SoE Grant', kind: 'grant', category: null, sort_order: 4 }
 ];
@@ -48,8 +51,15 @@ describe('budget charge routing', () => {
   it('routes club leadership separately from team categories', () => {
     const charge = resolveCharge(catalog, 'leadership', null, 'leadership-food', '');
     expect(charge.category).toBeNull();
-    expect(charge.sourceId).toBe('grant-other');
+    expect(charge.sourceId).toBe('grant-food');
     expect(charge.expenseLabel).toBe('Leadership Operations / Food');
     expect(() => resolveCharge(catalog, 'team', 'sky', 'leadership-food', '')).toThrow();
+  });
+
+  it('offers event sub-budgets as club charge accounts', () => {
+    const charge = resolveCharge(catalog, 'leadership', null, 'fall-mixer-food', '');
+    expect(charge.expenseLabel).toBe('Robotics Club Fall Mixer / Food');
+    expect(charge.sourceId).toBe('grant-food');
+    expect(catalog.leadership.some((account) => account.expenseId === 'fall-mixer')).toBe(false);
   });
 });
