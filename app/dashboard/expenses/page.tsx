@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { getActiveBudgetPlan } from '@/lib/budget-plan';
 import { ClearExpenseLogForm } from '@/components/clear-expense-log-form';
-import { ManualPurchaseForm } from '@/components/manual-purchase-form';
+import { ReceiptFirstPurchaseForm } from '@/components/receipt-first-purchase-form';
 import { PurchaseImport } from '@/components/purchase-import';
 import { PurchaseCategoryForm } from '@/components/purchase-category-form';
 import { getChargeCatalog } from '@/lib/budget-charge-routing';
@@ -392,7 +392,7 @@ export default async function ExpenseLogPage({
             <h3>New purchase</h3>
             <Link href="/dashboard/expenses?entry=import#new-purchase">Import purchases</Link>
           </div>
-          <ManualPurchaseForm academicYear={currentCycle} teams={entryTeams} defaultPersonName={me.full_name || ''} catalog={chargeCatalog} />
+          <ReceiptFirstPurchaseForm academicYear={currentCycle} teams={entryTeams} defaultPersonName={me.full_name || ''} catalog={chargeCatalog} />
         </section>
       ) : entryMode === 'import' ? (
         <section id="new-purchase" className="hq-panel hq-surface-muted hq-purchase-panel">

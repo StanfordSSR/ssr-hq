@@ -9,13 +9,15 @@ export function BudgetChargeFields({
   idPrefix,
   leadership = false,
   initialExpenseId = '',
-  initialSourceId = ''
+  initialSourceId = '',
+  onUserChange
 }: {
   accounts: ChargeAccount[];
   idPrefix: string;
   leadership?: boolean;
   initialExpenseId?: string;
   initialSourceId?: string;
+  onUserChange?: () => void;
 }) {
   const [expenseId, setExpenseId] = useState(initialExpenseId);
   const [sourceId, setSourceId] = useState(initialSourceId);
@@ -33,6 +35,7 @@ export function BudgetChargeFields({
           name="budget_expense_item_id"
           value={expenseId}
           onChange={(event) => {
+            onUserChange?.();
             setExpenseId(event.target.value);
             setSourceId('');
           }}
@@ -46,10 +49,10 @@ export function BudgetChargeFields({
           ))}
         </select>
         {accounts.length === 0 ? <span className="helper">No budget accounts are configured yet.</span> : null}
+        {account?.sources.length === 1 ? <span className="helper">Funding source: {account.sources[0].label}</span> : null}
       </div>
       {account?.sources.length === 1 ? (
-        <><input type="hidden" name="funding_source_id" value={account.sources[0].id} />
-        <span className="helper">Funding source: {account.sources[0].label}</span></>
+        <input type="hidden" name="funding_source_id" value={account.sources[0].id} />
       ) : account && account.sources.length > 1 ? (
         <div className="field">
           <label className="label" htmlFor={`${idPrefix}-funding-source`}>Funding source</label>
@@ -58,7 +61,10 @@ export function BudgetChargeFields({
             id={`${idPrefix}-funding-source`}
             name="funding_source_id"
             value={sourceId}
-            onChange={(event) => setSourceId(event.target.value)}
+            onChange={(event) => {
+              onUserChange?.();
+              setSourceId(event.target.value);
+            }}
             required
           >
             <option value="" disabled>Select a source…</option>

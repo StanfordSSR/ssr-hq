@@ -1,11 +1,9 @@
 import { env } from '@/lib/env';
 
-// Reads a pasted/uploaded receipt screenshot with OpenAI vision and pulls out
-// the two fields the public intake form needs: a short item description and the
-// total amount. Best-effort only — the member can always correct the values
-// before submitting, so a low-confidence or failed read never blocks them.
+// Reads receipt images/PDFs with OpenAI. Results are suggestions the user can
+// correct before submitting, so a low-confidence read never blocks entry.
 
-export type ExpenseCategory = 'equipment' | 'food' | 'travel' | 'registration';
+export type ExpenseCategory = 'equipment' | 'food' | 'travel' | 'registration' | 'other';
 
 export type ExtractedReceipt = {
   itemName: string | null;
@@ -13,9 +11,10 @@ export type ExtractedReceipt = {
   merchant: string | null;
   reimbursementNumber: string | null;
   category: ExpenseCategory | null;
+  purchasedAt: string | null;
 };
 
-const EXPENSE_CATEGORIES: ExpenseCategory[] = ['equipment', 'food', 'travel', 'registration'];
+const EXPENSE_CATEGORIES: ExpenseCategory[] = ['equipment', 'food', 'travel', 'registration', 'other'];
 
 function coerceCategory(value: unknown): ExpenseCategory | null {
   if (typeof value !== 'string') return null;
@@ -64,6 +63,23 @@ function coerceReimbursementNumber(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const match = value.toUpperCase().match(/R[-\s]?(\d{3,})/);
   return match ? `R-${match[1]}` : null;
+}
+
+function coercePurchaseDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
+}
+
+export function parseExtractedReceipt(parsed: Record<string, unknown>): ExtractedReceipt {
+  return {
+    itemName: coerceText(parsed.item_name),
+    amount: coerceAmount(parsed.amount),
+    merchant: coerceText(parsed.merchant),
+    reimbursementNumber: coerceReimbursementNumber(parsed.reimbursement_number),
+    category: coerceCategory(parsed.category),
+    purchasedAt: coercePurchaseDate(parsed.purchase_date)
+  };
 }
 
 export async function extractReceiptFields(
@@ -118,7 +134,9 @@ export async function extractReceiptFields(
               'exactly one of "equipment" (parts, tools, hardware, electronics, materials), ' +
               '"food" (meals, snacks, catering, groceries), "travel" (flights, hotels, gas, ' +
               'rideshare, transit), or "registration" (competition or event registration / ' +
-              'entry fees); use null if genuinely unsure). ' +
+              'entry fees), or "other" (purchases that fit none of those four); use null if genuinely unsure), ' +
+              'and purchase_date (the date the order was placed or payment was made in YYYY-MM-DD; ' +
+              'do not use a delivery date or infer a year; use null if unclear). ' +
               'Use null for any field you cannot read with confidence. Never invent values.'
           },
           {
@@ -126,7 +144,7 @@ export async function extractReceiptFields(
             content: [
               {
                 type: 'text',
-                text: 'Extract the item description, total amount paid, and category from this receipt.'
+                text: 'Extract the item description, total amount paid, purchase date, and category from this receipt.'
               },
               mediaPart
             ]
@@ -145,23 +163,17 @@ export async function extractReceiptFields(
     };
     const raw = data.choices?.[0]?.message?.content;
     if (!raw) {
-      return { itemName: null, amount: null, merchant: null, reimbursementNumber: null, category: null };
+      return parseExtractedReceipt({});
     }
 
     let parsed: Record<string, unknown> = {};
     try {
       parsed = JSON.parse(raw) as Record<string, unknown>;
     } catch {
-      return { itemName: null, amount: null, merchant: null, reimbursementNumber: null, category: null };
+      return parseExtractedReceipt({});
     }
 
-    return {
-      itemName: coerceText(parsed.item_name),
-      amount: coerceAmount(parsed.amount),
-      merchant: coerceText(parsed.merchant),
-      reimbursementNumber: coerceReimbursementNumber(parsed.reimbursement_number),
-      category: coerceCategory(parsed.category)
-    };
+    return parseExtractedReceipt(parsed);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error('Receipt scan timed out. Enter the details manually.');
