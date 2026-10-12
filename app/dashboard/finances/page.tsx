@@ -69,6 +69,12 @@ function money(cents: number) {
   return `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 }
 
+function utilizationLabel(spentCents: number, budgetCents: number) {
+  if (budgetCents <= 0 || spentCents <= 0) return '0%';
+  const percent = (spentCents / budgetCents) * 100;
+  return percent < 1 ? '<1%' : `${Math.round(percent)}%`;
+}
+
 export default async function FinancesPage({
   searchParams
 }: {
@@ -241,7 +247,6 @@ export default async function FinancesPage({
   }
   const clubSpent = cyclePurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0) + leadershipCycleSpentCents;
   const clubRemaining = Math.max(0, allocatedTotal - clubSpent);
-  const clubUtilization = allocatedTotal > 0 ? Math.min(100, Math.round((clubSpent / allocatedTotal) * 100)) : 0;
   const filteredSpendTotal = filteredPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
   const filteredPurchaseCount = filteredPurchases.length;
   const filteredAverageSpend = filteredPurchaseCount > 0 ? Math.round(filteredSpendTotal / filteredPurchaseCount) : 0;
@@ -252,8 +257,6 @@ export default async function FinancesPage({
   const totalSpendForSelection = selectedCyclePurchases
     .reduce((sum, purchase) => sum + purchase.amount_cents, 0);
   const trueRemainingAllocated = Math.max(0, filteredAllocatedBudget - totalSpendForSelection);
-  const utilizationPercent =
-    filteredAllocatedBudget > 0 ? Math.min(100, Math.round((totalSpendForSelection / filteredAllocatedBudget) * 100)) : 0;
   const selectedTeam = validSelectedTeamId === 'all' ? null : teams.find((team) => team.id === validSelectedTeamId) || null;
   const selectedTeamMemberCount =
     validSelectedTeamId === 'all' ? 0 : (rosterMembersData || []).length + (teamMembershipsData || []).length;
@@ -346,7 +349,7 @@ export default async function FinancesPage({
         { label: 'Annual budget', value: money(filteredAllocatedBudget) },
         { label: 'Spent this cycle', value: money(totalSpendForSelection) },
         { label: 'Remaining', value: money(trueRemainingAllocated) },
-        { label: 'Utilization', value: `${utilizationPercent}%` },
+        { label: 'Utilization', value: utilizationLabel(totalSpendForSelection, filteredAllocatedBudget) },
         { label: 'Members', value: String(selectedTeamMemberCount) },
         { label: 'Cost per member', value: money(costPerMember) }
       ]
@@ -356,7 +359,7 @@ export default async function FinancesPage({
         { label: 'Club buckets', value: money(clubBucketTotal) },
         { label: 'Spent this cycle', value: money(clubSpent) },
         { label: 'Remaining', value: money(clubRemaining) },
-        { label: 'Utilization', value: `${clubUtilization}%` }
+        { label: 'Utilization', value: utilizationLabel(clubSpent, allocatedTotal) }
       ];
   if (selectedRange !== 'current_cycle') {
     overviewMetrics.push({ label: 'Team spend in selected range', value: money(filteredSpendTotal) });
@@ -429,7 +432,7 @@ export default async function FinancesPage({
             <div className="hq-budget-ring-wrap hq-budget-ring-wrap-large">
               <div className="hq-budget-ring hq-budget-ring-large" style={{ background: chartBackground } as CSSProperties}>
                 <div className="hq-budget-ring-inner hq-budget-ring-inner-large">
-                  <strong>{selectedTeam ? `${utilizationPercent}%` : money(allocatedTotal)}</strong>
+                  <strong>{selectedTeam ? utilizationLabel(totalSpendForSelection, filteredAllocatedBudget) : money(allocatedTotal)}</strong>
                   <span>{selectedTeam ? 'used this cycle' : 'budgeted'}</span>
                 </div>
               </div>
@@ -582,7 +585,7 @@ export default async function FinancesPage({
                         ? spentCents > 0 ? 'Unbudgeted spend' : 'No allocation'
                         : spentCents > budgetCents
                           ? `${money(spentCents - budgetCents)} over`
-                          : `${Math.round((spentCents / budgetCents) * 100)}% used`}
+                          : `${utilizationLabel(spentCents, budgetCents)} used`}
                     </span>
                   </div>
                   <div
