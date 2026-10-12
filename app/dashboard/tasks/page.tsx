@@ -15,11 +15,12 @@ import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
-import { formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
+import { formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, TEAM_BUDGET_ACADEMIC_YEAR, TEAM_BUDGET_DEADLINE_AT } from '@/lib/team-budget-application-rules';
 
 type Team = {
   id: string;
   name: string;
+  slug: string;
   is_active: boolean;
 };
 
@@ -94,7 +95,7 @@ export default async function TasksPage() {
   ]);
   const showBudgetApplicationTask = academicYear === TEAM_BUDGET_ACADEMIC_YEAR;
 
-  const { data: teamsData } = await admin.from('teams').select('id, name, is_active').order('name');
+  const { data: teamsData } = await admin.from('teams').select('id, name, slug, is_active').order('name');
   const teams = (teamsData || []) as Team[];
   const { data: budgetApplicationsData } = showBudgetApplicationTask
     ? await admin.from('team_budget_applications').select('team_id, status').eq('academic_year', TEAM_BUDGET_ACADEMIC_YEAR)
@@ -561,7 +562,7 @@ export default async function TasksPage() {
           ) : (
             <div className="hq-task-stack">
               {budgetApplicationTeams.map((team) => (
-                <article key={`budget-${team.id}`} className={`hq-task-card hq-task-card-report ${isTeamBudgetApplicationClosed(TEAM_BUDGET_ACADEMIC_YEAR) ? 'hq-task-card-alert' : ''}`}>
+                <article key={`budget-${team.id}`} className={`hq-task-card hq-task-card-report ${isTeamBudgetApplicationClosed(TEAM_BUDGET_ACADEMIC_YEAR, new Date(), team.slug) ? 'hq-task-card-alert' : ''}`}>
                   <div className="hq-task-card-head">
                     <div>
                       <span className="hq-task-kicker">Budget task</span>
@@ -573,8 +574,10 @@ export default async function TasksPage() {
                   </div>
                   <div className="hq-task-card-meta">
                     <span>{team.name}</span>
-                    <span>Due {formatTeamBudgetDeadline()}</span>
-                    {isTeamBudgetApplicationClosed(TEAM_BUDGET_ACADEMIC_YEAR) ? <strong className="hq-task-alert">CLOSED</strong> : null}
+                    <span>{team.slug === 'combat-robotics' && Date.now() >= Date.parse(TEAM_BUDGET_DEADLINE_AT)
+                      ? 'Late submission open'
+                      : `Due ${formatTeamBudgetDeadline()}`}</span>
+                    {isTeamBudgetApplicationClosed(TEAM_BUDGET_ACADEMIC_YEAR, new Date(), team.slug) ? <strong className="hq-task-alert">CLOSED</strong> : null}
                   </div>
                 </article>
               ))}

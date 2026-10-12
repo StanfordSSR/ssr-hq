@@ -69,6 +69,7 @@ export function TeamBudgetApplicationEditor({
   teamId,
   academicYear,
   caps,
+  planApproved,
   initialItems,
   fixedTravelItems,
   initialPrefillPending,
@@ -80,6 +81,7 @@ export function TeamBudgetApplicationEditor({
   teamId: string;
   academicYear: string;
   caps: BudgetCaps;
+  planApproved: boolean;
   initialItems: BudgetApplicationItem[];
   fixedTravelItems: BudgetApplicationItem[];
   initialPrefillPending: boolean;
@@ -103,7 +105,7 @@ export function TeamBudgetApplicationEditor({
     [fixedTravelItems]
   );
   const parsed = useMemo(() => parseRows(rows, allowedZeroIds), [rows, allowedZeroIds]);
-  const submissionError = parsed.error || getSubmissionError(parsed.items, caps);
+  const submissionError = parsed.error || getSubmissionError(parsed.items, caps, planApproved);
   const totalCents = parsed.items.reduce((sum, item) => sum + item.amountCents, 0);
 
   function changeRow(id: string, field: 'description' | 'amount', value: string) {
@@ -191,7 +193,7 @@ export function TeamBudgetApplicationEditor({
       {BUDGET_CATEGORIES.map((category) => {
         const categoryRows = rows.filter((row) => row.category === category);
         const categoryEditable = editable && category !== 'food' && !(category === 'travel' && fixedTravelItems.length > 0);
-        const request = getCategoryRequest(parsed.items, category, caps);
+        const request = getCategoryRequest(parsed.items, category, caps, planApproved);
         const blankRowsNeeded = Math.max(0, request.requiredItemCount - categoryRows.length);
         return (
           <section className="budget-app-category" key={category} aria-labelledby={`budget-app-${category}`}>

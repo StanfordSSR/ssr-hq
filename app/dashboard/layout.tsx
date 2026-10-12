@@ -40,6 +40,7 @@ const adminNav: NavItem[] = [
       { href: '/dashboard/finances', label: 'Manage Finances' },
       { href: '/dashboard/finances/plan', label: 'Budget Plan' },
       { href: '/dashboard/finances/applications', label: 'Budget Applications' },
+      { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
       ...creditCardNavItems
     ]
@@ -56,10 +57,9 @@ const presidentNav: NavItem[] = [
   {
     label: 'Finances',
     children: [
-      { href: '/dashboard/finances', label: 'Overview' },
+      { href: '/dashboard/finances', label: 'Manage Finances' },
       { href: '/dashboard/finances/plan', label: 'Budget Plan' },
       { href: '/dashboard/finances/applications', label: 'Budget Applications' },
-      { href: '/dashboard/purchases', label: 'Purchases' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
       ...creditCardNavItems
@@ -77,9 +77,8 @@ const vicePresidentNav: NavItem[] = [
   {
     label: 'Finances',
     children: [
-      { href: '/dashboard/finances', label: 'Overview' },
+      { href: '/dashboard/finances', label: 'Manage Finances' },
       { href: '/dashboard/finances/plan', label: 'Budget Plan' },
-      { href: '/dashboard/purchases', label: 'Purchases' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
       ...creditCardNavItems
@@ -95,8 +94,7 @@ const financialOfficerNav: NavItem[] = [
   {
     label: 'Finances',
     children: [
-      { href: '/dashboard/finances', label: 'Overview' },
-      { href: '/dashboard/purchases', label: 'Purchases' },
+      { href: '/dashboard/finances', label: 'Manage Finances' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
       ...creditCardNavItems
@@ -110,7 +108,6 @@ const leadNav: NavItem[] = [
   {
     label: 'Finances',
     children: [
-      { href: '/dashboard/purchases', label: 'Log Purchase' },
       { href: '/dashboard/expenses', label: 'Expense Log' },
       { href: '/dashboard/reimbursements', label: 'Reimbursements' },
       ...creditCardNavItems

@@ -1417,7 +1417,7 @@ export async function rolloverAcademicYearAction(formData: FormData) {
 
 export async function logPurchaseAction(formData: FormData) {
   await runRedirectingAction({
-    fallbackPath: '/dashboard/purchases',
+    fallbackPath: '/dashboard/expenses',
     successMessage: 'Logged the purchase.',
     action: async () => {
       const expenseType =

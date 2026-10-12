@@ -30,6 +30,11 @@ describe('budget application access and deadline', () => {
     expect(formatTeamBudgetDeadline()).toContain('7:08 PM');
   });
 
+  it('keeps Combat Robotics open for its late application only', () => {
+    expect(isTeamBudgetApplicationClosed('2026-27', deadline, 'combat-robotics')).toBe(false);
+    expect(isTeamBudgetApplicationClosed('2026-27', deadline, 'skyrunners')).toBe(true);
+  });
+
   it('lets active leads and reviewing officers view the form immediately', () => {
     expect(canViewTeamBudgetApplication('team_lead', true, false)).toBe(true);
     expect(canViewTeamBudgetApplication('president', false, true)).toBe(true);
@@ -72,6 +77,16 @@ describe('team budget application limits', () => {
       maxCents: 1_100_00
     });
     expect(getSubmissionError(items, caps)).toBeNull();
+  });
+
+  it('blocks all category overage once the final plan is approved', () => {
+    const items = [equipment(550_00), equipment(550_00, 2)];
+    expect(getCategoryRequest(items, 'equipment', caps, true)).toMatchObject({
+      overCap: true,
+      overLimit: true,
+      maxCents: 1_000_00
+    });
+    expect(getSubmissionError(items, caps, true)).toContain('exceeds its category cap');
   });
 
   it('blocks a request one cent past the 10% ceiling', () => {
