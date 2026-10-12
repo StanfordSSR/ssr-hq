@@ -106,7 +106,7 @@ export type BudgetApproval = {
   presidentEmail: string;
   decision: 'approved' | 'rejected';
   hasSignature: boolean;
-  source: 'portal' | 'slack';
+  source: 'portal' | 'slack' | 'in_person';
   decidedAt: string;
 };
 
@@ -235,7 +235,7 @@ export async function getPlanBundle(planId: string) {
     admin.from('budget_allocations').select('id, source_id, expense_id, amount_cents').eq('plan_id', planId),
     admin
       .from('budget_approvals')
-      .select('president_id, president_email, decision, signature, source, decided_at')
+      .select('president_id, president_email, decision, signature, evidence_path, source, decided_at')
       .eq('target_type', 'plan')
       .eq('target_id', planId)
   ]);
@@ -282,8 +282,8 @@ export async function getPlanBundle(planId: string) {
         presidentId: row.president_id as string,
         presidentEmail: row.president_email as string,
         decision: row.decision as 'approved' | 'rejected',
-        hasSignature: Boolean(row.signature),
-        source: row.source as 'portal' | 'slack',
+        hasSignature: Boolean(row.signature || (row.source === 'in_person' && row.evidence_path)),
+        source: row.source as 'portal' | 'slack' | 'in_person',
         decidedAt: row.decided_at as string
       })
     )
