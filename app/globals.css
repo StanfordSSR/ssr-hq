@@ -8945,6 +8945,15 @@ a.th-stat:focus-visible {
   gap: 0 20px;
 }
 
+.th-lead-overview .hq-finance-team-buckets {
+  padding: 12px 16px 16px;
+}
+
+.th-lead-overview .hq-finance-team-bucket-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 24px;
+}
+
 .hq-finance-team-bucket {
   min-width: 0;
   padding: 9px 0;
@@ -9100,6 +9109,10 @@ a.th-stat:focus-visible {
   .hq-finance-page .hq-finance-layout {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .th-lead-overview .hq-finance-team-bucket-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 700px) {
@@ -9130,6 +9143,10 @@ a.th-stat:focus-visible {
   }
 
   .hq-finance-team-bucket-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .th-lead-overview .hq-finance-team-bucket-list {
     grid-template-columns: minmax(0, 1fr);
   }
 
