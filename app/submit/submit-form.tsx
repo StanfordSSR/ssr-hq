@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BUDGET_CATEGORY_LABELS } from '@/lib/team-budget-application-rules';
 import type { ChargeAccount } from '@/lib/budget-charge-routing';
+import { pacificToday } from '@/lib/reimbursement-cycle';
 
 type TeamOption = { id: string; name: string; accounts: ChargeAccount[] };
 
@@ -51,6 +52,7 @@ export function SubmitReimbursementForm({
   const [travelSubtype, setTravelSubtype] = useState<TravelSubtype | ''>('');
   const [itemName, setItemName] = useState('');
   const [amount, setAmount] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState('');
   const [reimbursementNumber, setReimbursementNumber] = useState('');
   const [receipts, setReceipts] = useState<File[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -97,6 +99,7 @@ export function SubmitReimbursementForm({
   useEffect(() => {
     const saved = window.localStorage.getItem(NAME_STORAGE_KEY);
     if (saved) setSubmitterName(saved);
+    setPurchaseDate(pacificToday());
   }, []);
 
   // Track the cursor and kick off the chase once it gets close. Relents after
@@ -342,6 +345,7 @@ export function SubmitReimbursementForm({
       if (purchaseType === 'travel') body.append('travel_subtype', travelSubtype);
       body.append('item_name', itemName);
       body.append('amount', amount);
+      body.append('purchase_date', purchaseDate);
       body.append('reimbursement_number', reimbursementNumber);
       body.append('off_campus_ack', showOffCampus && offCampusAck ? 'true' : 'false');
       for (const file of receipts) body.append('receipt', file);
@@ -694,6 +698,12 @@ export function SubmitReimbursementForm({
             required
           />
         </div>
+      </div>
+
+      <div className="field">
+        <label className="label" htmlFor="purchase_date">Purchase date</label>
+        <input className="input" id="purchase_date" type="date" value={purchaseDate}
+          onChange={(event) => setPurchaseDate(event.target.value)} required />
       </div>
 
       {showOffCampus ? (

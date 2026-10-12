@@ -2,7 +2,6 @@ import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { getCurrentAcademicYear } from '@/lib/academic-calendar';
 import { getActiveBudgetPlan, getBudgetSetupState } from '@/lib/budget-plan';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { getChargeCatalog } from '@/lib/budget-charge-routing';
@@ -11,6 +10,7 @@ import { InlineBudgetEditor } from '@/components/inline-budget-editor';
 import { PurchaseLedger, type PurchaseLedgerRow } from '@/components/purchase-ledger';
 import { getViewerContext } from '@/lib/auth';
 import { buildClubBuckets, type FinanceExpense } from '@/lib/finance-overview';
+import { buildTeamBuckets } from '@/lib/finance-team-buckets';
 
 type Team = {
   id: string;
@@ -39,6 +39,20 @@ type PurchaseLog = {
   description?: string;
   person_name?: string | null;
   payment_method?: 'reimbursement' | 'credit_card' | 'amazon' | 'unknown';
+  budget_expense_item_id?: string | null;
+  funding_source_id?: string | null;
+};
+
+type PendingReimbursement = {
+  id: string;
+  team_id: string | null;
+  expense_type: 'team' | 'leadership';
+  item_name: string;
+  submitter_name: string;
+  amount_cents: number;
+  created_at: string;
+  budget_expense_item_id: string | null;
+  funding_source_id: string | null;
 };
 
 const paymentMethodLabel: Record<'reimbursement' | 'credit_card' | 'amazon' | 'unknown', string> = {
@@ -65,6 +79,11 @@ function daysAgoIso(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function cycleStartIso(academicYear: string) {
+  const startYear = Number(academicYear.slice(0, 4));
+  return new Date(`${startYear}-09-01T00:00:00-07:00`).toISOString();
+}
+
 function money(cents: number) {
   return `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 }
@@ -82,7 +101,9 @@ export default async function FinancesPage({
 }) {
   const params = (await searchParams) || {};
   const admin = createAdminClient();
-  const { currentRole, profile } = await getViewerContext();
+  const [{ currentRole, profile }, budgetSetup] = await Promise.all([
+    getViewerContext(), getBudgetSetupState()
+  ]);
   if (
     currentRole !== 'admin' &&
     currentRole !== 'president' &&
@@ -94,31 +115,40 @@ export default async function FinancesPage({
   const canEdit = currentRole === 'admin';
   const canLogPurchases = currentRole === 'admin' || currentRole === 'financial_officer';
 
-  const cycle = await getCurrentAcademicYear();
-  const [budgetSetup, activeBudgetPlan] = await Promise.all([getBudgetSetupState(), getActiveBudgetPlan(cycle)]);
-  const chargeCatalog = await getChargeCatalog(cycle);
+  const cycle = budgetSetup.academicYear;
+  const cycleStart = cycleStartIso(cycle);
+  const [
+    activeBudgetPlan,
+    { data: teamsData },
+    { data: teamBudgetsData },
+    { data: clubBudgetData },
+    { data: cyclePurchasesData },
+    { data: leadershipCycleData },
+    { data: leadershipRecentData },
+    { data: pendingReimbursementsData }
+  ] = await Promise.all([
+    getActiveBudgetPlan(cycle),
+    admin.from('teams').select('id, name, logo_url, is_active').order('name'),
+    admin.from('team_budgets').select('team_id, academic_year, annual_budget_cents').eq('academic_year', cycle),
+    admin.from('club_budgets').select('academic_year, total_budget_cents').eq('academic_year', cycle).maybeSingle(),
+    admin.from('purchase_logs')
+      .select('team_id, amount_cents, category, budget_expense_item_id, funding_source_id')
+      .eq('academic_year', cycle).eq('expense_type', 'team').gte('purchased_at', cycleStart),
+    admin.from('purchase_logs')
+      .select('amount_cents, budget_expense_item_id')
+      .eq('academic_year', cycle).eq('expense_type', 'leadership').gte('purchased_at', cycleStart),
+    admin.from('purchase_logs')
+      .select('id, description, amount_cents, purchased_at, person_name, payment_method, category')
+      .eq('expense_type', 'leadership').order('purchased_at', { ascending: false }).limit(25),
+    admin.from('member_reimbursements')
+      .select('id, team_id, expense_type, item_name, submitter_name, amount_cents, created_at, budget_expense_item_id, funding_source_id')
+      .eq('academic_year', cycle).eq('status', 'pending').gte('created_at', cycleStart)
+  ]);
   const planManagesBudgets = activeBudgetPlan?.status === 'approved';
   const canEditBudgets = canEdit && !planManagesBudgets;
   const showPlanCta = budgetSetup.setupState !== 'upcoming';
   const selectedTeamId = readSingle(params.team) || 'all';
   const selectedRange = readSingle(params.range) || 'current_cycle';
-  const { data: teamsData } = await admin.from('teams').select('id, name, logo_url, is_active').order('name');
-  const { data: teamBudgetsData } = await admin
-    .from('team_budgets')
-    .select('team_id, academic_year, annual_budget_cents')
-    .eq('academic_year', cycle);
-  const { data: clubBudgetData } = await admin
-    .from('club_budgets')
-    .select('academic_year, total_budget_cents')
-    .eq('academic_year', cycle)
-    .maybeSingle();
-  const { data: budgetExpensesData, error: budgetExpensesError } = activeBudgetPlan?.status === 'approved'
-    ? await admin
-        .from('budget_expense_items')
-        .select('id, kind, team_id, parent_id, label, amount_cents, sort_order')
-        .eq('plan_id', activeBudgetPlan.id)
-    : { data: [], error: null };
-  if (budgetExpensesError) throw new Error('Could not load the approved budget buckets.');
   const filteredPurchaseQuery = admin
     .from('purchase_logs')
     .select('team_id, amount_cents, purchased_at, category, academic_year')
@@ -132,36 +162,23 @@ export default async function FinancesPage({
   }
 
   if (selectedRange === 'current_cycle') {
-    filteredPurchaseQuery.eq('academic_year', cycle);
+    filteredPurchaseQuery.eq('academic_year', cycle).gte('purchased_at', cycleStart);
   } else if (selectedRange === 'last_90_days') {
     filteredPurchaseQuery.gte('purchased_at', daysAgoIso(90));
   }
 
-  const [
-    { data: filteredPurchasesData },
-    { data: cyclePurchasesData },
-    { data: leadershipCycleData },
-    { data: leadershipRecentData }
-  ] = await Promise.all([
-    filteredPurchaseQuery,
-    admin.from('purchase_logs').select('team_id, amount_cents, category').eq('academic_year', cycle).eq('expense_type', 'team'),
-    admin.from('purchase_logs').select('amount_cents, budget_expense_item_id').eq('expense_type', 'leadership').eq('academic_year', cycle),
-    admin
-      .from('purchase_logs')
-      .select('id, description, amount_cents, purchased_at, person_name, payment_method, category')
-      .eq('expense_type', 'leadership')
-      .order('purchased_at', { ascending: false })
-      .limit(25)
-  ]);
+  const pendingReimbursements = (pendingReimbursementsData || []) as PendingReimbursement[];
+  const pendingByTeam = new Map<string, number>();
+  for (const reimbursement of pendingReimbursements) {
+    if (reimbursement.team_id) {
+      pendingByTeam.set(reimbursement.team_id, (pendingByTeam.get(reimbursement.team_id) || 0) + reimbursement.amount_cents);
+    }
+  }
   const leadershipPurchases = (leadershipCycleData || []) as Array<{ amount_cents: number; budget_expense_item_id: string | null }>;
   const leadershipCycleSpentCents = leadershipPurchases.reduce(
     (sum, entry) => sum + entry.amount_cents,
     0
   );
-  const clubBuckets = buildClubBuckets((budgetExpensesData || []) as FinanceExpense[], leadershipPurchases);
-  const clubBucketTotal = clubBuckets.reduce((sum, bucket) => sum + bucket.budgetCents, 0);
-  const clubBucketSpent = clubBuckets.reduce((sum, bucket) => sum + bucket.spentCents, 0);
-  const unassignedClubSpent = Math.max(0, leadershipCycleSpentCents - clubBucketSpent);
   const leadershipRecent = (leadershipRecentData || []) as PurchaseLog[];
   const canLogLeadership =
     currentRole === 'admin' ||
@@ -172,7 +189,6 @@ export default async function FinancesPage({
     ((teamBudgetsData || []) as TeamBudget[]).map((entry) => [entry.team_id, entry.annual_budget_cents])
   );
   const clubBudget = (clubBudgetData || { academic_year: cycle, total_budget_cents: 0 }) as ClubBudget;
-  const filteredPurchases = (filteredPurchasesData || []) as PurchaseLog[];
   // Full purchase rows backing the sortable ledger below the overview panel.
   // Mirrors the active team + range filters, newest first, uncapped (bounded
   // only by a high safety limit).
@@ -185,13 +201,27 @@ export default async function FinancesPage({
     ledgerQuery.eq('team_id', validSelectedTeamId).eq('expense_type', 'team');
   }
   if (selectedRange === 'current_cycle') {
-    ledgerQuery.eq('academic_year', cycle);
+    ledgerQuery.eq('academic_year', cycle).gte('purchased_at', cycleStart);
   } else if (selectedRange === 'last_90_days') {
     ledgerQuery.gte('purchased_at', daysAgoIso(90));
   }
-  // These four queries are independent — one round-trip, not four.
-  const [{ data: rosterMembersData }, { data: selectedTeamPurchasesData }, { data: teamMembershipsData }, { data: ledgerData }] =
+  const [
+    chargeCatalog,
+    { data: budgetExpensesData, error: budgetExpensesError },
+    { data: filteredPurchasesData },
+    { data: rosterMembersData },
+    { data: selectedTeamPurchasesData },
+    { data: teamMembershipsData },
+    { data: ledgerData }
+  ] =
     await Promise.all([
+      getChargeCatalog(cycle, activeBudgetPlan?.id),
+      activeBudgetPlan?.status === 'approved'
+        ? admin.from('budget_expense_items')
+            .select('id, kind, team_id, parent_id, label, amount_cents, sort_order')
+            .eq('plan_id', activeBudgetPlan.id)
+        : Promise.resolve({ data: [], error: null }),
+      filteredPurchaseQuery,
       validSelectedTeamId !== 'all'
         ? admin.from('team_roster_members').select('id').eq('team_id', validSelectedTeamId)
         : Promise.resolve({ data: [] }),
@@ -200,6 +230,8 @@ export default async function FinancesPage({
             .from('purchase_logs')
             .select('id, team_id, description, amount_cents, purchased_at, person_name, payment_method, category')
             .eq('team_id', validSelectedTeamId)
+            .eq('academic_year', cycle)
+            .gte('purchased_at', cycleStart)
             .order('purchased_at', { ascending: false })
             .limit(25)
         : Promise.resolve({ data: [] }),
@@ -212,6 +244,12 @@ export default async function FinancesPage({
         : Promise.resolve({ data: [] }),
       ledgerQuery
     ]);
+  if (budgetExpensesError) throw new Error('Could not load the approved budget buckets.');
+  const clubBuckets = buildClubBuckets((budgetExpensesData || []) as FinanceExpense[], leadershipPurchases);
+  const clubBucketTotal = clubBuckets.reduce((sum, bucket) => sum + bucket.budgetCents, 0);
+  const clubBucketSpent = clubBuckets.reduce((sum, bucket) => sum + bucket.spentCents, 0);
+  const unassignedClubSpent = Math.max(0, leadershipCycleSpentCents - clubBucketSpent);
+  const filteredPurchases = (filteredPurchasesData || []) as PurchaseLog[];
   const teamNameById = new Map(allTeams.map((team) => [team.id, team.name]));
   const ledgerRows: PurchaseLedgerRow[] = ((ledgerData || []) as Array<{
     id: string;
@@ -241,7 +279,13 @@ export default async function FinancesPage({
   const allocatedTotal = teamAllocatedTotal + clubBucketTotal;
   const chartColors = ['#8c1515', '#3f6e8f', '#b27a2c', '#5d7c63', '#875e8c', '#bf5f4d', '#3f7c7c'];
   const spentByTeam = new Map<string, number>();
-  const cyclePurchases = (cyclePurchasesData || []) as Array<{ team_id: string; amount_cents: number; category: PurchaseLog['category'] }>;
+  const cyclePurchases = (cyclePurchasesData || []) as Array<{
+    team_id: string;
+    amount_cents: number;
+    category: PurchaseLog['category'];
+    budget_expense_item_id: string | null;
+    funding_source_id: string | null;
+  }>;
   for (const purchase of cyclePurchases) {
     spentByTeam.set(purchase.team_id, (spentByTeam.get(purchase.team_id) || 0) + purchase.amount_cents);
   }
@@ -258,6 +302,17 @@ export default async function FinancesPage({
     .reduce((sum, purchase) => sum + purchase.amount_cents, 0);
   const trueRemainingAllocated = Math.max(0, filteredAllocatedBudget - totalSpendForSelection);
   const selectedTeam = validSelectedTeamId === 'all' ? null : teams.find((team) => team.id === validSelectedTeamId) || null;
+  const selectedPending = selectedTeam
+    ? pendingReimbursements.filter((row) => row.team_id === selectedTeam.id)
+    : pendingReimbursements;
+  const selectedPendingCents = selectedPending.reduce((sum, row) => sum + row.amount_cents, 0);
+  const teamBuckets = selectedTeam
+    ? buildTeamBuckets(
+        chargeCatalog?.teams[selectedTeam.id] || [],
+        selectedCyclePurchases,
+        selectedPending
+      )
+    : null;
   const selectedTeamMemberCount =
     validSelectedTeamId === 'all' ? 0 : (rosterMembersData || []).length + (teamMembershipsData || []).length;
   const selectedTeamPurchases = (selectedTeamPurchasesData || []) as PurchaseLog[];
@@ -348,6 +403,7 @@ export default async function FinancesPage({
     ? [
         { label: 'Annual budget', value: money(filteredAllocatedBudget) },
         { label: 'Spent this cycle', value: money(totalSpendForSelection) },
+        { label: 'Pending approval', value: money(selectedPendingCents) },
         { label: 'Remaining', value: money(trueRemainingAllocated) },
         { label: 'Utilization', value: utilizationLabel(totalSpendForSelection, filteredAllocatedBudget) },
         { label: 'Members', value: String(selectedTeamMemberCount) },
@@ -358,6 +414,7 @@ export default async function FinancesPage({
         { label: 'Team budgets', value: money(teamAllocatedTotal) },
         { label: 'Club buckets', value: money(clubBucketTotal) },
         { label: 'Spent this cycle', value: money(clubSpent) },
+        { label: 'Pending approval', value: money(selectedPendingCents) },
         { label: 'Remaining', value: money(clubRemaining) },
         { label: 'Utilization', value: utilizationLabel(clubSpent, allocatedTotal) }
       ];
@@ -456,6 +513,51 @@ export default async function FinancesPage({
               {chartEntries.length === 0 && !selectedTeam ? <p className="empty-note">No budget allocations yet.</p> : null}
             </div>
           </div>
+
+          {selectedTeam && teamBuckets ? (
+            <section className="hq-finance-buckets hq-finance-team-buckets" aria-labelledby="team-buckets-heading">
+              <div className="hq-finance-buckets-head">
+                <h3 id="team-buckets-heading">Budget categories</h3>
+                <strong>{money(filteredAllocatedBudget)} allocated</strong>
+              </div>
+              {teamBuckets.buckets.length === 0 ? (
+                <p className="empty-note">No approved budget categories for this team.</p>
+              ) : (
+                <div className="hq-finance-team-bucket-list">
+                  {teamBuckets.buckets.map((bucket) => (
+                    <div className="hq-finance-team-bucket" key={bucket.expenseId}>
+                      <div className="hq-finance-bucket-line">
+                        <strong>{bucket.category ? categoryLabel[bucket.category] : bucket.label}</strong>
+                        <span>{money(bucket.spentCents)} spent / {money(bucket.capCents)}</span>
+                      </div>
+                      <div className="hq-budget-progress" role="progressbar"
+                        aria-label={`${bucket.label} spent`} aria-valuemin={0}
+                        aria-valuemax={Math.max(bucket.capCents, 1)}
+                        aria-valuenow={Math.min(bucket.capCents, bucket.spentCents)}>
+                        <div className={`hq-budget-progress-fill${bucket.spentCents > bucket.capCents ? ' hq-budget-progress-fill-over' : ''}`}
+                          style={{ width: `${bucket.capCents > 0 ? Math.min(100, bucket.spentCents / bucket.capCents * 100) : 0}%` }} />
+                      </div>
+                      {bucket.pendingCents > 0 ? <p className="hq-finance-pending-note">{money(bucket.pendingCents)} pending approval, not counted as spent</p> : null}
+                      <div className="hq-finance-source-list">
+                        {bucket.sourceTotals.map((source) => (
+                          <div className="hq-finance-source" key={source.id}>
+                            <span>{source.label}</span>
+                            <span>{money(source.spentCents)} / {money(source.capCents)}{source.pendingCents > 0 ? ` · ${money(source.pendingCents)} pending` : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {teamBuckets.unassignedSpentCents > 0 ? (
+                <p className="hq-finance-unassigned">{money(teamBuckets.unassignedSpentCents)} in approved spending has no current-plan category.</p>
+              ) : null}
+              {teamBuckets.unassignedPendingCents > 0 ? (
+                <p className="hq-finance-pending-note">{money(teamBuckets.unassignedPendingCents)} pending without a current-plan category.</p>
+              ) : null}
+            </section>
+          ) : null}
 
           {!selectedTeam && clubBuckets.length > 0 ? (
             <section className="hq-finance-buckets" aria-labelledby="club-buckets-heading">
@@ -588,6 +690,9 @@ export default async function FinancesPage({
                           : `${utilizationLabel(spentCents, budgetCents)} used`}
                     </span>
                   </div>
+                  {(pendingByTeam.get(team.id) || 0) > 0 ? (
+                    <p className="hq-finance-pending-note">{money(pendingByTeam.get(team.id) || 0)} pending approval</p>
+                  ) : null}
                   <div
                     className="hq-budget-progress"
                     role="progressbar"
@@ -688,6 +793,22 @@ export default async function FinancesPage({
                     teams={[selectedTeam]}
                     defaultPersonName={profile.full_name || ''}
                   />
+                </section>
+              ) : null}
+
+              {selectedPending.length > 0 ? (
+                <section className="hq-finance-pending-list">
+                  <div className="hq-block-head">
+                    <h3>Awaiting lead approval</h3>
+                    <strong>{money(selectedPendingCents)} pending</strong>
+                  </div>
+                  {selectedPending.map((row) => (
+                    <div className="hq-finance-pending-row" key={row.id}>
+                      <span>{row.item_name} · {row.submitter_name}</span>
+                      <strong>{money(row.amount_cents)}</strong>
+                    </div>
+                  ))}
+                  <Link href="/dashboard/reimbursements" className="hq-inline-link">Review reimbursements</Link>
                 </section>
               ) : null}
 
