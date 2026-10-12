@@ -8,7 +8,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { getTeamBudgetApplication, getTeamBudgetCaps } from '@/lib/team-budget-application';
 import { getFixedTravelItems, hasFixedTravelItems, withFixedTravelItems } from '@/lib/team-budget-fixed-travel';
 import { withFoodQuarterItems } from '@/lib/team-budget-food';
-import { canViewTeamBudgetApplication, formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, selectTeamApplicationYear, TEAM_BUDGET_ACADEMIC_YEAR, TEAM_BUDGET_DEADLINE_AT } from '@/lib/team-budget-application-rules';
+import { canViewTeamBudgetApplication, formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, selectTeamApplicationYear, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 import { TeamBudgetApplicationEditor } from '@/components/team-budget-application-editor';
 
 export default async function TeamBudgetApplicationPage({
@@ -56,7 +56,7 @@ export default async function TeamBudgetApplicationPage({
           </p>
           {academicYear === TEAM_BUDGET_ACADEMIC_YEAR ? (
             <p className="hq-inline-note">
-              {team.slug === 'combat-robotics' && !isClosed && Date.now() >= Date.parse(TEAM_BUDGET_DEADLINE_AT)
+              {team.slug === 'combat-robotics' && !isClosed && isTeamBudgetApplicationClosed(academicYear)
                 ? 'Late submission open · Approved category caps are final'
                 : `Due ${formatTeamBudgetDeadline()}`}
             </p>

@@ -15,7 +15,7 @@ import { getReceiptTaskState } from '@/lib/purchases';
 import { getViewerContext } from '@/lib/auth';
 import { getLeadTeamIds } from '@/lib/lead-state';
 import { EOY_REPORT_TITLE, getEoyReportState } from '@/lib/eoy-report';
-import { formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, TEAM_BUDGET_ACADEMIC_YEAR, TEAM_BUDGET_DEADLINE_AT } from '@/lib/team-budget-application-rules';
+import { formatTeamBudgetDeadline, isTeamBudgetApplicationClosed, TEAM_BUDGET_ACADEMIC_YEAR } from '@/lib/team-budget-application-rules';
 
 type Team = {
   id: string;
@@ -574,7 +574,7 @@ export default async function TasksPage() {
                   </div>
                   <div className="hq-task-card-meta">
                     <span>{team.name}</span>
-                    <span>{team.slug === 'combat-robotics' && Date.now() >= Date.parse(TEAM_BUDGET_DEADLINE_AT)
+                    <span>{team.slug === 'combat-robotics' && isTeamBudgetApplicationClosed(TEAM_BUDGET_ACADEMIC_YEAR)
                       ? 'Late submission open'
                       : `Due ${formatTeamBudgetDeadline()}`}</span>
                     {isTeamBudgetApplicationClosed(TEAM_BUDGET_ACADEMIC_YEAR, new Date(), team.slug) ? <strong className="hq-task-alert">CLOSED</strong> : null}
