@@ -2,12 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
+import { getActiveBudgetPlan } from '@/lib/budget-plan';
 import { ClearExpenseLogForm } from '@/components/clear-expense-log-form';
 import { ManualPurchaseForm } from '@/components/manual-purchase-form';
 import { PurchaseImport } from '@/components/purchase-import';
 import { PurchaseCategoryForm } from '@/components/purchase-category-form';
 import { getChargeCatalog } from '@/lib/budget-charge-routing';
 import { getBudgetReferenceAliases } from '@/lib/budget-reference-aliases';
+import { allocatedClubBudgetCents, buildClubBuckets, type FinanceExpense } from '@/lib/finance-overview';
 import { ReceiptUploadForm } from '@/components/receipt-upload-form';
 import { PurchaseEntryActions } from '@/components/purchase-entry-actions';
 import { getReceiptLinks } from '@/lib/receipt-workflow';
@@ -18,6 +20,7 @@ import { getLeadTeamIds } from '@/lib/lead-state';
 type Team = {
   id: string;
   name: string;
+  is_active: boolean;
 };
 
 type TeamBudget = {
@@ -107,13 +110,14 @@ export default async function ExpenseLogPage({
   const isVicePresident = currentRole === 'vice_president';
   const isFinancialOfficer = currentRole === 'financial_officer';
   const isReadOnlyFinanceViewer = isPresident || isVicePresident || isFinancialOfficer;
-  const canLogPurchases = !isReadOnlyFinanceViewer;
   const isPrivilegedViewer = isAdmin || isReadOnlyFinanceViewer;
   const myTeamIds = isPrivilegedViewer ? [] : await getLeadTeamIds(user.id);
   const { data: teamsData } = isPrivilegedViewer
-    ? await admin.from('teams').select('id, name').order('name')
-    : await admin.from('teams').select('id, name').in('id', myTeamIds).order('name');
+    ? await admin.from('teams').select('id, name, is_active').order('name')
+    : await admin.from('teams').select('id, name, is_active').in('id', myTeamIds).order('name');
   const teams = (teamsData || []) as Team[];
+  const entryTeams = teams.filter((team) => team.is_active);
+  const canLogPurchases = !isReadOnlyFinanceViewer && entryTeams.length > 0;
 
   if (teams.length === 0) {
     redirect('/dashboard');
@@ -239,25 +243,43 @@ export default async function ExpenseLogPage({
   const { data: teamBudgetsData } = await admin
     .from('team_budgets')
     .select('team_id, academic_year, annual_budget_cents')
-    .eq('academic_year', chartBudgetYear)
-    .in('team_id', selectedTeamIds);
+    .eq('academic_year', chartBudgetYear);
   const teamBudgets = (teamBudgetsData || []) as TeamBudget[];
-  const allocatedBudgetCents = teamBudgets.reduce((sum, budget) => sum + budget.annual_budget_cents, 0);
+  const allocatedBudgetCents = teamBudgets
+    .filter((budget) => selectedTeamIds.includes(budget.team_id))
+    .reduce((sum, budget) => sum + budget.annual_budget_cents, 0);
   const { data: clubBudgetData } = await admin
     .from('club_budgets')
     .select('total_budget_cents')
     .eq('academic_year', chartBudgetYear)
     .maybeSingle();
-  const clubBudgetTotalCents = clubBudgetData?.total_budget_cents || 0;
+  const activePlan = isPrivilegedViewer ? await getActiveBudgetPlan(chartBudgetYear) : null;
+  const { data: clubExpensesData, error: clubExpensesError } = activePlan?.status === 'approved'
+    ? await admin.from('budget_expense_items')
+      .select('id, kind, team_id, parent_id, label, amount_cents, sort_order')
+      .eq('plan_id', activePlan.id)
+    : { data: [], error: null };
+  if (clubExpensesError) throw new Error('Could not load the allocated club budget.');
+  const clubBuckets = buildClubBuckets((clubExpensesData || []) as FinanceExpense[], []);
+  const clubBudgetTotalCents = activePlan?.status === 'approved'
+    ? allocatedClubBudgetCents(
+      teams.filter((team) => team.is_active),
+      new Map(teamBudgets.map((budget) => [budget.team_id, budget.annual_budget_cents])),
+      clubBuckets
+    )
+    : clubBudgetData?.total_budget_cents || 0;
   const budgetTotalCents =
     isPrivilegedViewer && selectedTeamId === 'all' ? clubBudgetTotalCents : allocatedBudgetCents;
 
   const summaryPurchases = filteredPurchases;
   const totalSpentCents = budgetYearPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
+  const teamSpentCents = budgetYearPurchases
+    .filter((purchase) => purchase.expense_type === 'team')
+    .reduce((sum, purchase) => sum + purchase.amount_cents, 0);
   const spendInRangeCents = summaryPurchases.reduce((sum, purchase) => sum + purchase.amount_cents, 0);
   const alreadySpentBeforeRangeCents = Math.max(0, totalSpentCents - spendInRangeCents);
   const remainingBudgetCents = Math.max(0, budgetTotalCents - totalSpentCents);
-  const remainingAllocatedCents = Math.max(0, allocatedBudgetCents - totalSpentCents);
+  const remainingAllocatedCents = Math.max(0, allocatedBudgetCents - teamSpentCents);
   const spentPercent = budgetTotalCents > 0 ? Math.min(100, Math.round((totalSpentCents / budgetTotalCents) * 100)) : 0;
 
   const categoryTotals = {
@@ -272,6 +294,9 @@ export default async function ExpenseLogPage({
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
     registration: summaryPurchases
       .filter((purchase) => purchase.category === 'registration')
+      .reduce((sum, purchase) => sum + purchase.amount_cents, 0),
+    other: summaryPurchases
+      .filter((purchase) => purchase.category === 'other')
       .reduce((sum, purchase) => sum + purchase.amount_cents, 0)
   };
 
@@ -367,7 +392,7 @@ export default async function ExpenseLogPage({
             <h3>New purchase</h3>
             <Link href="/dashboard/expenses?entry=import#new-purchase">Import purchases</Link>
           </div>
-          <ManualPurchaseForm academicYear={currentCycle} teams={teams} defaultPersonName={me.full_name || ''} catalog={chargeCatalog} />
+          <ManualPurchaseForm academicYear={currentCycle} teams={entryTeams} defaultPersonName={me.full_name || ''} catalog={chargeCatalog} />
         </section>
       ) : entryMode === 'import' ? (
         <section id="new-purchase" className="hq-panel hq-surface-muted hq-purchase-panel">
@@ -375,7 +400,7 @@ export default async function ExpenseLogPage({
             <h3>Import purchases</h3>
             <Link href="/dashboard/expenses?entry=1#new-purchase">Manual entry</Link>
           </div>
-          <PurchaseImport teams={teams} defaultTeamId={teams[0]?.id || ''} academicYear={currentCycle} catalog={chargeCatalog} />
+          <PurchaseImport teams={entryTeams} defaultTeamId={entryTeams[0]?.id || ''} academicYear={currentCycle} catalog={chargeCatalog} />
         </section>
       ) : null}
 
@@ -413,6 +438,10 @@ export default async function ExpenseLogPage({
                   <span style={{ color: categoryColors.registration }}>Registration</span>
                   <strong>${(categoryTotals.registration / 100).toLocaleString()}</strong>
                 </div>
+                <div>
+                  <span style={{ color: categoryColors.other }}>Other</span>
+                  <strong>${(categoryTotals.other / 100).toLocaleString()}</strong>
+                </div>
                 {alreadySpentBeforeRangeCents > 0 ? (
                   <div>
                     <span style={{ color: '#8f8181' }}>Already spent</span>
@@ -438,7 +467,7 @@ export default async function ExpenseLogPage({
               </div>
               {isPrivilegedViewer ? (
                 <div className="hq-purchase-stat">
-                  <span>Allocated</span>
+                  <span>Team budgets</span>
                   <strong>${(allocatedBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                 </div>
               ) : null}
@@ -451,7 +480,7 @@ export default async function ExpenseLogPage({
                 <strong>${(remainingBudgetCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
-                <span>Remaining from allocated</span>
+                <span>Remaining team allocations</span>
                 <strong>${(remainingAllocatedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
               </div>
               <div className="hq-purchase-stat">
