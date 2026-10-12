@@ -206,6 +206,10 @@ export function ReceiptFirstPurchaseForm({
           <label className="label" htmlFor="purchase-amount">Amount</label>
           <input className="input" id="purchase-amount" name="amount" type="number" min="0.01" step="0.01" value={amount} onChange={(event) => { editedRef.current.amount = true; setAmount(event.target.value); }} placeholder="0.00" required />
         </div>
+        <div className="field">
+          <label className="label" htmlFor="purchase-person">Person</label>
+          <input className="input" id="purchase-person" name="person_name" defaultValue={defaultPersonName} placeholder="Who paid?" />
+        </div>
         <BudgetChargeFields
           key={`${teamId}:${chargeFieldVersion}`}
           accounts={accounts}
@@ -226,10 +230,6 @@ export function ReceiptFirstPurchaseForm({
             <option value="reimbursement">Reimbursement</option>
             <option value="unknown">Unknown</option>
           </select>
-        </div>
-        <div className="field">
-          <label className="label" htmlFor="purchase-person">Person</label>
-          <input className="input" id="purchase-person" name="person_name" defaultValue={defaultPersonName} placeholder="Who paid?" />
         </div>
       </div>
       <div className="purchase-form-actions">
