@@ -187,7 +187,7 @@ export default async function DashboardLayout({
       <header className="hq-topbar">
         <div className="hq-topbar-inner">
           <div className="hq-topbar-left">
-            <Link href="/dashboard" className="hq-brand">
+            <Link href="/dashboard" className="hq-brand" prefetch={false}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/icon.png" alt="" className="hq-brand-mark" />
               Stanford Student Robotics HQ
@@ -205,7 +205,7 @@ export default async function DashboardLayout({
                     </span>
                     <div className="hq-nav-submenu">
                       {item.children.map((child) => (
-                        <Link key={child.href} href={child.href} className="hq-nav-submenu-link">
+                        <Link key={child.href} href={child.href} className="hq-nav-submenu-link" prefetch={false}>
                           {child.label}
                         </Link>
                       ))}
@@ -215,6 +215,7 @@ export default async function DashboardLayout({
                   <Link
                     key={item.href}
                     href={item.href!}
+                    prefetch={false}
                     className={`hq-nav-link${item.emphasis === 'primary' ? ' hq-nav-link-primary' : ''}`}
                   >
                     {item.label}
@@ -258,7 +259,7 @@ export default async function DashboardLayout({
                   </div>
                 ) : null}
 
-                <Link href="/dashboard/profile" className="hq-user-dropdown-link">
+                <Link href="/dashboard/profile" className="hq-user-dropdown-link" prefetch={false}>
                   Personal settings
                 </Link>
 

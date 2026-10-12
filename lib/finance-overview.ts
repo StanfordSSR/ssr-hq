@@ -15,6 +15,15 @@ export type ClubBucket = {
   spentCents: number;
 };
 
+export function allocatedClubBudgetCents(
+  activeTeams: Array<{ id: string }>,
+  teamBudgets: ReadonlyMap<string, number>,
+  clubBuckets: Array<{ budgetCents: number }>
+): number {
+  return activeTeams.reduce((sum, team) => sum + (teamBudgets.get(team.id) || 0), 0)
+    + clubBuckets.reduce((sum, bucket) => sum + bucket.budgetCents, 0);
+}
+
 export function buildClubBuckets(
   expenses: FinanceExpense[],
   purchases: Array<{ budget_expense_item_id: string | null; amount_cents: number }>
