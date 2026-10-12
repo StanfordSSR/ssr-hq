@@ -29,7 +29,6 @@ export default async function TeamBudgetApplicationPage({
   const admin = createAdminClient();
   const setup = await getBudgetSetupState();
   const academicYear = selectTeamApplicationYear(setup, (await searchParams)?.year);
-  const isClosed = isTeamBudgetApplicationClosed(academicYear);
   const [{ data: team, error: teamError }, { plan, caps }, application] = await Promise.all([
     admin.from('teams').select('id, name, slug, is_active').eq('id', teamId).maybeSingle(),
     getTeamBudgetCaps(teamId, academicYear),
@@ -37,6 +36,7 @@ export default async function TeamBudgetApplicationPage({
   ]);
   if (teamError || !team) notFound();
 
+  const isClosed = isTeamBudgetApplicationClosed(academicYear, new Date(), team.slug);
   const canEdit = !isClosed && isLead && team.is_active && Boolean(plan);
   const fixedTravel = getFixedTravelItems(team.slug, academicYear);
   const savedItems = application?.items || [];
@@ -54,7 +54,13 @@ export default async function TeamBudgetApplicationPage({
               ? `Submitted ${application.submittedAt ? formatDateLabel(new Date(application.submittedAt)) : ''}`
               : isClosed ? 'Submission closed' : plan ? 'Draft' : 'Budget plan unavailable'}
           </p>
-          {academicYear === TEAM_BUDGET_ACADEMIC_YEAR ? <p className="hq-inline-note">Due {formatTeamBudgetDeadline()}</p> : null}
+          {academicYear === TEAM_BUDGET_ACADEMIC_YEAR ? (
+            <p className="hq-inline-note">
+              {team.slug === 'combat-robotics' && !isClosed && isTeamBudgetApplicationClosed(academicYear)
+                ? 'Late submission open · Approved category caps are final'
+                : `Due ${formatTeamBudgetDeadline()}`}
+            </p>
+          ) : null}
         </div>
         <div className="hq-page-head-action">
           <Link href={isOfficer || isPresident ? '/dashboard/finances/applications' : `/dashboard/teams/${teamId}`} className="button-secondary">
@@ -84,6 +90,7 @@ export default async function TeamBudgetApplicationPage({
           teamId={teamId}
           academicYear={academicYear}
           caps={caps}
+          planApproved={plan?.status === 'approved'}
           initialItems={initialItems}
           fixedTravelItems={fixedTravel}
           initialPrefillPending={!submitted && (foodItems !== savedItems || !hasFixedTravelItems(savedItems, fixedTravel))}

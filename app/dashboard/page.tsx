@@ -135,7 +135,7 @@ const presidentCards = [
   },
   {
     href: '/dashboard/finances',
-    title: 'Finances',
+    title: 'Manage finances',
     description: 'View club and team budgets, allocations, and spend.'
   },
   {
@@ -158,13 +158,8 @@ const presidentCards = [
 const financialOfficerCards = [
   {
     href: '/dashboard/finances',
-    title: 'Finances',
+    title: 'Manage finances',
     description: 'Review club and team budgets, allocations, and spend.'
-  },
-  {
-    href: '/dashboard/purchases',
-    title: 'Purchases',
-    description: 'Review purchase history across teams in read-only mode.'
   },
   {
     href: '/dashboard/expenses',
@@ -1179,7 +1174,7 @@ export default async function DashboardPage() {
           <Link href={`/dashboard/teams/${team.id}/budget-application`} className="th-btn-light">
             Budget application
           </Link>
-          <Link href="/dashboard/purchases" className="th-btn-light">
+          <Link href="/dashboard/expenses?entry=1#new-purchase" className="th-btn-light">
             Log purchase
           </Link>
           <Link href={`/dashboard/teams/${team.id}`} className="th-mast-link">
@@ -1194,7 +1189,7 @@ export default async function DashboardPage() {
           <span>Annual budget</span>
           <strong>{usd(annualBudget)}</strong>
         </Link>
-        <Link href="/dashboard/purchases" className="th-stat">
+        <Link href="/dashboard/expenses" className="th-stat">
           <span>Spent</span>
           <strong>{usd(spent)}</strong>
         </Link>
@@ -1215,7 +1210,7 @@ export default async function DashboardPage() {
             {pendingReimbursements.length}
           </strong>
         </Link>
-        <Link href="/dashboard/purchases" className="th-stat">
+        <Link href="/dashboard/expenses" className="th-stat">
           <span>Receipts owed</span>
           <strong className={overdueReceiptCount > 0 ? 'th-bad' : pendingReceipts.length > 0 ? 'th-warn' : undefined}>
             {pendingReceipts.length}
@@ -1322,7 +1317,7 @@ export default async function DashboardPage() {
                         {formatDateLabel(new Date(purchase.purchased_at))}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <Link href="/dashboard/purchases" className="th-link">
+                        <Link href="/dashboard/expenses" className="th-link">
                           Upload →
                         </Link>
                       </td>

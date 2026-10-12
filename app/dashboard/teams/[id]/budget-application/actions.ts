@@ -35,7 +35,6 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
   if (!input || typeof input.teamId !== 'string' || typeof input.academicYear !== 'string') {
     return { ok: false, error: 'Invalid application request.' };
   }
-  if (isTeamBudgetApplicationClosed(input.academicYear)) return { ok: false, error: 'The annual budget application deadline has passed.' };
   const leadTeamIds = await getLeadTeamIds(user.id);
   if (!leadTeamIds.includes(input.teamId)) return { ok: false, error: 'Only an active team lead can edit this application.' };
 
@@ -55,6 +54,9 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
       .eq('is_active', true)
       .maybeSingle();
     if (teamError || !team) throw new Error('This team is no longer active.');
+    if (isTeamBudgetApplicationClosed(input.academicYear, new Date(), team.slug)) {
+      return { ok: false, error: 'The annual budget application deadline has passed.' };
+    }
 
     const fixedTravel = getFixedTravelItems(team.slug, input.academicYear);
     const allowedZeroIds = new Set(fixedTravel.filter((item) => item.amountCents === 0).map((item) => item.id));
@@ -72,7 +74,7 @@ export async function saveTeamBudgetApplicationAction(input: SaveApplicationInpu
     assertFixedTravelItems(items, fixedTravel, caps.travel);
     assertFixedFoodQuarterItems(items, caps.food);
     if (input.intent === 'submit') {
-      const submissionError = getSubmissionError(items, caps);
+      const submissionError = getSubmissionError(items, caps, plan.status === 'approved');
       if (submissionError) throw new Error(submissionError);
     }
 

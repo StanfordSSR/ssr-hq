@@ -24,8 +24,10 @@ const NO_OVERAGE_ABOVE_CENTS = 10_000_00;
 export const TEAM_BUDGET_ACADEMIC_YEAR = '2026-27';
 export const TEAM_BUDGET_DEADLINE_AT = '2026-10-12T02:08:00.000Z';
 
-export function isTeamBudgetApplicationClosed(academicYear: string, now = new Date()): boolean {
-  return academicYear === TEAM_BUDGET_ACADEMIC_YEAR && now.getTime() >= Date.parse(TEAM_BUDGET_DEADLINE_AT);
+export function isTeamBudgetApplicationClosed(academicYear: string, now = new Date(), teamSlug?: string): boolean {
+  return academicYear === TEAM_BUDGET_ACADEMIC_YEAR &&
+    teamSlug !== 'combat-robotics' &&
+    now.getTime() >= Date.parse(TEAM_BUDGET_DEADLINE_AT);
 }
 
 export function canViewTeamBudgetApplication(role: string, isLead: boolean, isPresident: boolean): boolean {
@@ -81,12 +83,12 @@ export function normalizeApplicationItems(value: unknown, allowedZeroIds: Readon
   });
 }
 
-export function getCategoryRequest(items: BudgetApplicationItem[], category: BudgetCategory, caps: BudgetCaps) {
+export function getCategoryRequest(items: BudgetApplicationItem[], category: BudgetCategory, caps: BudgetCaps, planApproved = false) {
   const categoryItems = items.filter((item) => item.category === category);
   const totalCents = categoryItems.reduce((sum, item) => sum + item.amountCents, 0);
   const capCents = caps[category];
   const teamCapCents = BUDGET_CATEGORIES.reduce((sum, current) => sum + caps[current], 0);
-  const maxCents = teamCapCents > NO_OVERAGE_ABOVE_CENTS ? capCents : Math.floor((capCents * 110) / 100);
+  const maxCents = planApproved || teamCapCents > NO_OVERAGE_ABOVE_CENTS ? capCents : Math.floor((capCents * 110) / 100);
   const lineItemTargetCents = teamCapCents > NO_OVERAGE_ABOVE_CENTS ? 150_000 : 100_000;
   const requiredItemCount = category === 'equipment' ? Math.ceil(totalCents / lineItemTargetCents) : 0;
   return {
@@ -101,10 +103,10 @@ export function getCategoryRequest(items: BudgetApplicationItem[], category: Bud
   };
 }
 
-export function getSubmissionError(items: BudgetApplicationItem[], caps: BudgetCaps): string | null {
+export function getSubmissionError(items: BudgetApplicationItem[], caps: BudgetCaps, planApproved = false): string | null {
   if (items.length === 0) return 'Add at least one line item before submitting.';
   for (const category of BUDGET_CATEGORIES) {
-    const request = getCategoryRequest(items, category, caps);
+    const request = getCategoryRequest(items, category, caps, planApproved);
     if (request.overLimit) {
       return `${BUDGET_CATEGORY_LABELS[category]} exceeds its category cap. Reduce the request before submitting.`;
     }

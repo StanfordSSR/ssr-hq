@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { getCurrentAcademicYear, formatAcademicYear, formatDateLabel } from '@/lib/academic-calendar';
 import { ClearExpenseLogForm } from '@/components/clear-expense-log-form';
+import { ManualPurchaseForm } from '@/components/manual-purchase-form';
+import { PurchaseImport } from '@/components/purchase-import';
 import { PurchaseCategoryForm } from '@/components/purchase-category-form';
 import { getChargeCatalog } from '@/lib/budget-charge-routing';
 import { getBudgetReferenceAliases } from '@/lib/budget-reference-aliases';
@@ -105,6 +107,7 @@ export default async function ExpenseLogPage({
   const isVicePresident = currentRole === 'vice_president';
   const isFinancialOfficer = currentRole === 'financial_officer';
   const isReadOnlyFinanceViewer = isPresident || isVicePresident || isFinancialOfficer;
+  const canLogPurchases = !isReadOnlyFinanceViewer;
   const isPrivilegedViewer = isAdmin || isReadOnlyFinanceViewer;
   const myTeamIds = isPrivilegedViewer ? [] : await getLeadTeamIds(user.id);
   const { data: teamsData } = isPrivilegedViewer
@@ -118,6 +121,7 @@ export default async function ExpenseLogPage({
 
   const currentCycle = await getCurrentAcademicYear();
   const chargeCatalog = await getChargeCatalog(currentCycle);
+  const entryMode = canLogPurchases ? readSingle(params.entry) : '';
   const rawTeam = readSingle(params.team);
   const defaultTeamSelection = isPrivilegedViewer ? 'all' : teams[0]!.id;
   const selectedTeamId =
@@ -350,7 +354,30 @@ export default async function ExpenseLogPage({
               : 'Review every recorded purchase, keep receipts current, and track how spending is distributed.'}
           </p>
         </div>
+        {canLogPurchases ? (
+          <div className="hq-page-head-action">
+            <Link href="/dashboard/expenses?entry=1#new-purchase" className="button">Log purchase</Link>
+          </div>
+        ) : null}
       </section>
+
+      {entryMode === '1' ? (
+        <section id="new-purchase" className="hq-panel hq-surface-muted hq-purchase-panel">
+          <div className="hq-block-head">
+            <h3>New purchase</h3>
+            <Link href="/dashboard/expenses?entry=import#new-purchase">Import purchases</Link>
+          </div>
+          <ManualPurchaseForm academicYear={currentCycle} teams={teams} defaultPersonName={me.full_name || ''} catalog={chargeCatalog} />
+        </section>
+      ) : entryMode === 'import' ? (
+        <section id="new-purchase" className="hq-panel hq-surface-muted hq-purchase-panel">
+          <div className="hq-block-head">
+            <h3>Import purchases</h3>
+            <Link href="/dashboard/expenses?entry=1#new-purchase">Manual entry</Link>
+          </div>
+          <PurchaseImport teams={teams} defaultTeamId={teams[0]?.id || ''} academicYear={currentCycle} catalog={chargeCatalog} />
+        </section>
+      ) : null}
 
       <section className="hq-expense-overview">
         <div className="hq-panel hq-surface-muted hq-expense-summary">
