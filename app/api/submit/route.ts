@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { recordAuditEvent } from '@/lib/audit';
 import { getCurrentAcademicYear } from '@/lib/academic-calendar';
 import { getChargeCatalog, resolveCharge, type ResolvedCharge } from '@/lib/budget-charge-routing';
+import { validatePurchaseDate } from '@/lib/reimbursement-cycle';
 import {
   extractSubmissionFootprint,
   GAS_REIMBURSEMENT_MIN_ATTACHMENTS,
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
   const submitterName = String(formData.get('submitter_name') || '').trim();
   const itemName = String(formData.get('item_name') || '').trim();
   const amountRaw = String(formData.get('amount') || '').trim();
+  const purchaseDate = String(formData.get('purchase_date') || '').trim();
   const reimbursementNumberRaw = String(formData.get('reimbursement_number') || '').trim();
   const offCampusAck = String(formData.get('off_campus_ack') || '') === 'true';
   const purchaseTypeRaw = String(formData.get('purchase_type') || '').trim();
@@ -60,7 +62,7 @@ export async function POST(request: NextRequest) {
   if ((expenseType !== 'team' && expenseType !== 'leadership') ||
       (expenseType === 'team' && !teamId) ||
       (expenseType === 'leadership' && teamId) ||
-      !submitterName || submitterName.length > 120 || !itemName || !amountRaw || !reimbursementNumberRaw) {
+      !submitterName || submitterName.length > 120 || !itemName || !amountRaw || !purchaseDate || !reimbursementNumberRaw) {
     return NextResponse.json({ error: 'Please fill in every field.' }, { status: 400 });
   }
 
@@ -146,6 +148,8 @@ export async function POST(request: NextRequest) {
   }
 
   const academicYear = await getCurrentAcademicYear();
+  const dateError = validatePurchaseDate(purchaseDate, academicYear);
+  if (dateError) return NextResponse.json({ error: dateError }, { status: 422 });
   let charge: ResolvedCharge;
   try {
     charge = resolveCharge(
@@ -196,6 +200,7 @@ export async function POST(request: NextRequest) {
       amount_cents: amountCents,
       reimbursement_number: reimbursementNumber,
       academic_year: academicYear,
+      purchase_date: purchaseDate,
       budget_category: charge.category,
       budget_plan_id: charge.planId,
       budget_expense_item_id: charge.expenseId,

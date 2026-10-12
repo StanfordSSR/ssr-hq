@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-admin';
 import type { ExpenseCategory } from '@/lib/budget-plan';
+import { purchaseDateTimestamp } from '@/lib/reimbursement-cycle';
 import { env } from '@/lib/env';
 import { recordAuditEvent } from '@/lib/audit';
 import { detectPurchaseCategory, type PurchaseCategory } from '@/lib/purchases';
@@ -232,6 +233,7 @@ export type ReimbursementRow = {
   amount_cents: number;
   reimbursement_number: string;
   academic_year: string;
+  purchase_date: string | null;
   purchase_type: PurchaseType | null;
   travel_subtype: TravelSubtype | null;
   receipt_path: string | null;
@@ -737,7 +739,9 @@ export async function finalizeReimbursementDecision(opts: {
       amount_cents: reimbursement.amount_cents,
       description: `${reimbursement.item_name} (${reimbursement.reimbursement_number})`,
       person_name: reimbursement.submitter_name,
-      purchased_at: reimbursement.created_at,
+      purchased_at: reimbursement.purchase_date
+        ? purchaseDateTimestamp(reimbursement.purchase_date)
+        : reimbursement.created_at,
       payment_method: 'reimbursement',
       category: reimbursement.budget_category || categoryForReimbursement(
         reimbursement.purchase_type, reimbursement.travel_subtype, reimbursement.item_name
@@ -757,7 +761,7 @@ export async function finalizeReimbursementDecision(opts: {
     }
   }
 
-  const { error: updateError } = await admin
+  const { data: settled, error: updateError } = await admin
     .from('member_reimbursements')
     .update({
       status: decision,
@@ -769,14 +773,16 @@ export async function finalizeReimbursementDecision(opts: {
       locked_purchase_log_id: purchaseLogId
     })
     .eq('id', reimbursement.id)
-    .eq('status', 'pending');
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
 
-  if (updateError) {
+  if (updateError || !settled) {
     // Roll back the ledger row if the decision write lost a race.
     if (purchaseLogId) {
       await admin.from('purchase_logs').delete().eq('id', purchaseLogId);
     }
-    throw new Error(updateError.message);
+    throw new Error(updateError?.message || 'This reimbursement was already decided. Refresh to see the latest status.');
   }
 
   await recordAuditEvent({

@@ -101,26 +101,26 @@ export function buildChargeCatalog(
   return catalog;
 }
 
-export async function getChargeCatalog(academicYear: string): Promise<ChargeCatalog | null> {
-  const plan = await getActiveBudgetPlan(academicYear);
-  if (!plan) return null;
+export async function getChargeCatalog(academicYear: string, knownPlanId?: string): Promise<ChargeCatalog | null> {
+  const planId = knownPlanId || (await getActiveBudgetPlan(academicYear))?.id;
+  if (!planId) return null;
   const admin = createAdminClient();
   const [{ data: expenses, error: expenseError }, { data: sources, error: sourceError }, { data: allocations, error: allocationError }] =
     await Promise.all([
       admin.from('budget_expense_items')
         .select('id, team_id, kind, parent_id, category, label, amount_cents, sort_order')
-        .eq('plan_id', plan.id),
+        .eq('plan_id', planId),
       admin.from('budget_funding_sources')
         .select('id, label, kind, category, sort_order')
-        .eq('plan_id', plan.id),
+        .eq('plan_id', planId),
       admin.from('budget_allocations')
         .select('source_id, expense_id, amount_cents')
-        .eq('plan_id', plan.id)
+        .eq('plan_id', planId)
     ]);
   if (expenseError || sourceError || allocationError) {
     throw new Error('Could not load the current budget accounts. Please try again.');
   }
-  return buildChargeCatalog(plan.id, (expenses || []) as ExpenseRow[], (sources || []) as SourceRow[], (allocations || []) as AllocationRow[]);
+  return buildChargeCatalog(planId, (expenses || []) as ExpenseRow[], (sources || []) as SourceRow[], (allocations || []) as AllocationRow[]);
 }
 
 export function resolveCharge(
