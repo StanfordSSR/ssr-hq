@@ -450,7 +450,15 @@ export function SubmitReimbursementForm({
         {accounts.length === 0 ? <span className="helper">No budget categories are configured for this selection.</span> : null}
       </div>
 
-      {selectedAccount && selectedAccount.sources.length > 1 ? (
+      {selectedAccount && selectedAccount.sources.length === 1 ? (
+        // One source means there is nothing to choose, but the submitter should
+        // still see which pot the purchase lands in — it matters for restricted
+        // money like a team sponsorship or a named gift.
+        <div className="field">
+          <span className="label">Funding source</span>
+          <span className="helper">Funded by {selectedAccount.sources[0].label}</span>
+        </div>
+      ) : selectedAccount && selectedAccount.sources.length > 1 ? (
         <div className="field">
           <label className="label" htmlFor="funding_source">Funding source</label>
           <select
